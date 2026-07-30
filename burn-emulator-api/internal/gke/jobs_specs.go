@@ -17,7 +17,7 @@ import (
 type Config struct {
 	Namespace      string
 	ServiceAccount string
-	ImageStore	   string
+	ImageStore     string
 	OutputBucket   string
 }
 
@@ -42,6 +42,7 @@ type JobRequest struct {
 	Variation string
 	Caching   string
 	JobName   string
+	FuelsPath string
 }
 
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (string, error) {
@@ -90,6 +91,7 @@ func buildJobSpec(jobName string, cfg Config, req JobRequest) *batchv1.Job {
 								{Name: "BURN_EMULATOR_CACHING", Value: req.Caching},
 								{Name: "BURN_EMULATOR_OUT_PATH", Value: outPath},
 								{Name: "BURN_EMULATOR_RUN_NAME", Value: jobName},
+								{Name: "BURN_EMULATOR_FUELS_PATH", Value: req.FuelsPath},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: &allowPrivEsc,

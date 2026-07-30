@@ -42,7 +42,7 @@ func main() {
 		log.Fatalf("failed to init k8s client: %v", err)
 	}
 
-	variationsPath := envDefault("VARIATIONS_FILE", "config/variations.yaml")
+	variationsPath := envDefault("VARIATIONS_FILE", "configs/variations.yaml")
 	validVariations, err := handlers.LoadVariations(variationsPath)
 	if err != nil {
 		log.Fatalf("failed to load variations allow-list: %v", err)

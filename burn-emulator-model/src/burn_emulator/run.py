@@ -47,5 +47,8 @@ def run(
         agg /= len(dataloader.dataset)
 
     agg = agg.to_numpy()
+    
+    # NOTE: precomputed CBP should be already on disk somwhere
+    # discuss whether change should be computed here or elsewhere
     with rasterio.open(out_path, **profile) as dst:
         dst.write(agg)

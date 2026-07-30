@@ -27,7 +27,8 @@ var (
 	validCaching = map[string]bool{
 		"none": true, "short": true, "long": true, "cdn": true,
 	}
-	validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	validJobName   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	validFuelsPath = regexp.MustCompile(`^gs://[a-zA-Z0-9][a-zA-Z0-9/_.-]*$`)
 )
 
 type VariationSet map[string]bool
@@ -65,6 +66,7 @@ type jobRequestBody struct {
 	Variation string `json:"variation"`
 	Caching   string `json:"caching"`
 	JobName   string `json:"job_name"`
+	FuelsPath string `json:"fuels_path"`
 }
 
 type jobResponseBody struct {
@@ -118,6 +120,7 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Variation: body.Variation,
 		Caching:   body.Caching,
 		JobName:   body.JobName,
+		FuelsPath: body.FuelsPath,
 	})
 	if err != nil {
 		log.Printf("job creation failed: %v", err) // don't leak internals to the caller
@@ -125,8 +128,8 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("job created: name=%s variation=%s caching=%s by=%s",
-		jobName, body.Variation, body.Caching, clientIP)
+	log.Printf("job created: name=%s variation=%s caching=%s fuels_path=%s by=%s",
+		jobName, body.Variation, body.Caching, body.FuelsPath, clientIP)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -142,6 +145,9 @@ func validate(body jobRequestBody, allowed VariationSet) error {
 	}
 	if !validJobName.MatchString(body.JobName) {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")
+	}
+	if !validFuelsPath.MatchString(body.FuelsPath) {
+		return errors.New("invalid 'fuels_path': must be a gs:// path")
 	}
 	return nil
 }

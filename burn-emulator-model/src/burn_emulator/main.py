@@ -15,6 +15,7 @@ def main():
     parser.add_argument("-c", "--config", action="append", required=False, default=[])
     parser.add_argument("-g", "--gonfig", action="append", required=False, default=[])
     parser.add_argument("-p", "--ckpt_path", action="store", required=False)
+    parser.add_argument("-f", "--fuels_path", action="append", default="")
     parser.add_argument("-o", "--out_path", action="store", default="")
     parser.add_argument("-n", "--run_name", action="store", default="")
     args = parser.parse_args()
@@ -39,6 +40,11 @@ def main():
         with Path(config_path).open() as f:
             # NOTE: this is not recursive
             configs |= yaml.safe_load(f)
+    
+    if args.fuels_path:
+        # TODO: update this very fragile config
+        configs["dataset"]["init_args"]["fuels_path"] = args.fuels_path
+    
     
     match args.method:
         case "train":

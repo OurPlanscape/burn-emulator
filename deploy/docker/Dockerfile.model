@@ -22,4 +22,11 @@ COPY ${STAGE_DIR}/ /app/data/
 RUN uv sync --no-cache
 RUN uv pip install -e .
 
-ENTRYPOINT ["sh", "-c", "exec burn-emulator -m run -p \"/app/data/$CKPT_NAME\" -c /app/data/model.yaml -c /app/data/data.yaml -o \"$BURN_EMULATOR_OUT_PATH\" -n \"$BURN_EMULATOR_RUN_NAME\""]
+ENTRYPOINT ["sh", "-c", "exec burn-emulator \
+    -m run \
+    -p \"/app/data/$CKPT_NAME\" \
+    -c /app/data/model.yaml \
+    -c /app/data/data.yaml \
+    -o \"$BURN_EMULATOR_OUT_PATH\" \
+    -n \"$BURN_EMULATOR_RUN_NAME\" \
+    -f \"$BURN_EMULATOR_FUELS_PATH\""]
