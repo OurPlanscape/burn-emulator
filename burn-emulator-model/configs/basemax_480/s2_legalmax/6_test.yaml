@@ -1,0 +1,15 @@
+dataset:
+    class_path: burn_emulator.datasets.IgnitionDataset
+    init_args:
+        ignitions_path: artifacts/PS_scenarios/s2/outputs/6_legalmax/6_ignitions_locations.csv
+        fuels_paths:
+            -  artifacts/PS_scenarios/s2/outputs/6_legalmax
+        burn_paths:
+            -  artifacts/training_data_v8/legalmax/legalmax
+        topo_path: artifacts/topo
+        stats_path: artifacts/stats.yaml
+        burn_times: [480]
+        chip_size: 128
+        jitter: null
+
+test_name: 6_legalmax

@@ -1,0 +1,25 @@
+ARG XLA_VERSION
+FROM us-central1-docker.pkg.dev/tpu-pytorch/tpu-pytorch-releases/pytorch-xla:${XLA_VERSION}
+
+ARG CKPT_NAME
+ARG CKPT_PATH
+ARG STAGE_DIR
+
+ENV PYTHONUNBUFFERED=1
+ENV USE_CLOUD_PATHS=1
+ENV RUN_DEVICE='XLA'
+ENV RUN_DTYPE='float32'
+ENV CKPT_NAME=${CKPT_NAME}
+
+WORKDIR /app
+
+COPY pyproject.toml /app/
+COPY uv.lock /app/
+COPY src/ /app/src/
+COPY ${CKPT_PATH} /app/data/
+COPY ${STAGE_DIR}/ /app/data/
+
+RUN uv sync --no-cache
+RUN uv pip install -e .
+
+ENTRYPOINT ["sh", "-c", "exec burn-emulator -m run -p \"/app/data/$CKPT_NAME\" -c /app/data/model.yaml -c /app/data/data.yaml -o \"$BURN_EMULATOR_OUT_PATH\" -n \"$BURN_EMULATOR_RUN_NAME\""]

@@ -7,9 +7,8 @@ wheels/
 *.egg-info
 .ruff_cache
 
-# Virtual environments
-.venv
+burn-emulator-model/.venv
+burn-emulator-model/data
+burn-emulator-model/logs
 
-# experiment data
-data
-logs
+deploy/k8s
