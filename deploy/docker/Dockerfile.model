@@ -27,6 +27,7 @@ ENTRYPOINT ["sh", "-c", "exec burn-emulator \
     -p \"/app/data/$CKPT_NAME\" \
     -c /app/data/model.yaml \
     -c /app/data/data.yaml \
+    -f \"$BURN_EMULATOR_FUELS_PATH\" \
+    -t \"$BURN_EMULATOR_TREATMENT_AREA\" \
     -o \"$BURN_EMULATOR_OUT_PATH\" \
-    -n \"$BURN_EMULATOR_RUN_NAME\" \
-    -f \"$BURN_EMULATOR_FUELS_PATH\""]
+    -n \"$BURN_EMULATOR_RUN_NAME\""]

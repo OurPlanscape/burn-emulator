@@ -70,7 +70,7 @@ path_to_inputs/
 
 ### API
 
-This API is intended to be an internal microservice. It's fronted by a GKE regional **internal** load balancer (`gke-l7-rilb`) and expects callers to reach it over the same VPC. Its auth model — a GCP ID token checked against an allow-list of caller service accounts — is meant to identify trusted internal callers, not to withstand traffic from the public internet.
+This API is intended to be an internal microservice. It's fronted by a GKE regional **internal** load balancer (`gke-l7-rilb`) and expects callers to reach it over the same VPC. Its auth model — a GCP ID token checked against an allow-list of caller service accounts — is meant to identify trusted internal callers, not to withstand traffic from the public internet. Note: manifests for GKE infrastructure are not included here.
 
 ### API Installation
 

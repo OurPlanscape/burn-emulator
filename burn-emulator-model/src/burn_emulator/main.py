@@ -1,6 +1,8 @@
 import argparse
-
+import json
 import yaml
+
+from shapely.geometry import shape
 
 from burn_emulator.constants import METHODS, Path
 from burn_emulator.run import run
@@ -13,9 +15,9 @@ def main():
     parser.add_argument("-m", "--method", default="train", choices=METHODS)
     parser.add_argument("-C", "--config_dir", action="store", required=False)
     parser.add_argument("-c", "--config", action="append", required=False, default=[])
-    parser.add_argument("-g", "--gonfig", action="append", required=False, default=[])
     parser.add_argument("-p", "--ckpt_path", action="store", required=False)
     parser.add_argument("-f", "--fuels_path", action="append", default="")
+    parser.add_argument("-t", "--treatment_area", action="store", default="")
     parser.add_argument("-o", "--out_path", action="store", default="")
     parser.add_argument("-n", "--run_name", action="store", default="")
     args = parser.parse_args()
@@ -35,17 +37,14 @@ def main():
         with Path(config_path).open() as f:
             # NOTE: this is not recursive
             configs |= yaml.safe_load(f)
-
-    for config_path in args.gonfig:
-        with Path(config_path).open() as f:
-            # NOTE: this is not recursive
-            configs |= yaml.safe_load(f)
     
+    # TODO: update these very fragile configs
     if args.fuels_path:
-        # TODO: update this very fragile config
         configs["dataset"]["init_args"]["fuels_path"] = args.fuels_path
     
-    
+    if args.treatment_area:
+        configs["dataset"]["init_args"]["treatment_area"] = shape(json.loads(args.treatment_area))
+
     match args.method:
         case "train":
             train(**configs)

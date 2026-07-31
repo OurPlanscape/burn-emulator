@@ -4,7 +4,10 @@ import pandas as pd
 import rasterio
 import torch
 import torch.nn.functional as F
+
+from rasterio.features import geometry_mask
 from rasterio.transform import rowcol
+from shapely import Polygon
 from torch.utils.data import Dataset
 
 from burn_emulator.constants import DEFAULT_DTYPE, NO_DATA, Path
@@ -22,6 +25,7 @@ class IgnitionDataset(Dataset):
         burn_times: list[int] = None,
         chip_size: int = 129,
         jitter: int | None = 1,
+        treatment_area: Polygon | None = None, 
         ignition_density: float | None = None,
         circle_mask: bool = True
     ) -> None:
@@ -38,13 +42,17 @@ class IgnitionDataset(Dataset):
         self.burn_times = [str(bt) for bt in burn_times] if burn_times else [480]
         self.chip_size = chip_size
         self.jitter = jitter
+        self.treatment_area = treatment_area
         self.ignition_density = ignition_density
         self.circle_mask = circle_mask
-
         self._set_ignitions(ignitions_path)
         self.fuels, self.topos, self.masks, self.profile = cache_inputs(
             self.fuels_paths, self.topo_path, self.stats_path, self.window
         )
+
+        if self.treatment_area is not None:
+            self._collate_treatments(treatment_area)
+        
         if self.circle_mask:
             self._set_circle_mask()
 
@@ -159,22 +167,10 @@ class IgnitionDataset(Dataset):
                 if "ignition_number" not in self.ignitions.columns:
                     self.ignitions = self.ignitions.reset_index(names="ignition_number")
                 self.window = None
-            case (
-                ".gpkg" | ".geojson" | ".zip"
-            ):  # I'm assuming the shapefile is zipped and in the appropriate EPSG code
+            case (".gpkg" | ".geojson" | ".zip" ):
+                # I'm assuming the shapefile is zipped and in the appropriate EPSG code
                 gdf = gpd.read_file(self.ignitions)
-                union_geom = gdf.geometry.union_all()
-                n_points = round(union_geom.area * self.ignition_density)
-
-                sampled = gpd.GeoSeries([union_geom], crs=gdf.crs).sample_points(size=n_points)
-                sampled = sampled.explode(index_parts=False).reset_index(drop=True)
-
-                self.ignitions = gpd.GeoDataFrame(geometry=sampled, crs=gdf.crs)
-                xs = self.ignitions.geometry.x.to_numpy()
-                ys = self.ignitions.geometry.y.to_numpy()
-                rows, cols = rowcol(self.profile["transform"], xs, ys)
-                self.ignitions["row"] = rows
-                self.ignitions["col"] = cols
+                self._sample_ignitions(gdf.geometry)
             case "_":
                 ignitions_paths = Path(ignitions_path).glob("**/*.csv")
                 self.ignitions = []
@@ -186,7 +182,7 @@ class IgnitionDataset(Dataset):
                     self.ignitions.append(ignition)
                 self.ignitions = pd.concat(self.ignitions)
                 self.window = None
-                
+
     def _set_circle_mask(self) -> Tensor:
         h = w = self.chip_size
         cy, cx = (h - 1) / 2, (w - 1) / 2
@@ -199,3 +195,35 @@ class IgnitionDataset(Dataset):
         radius = min(h, w) / 2
         self.cmask = (dist <= radius).float()
         return self.cmask.view(1, h, w)
+    
+    def _sample_ignitions(self, gs: gpd.GeoSeries):
+        n_points = round(gs.area.sum() * self.ignition_density)
+
+        sampled = gs.sample_points(size=n_points)
+        sampled = sampled.explode(index_parts=False).reset_index(drop=True)
+
+        self.ignitions = gpd.GeoDataFrame(geometry=sampled, crs=gdf.crs)
+        xs = self.ignitions.geometry.x.to_numpy()
+        ys = self.ignitions.geometry.y.to_numpy()
+        rows, cols = rowcol(self.profile["transform"], xs, ys)
+        self.ignitions["row"] = rows
+        self.ignitions["col"] = cols
+    
+    def _collate_treatments(self, treatment_area: Polygon):
+        # TODO: get a better naming convention
+        # we're assuming the second fuel layer is the treatment layer
+        fkey0 = self.fuels_paths[0].stem
+        fkey1 = self.fuels_paths[1].stem
+
+        _, H, W = self.fuels[fkey0]["fbfm"].shape
+        treated = geometry_mask(
+            [treatment_area],
+            out_shape=(H, W),
+            transform=self.profile["transform"],
+            invert=True,
+        )
+        treated = torch.from_numpy(treated)
+
+        for key, arr in self.fuels[fkey1].items():
+            self.fuels[fkey0][key][:, treated] = arr[:, treated]
+        del self.fuels[fkey1]

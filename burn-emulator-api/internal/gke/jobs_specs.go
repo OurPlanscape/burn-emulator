@@ -39,10 +39,11 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 type JobRequest struct {
-	Variation string
-	Caching   string
-	JobName   string
-	FuelsPath string
+	FuelsPath 		string
+	TreatmentArea string
+	Variation 		string
+	JobName   		string
+	Caching   		string
 }
 
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (string, error) {
@@ -89,9 +90,10 @@ func buildJobSpec(jobName string, cfg Config, req JobRequest) *batchv1.Job {
 							Env: []corev1.EnvVar{
 								{Name: "BURN_EMULATOR_VARIATION", Value: req.Variation},
 								{Name: "BURN_EMULATOR_CACHING", Value: req.Caching},
+								{Name: "BURN_EMULATOR_FUELS_PATH", Value: req.FuelsPath},
+								{Name: "BURN_EMULATOR_TREATMENT_AREA", Value: req.TreatmentArea},
 								{Name: "BURN_EMULATOR_OUT_PATH", Value: outPath},
 								{Name: "BURN_EMULATOR_RUN_NAME", Value: jobName},
-								{Name: "BURN_EMULATOR_FUELS_PATH", Value: req.FuelsPath},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: &allowPrivEsc,

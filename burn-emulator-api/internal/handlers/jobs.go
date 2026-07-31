@@ -63,10 +63,11 @@ func LoadVariations(path string) (VariationSet, error) {
 }
 
 type jobRequestBody struct {
-	Variation string `json:"variation"`
-	Caching   string `json:"caching"`
-	JobName   string `json:"job_name"`
-	FuelsPath string `json:"fuels_path"`
+	FuelsPath 		string `json:"fuels_path"`
+	TreatmentArea string `json:"treatment_area"`
+	Variation 		string `json:"variation"`
+	JobName   		string `json:"job_name"`
+	Caching   		string `json:"caching"`
 }
 
 type jobResponseBody struct {
