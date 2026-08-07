@@ -5,7 +5,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from burn_emulator.constants import RUN_DTYPE
+from burn_emulator.constants import DEFAULT_DTYPE
 from burn_emulator.datasets import IgnitionDataset
 
 
@@ -59,7 +59,7 @@ class TestIgnitionDataset(unittest.TestCase):
 
         self.assertEqual(arrX.ndim, 3)
         self.assertEqual(tuple(arrX.shape[-2:]), (self.chip_size, self.chip_size))
-        self.assertEqual(arrX.dtype, RUN_DTYPE)
+        self.assertEqual(arrX.dtype, DEFAULT_DTYPE)
 
         self.assertEqual(tuple(arrY.shape[-2:]), (self.chip_size, self.chip_size))
         self.assertEqual(arrY.shape[0], self.n_burn_times)

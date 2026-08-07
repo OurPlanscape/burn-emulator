@@ -1,12 +1,12 @@
 ## Overview
 
-A repo for approximating a burn spread model using deep learning. GPU acceleration enables 1000s of burns/sec, enabling faster CBP calculations at the cost of some additional uncertainty  from modelling a model.
+A repo for approximating a burn spread model using deep learning. GPU acceleration enables 1000s of burns in seconds, enabling faster CBP calculations at the cost of some additional uncertainty from modelling the derived spread model.
 
 ---
 
 ### Modelling
 
-The default model is an archetypal CNN with one major adjustment: [circular kernels](https://arxiv.org/pdf/2107.02451). The reasoning for this adaptation is that very few objects in nature are 'square-shaped' thus, there is either unused learning capacity in the kernels used in convolutions or, the model must learn the mappings from that arbitrary shape choice to the expected shape of the burn. In addition, burns spread in a quasi-circular pattern (this obviously varies depending on various factors). The ignition point is set to a consistent point within the CNN context window (the center pixel) such that the model needs only to learn mappings from local connectivities between input pixels (fuels, etc.) to a spread shape from that point. In other words, it doesn't need to know where the burn will occur, just a fuzzy approximation of what it will look like. This can then be used to stamp 'burns' accross the landscape for the purpose of calculating conditional burn probability.
+The default model is an archetypal CNN with one major adjustment: [circular kernels](https://arxiv.org/pdf/2107.02451). The reasoning for this adaptation is that very few objects in nature are 'square-shaped' thus, there is either unused learning capacity in the kernels used in convolutions or, the model must learn the mappings from that arbitrary shape choice to the expected shape of the burn. In addition, burns spread in a quasi-circular pattern (this obviously varies depending on various factors) which does not align with the grid anisotropy. The ignition point is set to a consistent point within the CNN context window (the center pixel) such that the model needs only to learn mappings from local connectivities between input pixels (fuels, etc.) to a spread shape from that point. In other words, it doesn't need to know where the burn will occur, just a fuzzy approximation of what it will look like. This can then be used to stamp 'burns' accross the landscape for the purpose of calculating conditional burn probability.
 
 ### Training Installation
 

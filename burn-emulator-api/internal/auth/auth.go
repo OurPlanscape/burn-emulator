@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -33,29 +34,39 @@ func NewVerifier(ctx context.Context, audience string, allowedServiceAccounts []
 
 func (v *Verifier) Allow(r *http.Request) bool {
 	if len(v.allowed) == 0 {
+		slog.Warn("auth: rejected request, no allowed service accounts configured")
 		return false
 	}
 
 	tok := bearerToken(r)
 	if tok == "" {
+		slog.Warn("auth: rejected request, missing bearer token")
 		return false
 	}
 
 	payload, err := v.validator.Validate(r.Context(), tok, v.audience)
 	if err != nil {
+		slog.Warn("auth: rejected request, token validation failed", "error", err)
 		return false
 	}
 
 	verified, _ := payload.Claims["email_verified"].(bool)
 	if !verified {
+		slog.Warn("auth: rejected request, email not verified")
 		return false
 	}
 	email, _ := payload.Claims["email"].(string)
 	if email == "" {
+		slog.Warn("auth: rejected request, missing email claim")
 		return false
 	}
 
-	return v.allowed[email]
+	if !v.allowed[email] {
+		slog.Warn("auth: rejected verified caller not on allowlist", "email", email)
+		return false
+	}
+
+	return true
 }
 
 func bearerToken(r *http.Request) string {

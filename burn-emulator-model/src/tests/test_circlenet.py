@@ -4,14 +4,15 @@ import unittest
 import torch
 from torchinfo import summary
 
-from burn_emulator.constants import (
-    DEFAULT_DTYPE,
+from burn_emulator.constants import DEFAULT_DTYPE
+from burn_emulator.models.circlenet import CircleNet
+
+from tests.fixtures import (
     TEST_BATCH_SIZE,
     TEST_IMAGE_SIZE,
     TEST_IN_CHANS,
     TEST_OUT_CHANS,
 )
-from burn_emulator.models.circlenet import CircleNet
 
 
 class TestCircleNet(unittest.TestCase):
@@ -25,15 +26,15 @@ class TestCircleNet(unittest.TestCase):
         cls.C_in = TEST_IN_CHANS
         cls.N_OUTPUTS = TEST_OUT_CHANS
 
-        cls.model = CircleNet(
+        cls.uncompiled_model = CircleNet(
             n_channels=cls.C_in,
             n_outputs=cls.N_OUTPUTS,
             bilinear=True,
-        ).to(device=cls.device)
-        cls.model.eval()
+        ).to(device=cls.device, dtype=DEFAULT_DTYPE)
+        cls.uncompiled_model.eval()
+        cls.model = torch.compile(cls.uncompiled_model)
 
         # Build a representative input tensor once, reused across tests.
-        cls.model.to(DEFAULT_DTYPE)
         image = torch.zeros(
             cls.B, cls.C_in, cls.GRID, cls.GRID, device=cls.device, dtype=DEFAULT_DTYPE
         )
@@ -54,15 +55,21 @@ class TestCircleNet(unittest.TestCase):
         self.assertGreater(total, 0)
 
         submodules = [
-            ("inc", self.model.inc),
-            ("down1", self.model.down1),
-            ("down2", self.model.down2),
-            ("down3", self.model.down3),
-            ("down4", self.model.down4),
-            ("up1", self.model.up1),
-            ("up2", self.model.up2),
-            ("up3", self.model.up3),
-            ("up4", self.model.up4),
+            ("conv0_0", self.model.conv0_0),
+            ("conv1_0", self.model.conv1_0),
+            ("conv2_0", self.model.conv2_0),
+            ("conv3_0", self.model.conv3_0),
+            ("conv4_0", self.model.conv4_0),
+            ("conv0_1", self.model.conv0_1),
+            ("conv1_1", self.model.conv1_1),
+            ("conv2_1", self.model.conv2_1),
+            ("conv3_1", self.model.conv3_1),
+            ("conv0_2", self.model.conv0_2),
+            ("conv1_2", self.model.conv1_2),
+            ("conv2_2", self.model.conv2_2),
+            ("conv0_3", self.model.conv0_3),
+            ("conv1_3", self.model.conv1_3),
+            ("conv0_4", self.model.conv0_4),
             ("outc", self.model.outc),
         ]
 
@@ -77,9 +84,9 @@ class TestCircleNet(unittest.TestCase):
 
     def test_01_torchinfo_summary_runs(self):
         """torchinfo.summary can trace the model at the expected input size without error."""
-        self.model.to(torch.float32)
+        self.uncompiled_model.to(torch.float32)
         info = summary(
-            self.model,
+            self.uncompiled_model,
             input_size=(self.B, self.C_in, self.GRID, self.GRID),
             device=self.device,
             col_names=["input_size", "output_size", "num_params"],
@@ -87,7 +94,7 @@ class TestCircleNet(unittest.TestCase):
             mode="eval",
             verbose=0,
         )
-        self.model.to(DEFAULT_DTYPE)
+        self.uncompiled_model.to(DEFAULT_DTYPE)
         self.assertIsNotNone(info)
 
     def test_02_forward_pass_output_shape(self):

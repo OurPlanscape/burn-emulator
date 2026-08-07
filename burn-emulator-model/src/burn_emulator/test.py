@@ -1,16 +1,19 @@
 import copy
 import time
-from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from typing import Any
-
 import numpy as np
 import pandas as pd
 import rasterio
 import torch
+
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from torch.utils.data import DataLoader
+from typing import Any
 
 from burn_emulator.constants import DEFAULT_DTYPE, INF_PROFILE, OUTDIR, Path
 from burn_emulator.utils import dynamic_import
+
+
+torch.set_float32_matmul_precision('high')
 
 
 def _drain(pending: list[Future], limit: int) -> None:
@@ -228,6 +231,7 @@ def _run_single_test(test_name: str,
     model.load_state_dict(ckpt)
     model.to('cuda', dtype=DEFAULT_DTYPE)
     model.eval()
+    model = torch.compile(model)
 
     outdir = OUTDIR / "inference"
     if iteration is not None and scenario is not None:

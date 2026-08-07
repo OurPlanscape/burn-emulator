@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
@@ -24,11 +24,7 @@ const (
 )
 
 var (
-	validCaching = map[string]bool{
-		"none": true, "short": true, "long": true, "cdn": true,
-	}
-	validJobName   = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-	validFuelsPath = regexp.MustCompile(`^gs://[a-zA-Z0-9][a-zA-Z0-9/_.-]*$`)
+	validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 )
 
 type VariationSet map[string]bool
@@ -63,16 +59,21 @@ func LoadVariations(path string) (VariationSet, error) {
 }
 
 type jobRequestBody struct {
-	FuelsPath 		string `json:"fuels_path"`
-	TreatmentArea string `json:"treatment_area"`
-	Variation 		string `json:"variation"`
-	JobName   		string `json:"job_name"`
-	Caching   		string `json:"caching"`
+	TreatmentArea 		string	`json:"treatment_area"`
+	TreatmentBuff 		float64	`json:"treatment_buff"`
+	TreatmentSeed 		float64	`json:"treatment_seed"`
+	IgnitionDensity 	float64	`json:"ignition_density"`
+	Variation 				string	`json:"variation"`
+	JobName   				string	`json:"job_name"`
 }
 
 type jobResponseBody struct {
-	JobName string `json:"job_name"`
-	Status  string `json:"status"`
+	JobName    string `json:"job_name,omitempty"`
+	Status     string `json:"status"`
+	Variation  string `json:"variation"`
+	Cached     bool   `json:"cached"`
+	Attempts   int    `json:"attempts,omitempty"`
+	OutputPath string `json:"output_path"`
 }
 
 type JobsHandler struct {
@@ -91,7 +92,7 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientIP := auth.ClientIP(r)
 
 	if !h.Verifier.Allow(r) {
-		log.Printf("auth failure from %s", clientIP)
+		slog.Warn("auth failure", "client_ip", clientIP)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -117,38 +118,47 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
-	jobName, err := h.K8s.CreateJob(ctx, k8s.JobRequest{
-		Variation: body.Variation,
-		Caching:   body.Caching,
-		JobName:   body.JobName,
-		FuelsPath: body.FuelsPath,
+	result, err := h.K8s.CreateJob(ctx, k8s.JobRequest{
+		TreatmentArea:   body.TreatmentArea,
+		TreatmentBuff:   float32(body.TreatmentBuff),
+		TreatmentSeed:   float32(body.TreatmentSeed),
+		IgnitionDensity: float32(body.IgnitionDensity),
+		Variation:       body.Variation,
+		JobName:         body.JobName,
 	})
 	if err != nil {
-		log.Printf("job creation failed: %v", err) // don't leak internals to the caller
+		slog.Error("job creation failed", "error", err, "job_name", body.JobName, "client_ip", clientIP)
 		http.Error(w, "failed to schedule job", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("job created: name=%s variation=%s caching=%s fuels_path=%s by=%s",
-		jobName, body.Variation, body.Caching, body.FuelsPath, clientIP)
+	statusCode := http.StatusAccepted
+	if result.Status == "cached" {
+		statusCode = http.StatusOK
+	}
+
+	slog.Info("job request handled",
+		"job_name", result.JobName, "variation", body.Variation,
+		"status", result.Status, "attempts", result.Attempts, "output_path", result.OutputPath, "client_ip", clientIP)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(jobResponseBody{JobName: jobName, Status: "scheduled"})
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(jobResponseBody{
+		JobName:    result.JobName,
+		Status:     result.Status,
+		Variation:  body.Variation,
+		Cached:     result.Status == "cached",
+		Attempts:   result.Attempts,
+		OutputPath: result.OutputPath,
+	})
 }
 
 func validate(body jobRequestBody, allowed VariationSet) error {
 	if !allowed.Contains(body.Variation) {
 		return errors.New("invalid 'variation': not in the configured allow-list")
 	}
-	if !validCaching[body.Caching] {
-		return errors.New("invalid 'caching': must be one of none|short|long|cdn")
-	}
 	if !validJobName.MatchString(body.JobName) {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")
-	}
-	if !validFuelsPath.MatchString(body.FuelsPath) {
-		return errors.New("invalid 'fuels_path': must be a gs:// path")
 	}
 	return nil
 }

@@ -6,7 +6,7 @@ from torch_geometric.nn import MessagePassing
 
 
 def build_radial_graph(
-    grid_size: int = 128,
+    grid_size: int = 129,
     num_rings: int = 64,
     grid_outward: bool = True,
     src_ratio: float = 0.1,
@@ -240,8 +240,8 @@ class GNNBranch(nn.Module):
             num_rings=num_rings,
             grid_outward=grid_outward,
             src_ratio=src_ratio if src_ratio is not None else 0.1,
-            n_dst=n_dst if n_dst is not None else 4,
-            n_neighbors=n_neighbors if n_neighbors is not None else 2,
+            n_dst=n_dst,
+            n_neighbors=n_neighbors,
         )
 
         # is this even necessary?
@@ -386,7 +386,7 @@ class RadialGNN(nn.Module):
         out_channels: int = 3,
         num_layers: tuple = (64, 32, 16),
         dropout: float = 0.1,
-        grid_size: int = 128,
+        grid_size: int = 129,
         refine_ch: int = 64,
         ring_scales: tuple = (64, 32, 16),
         grid_outward: tuple = (True, False, False),
@@ -454,9 +454,22 @@ class RadialGNN(nn.Module):
         img_feats = sample_image(image, self.branches[0].pos.to(image.dtype), self.grid_size)
         feats_flat = img_feats.reshape(B * N, -1)
 
-        # branches are independent — run in parallel with jit.fork
-        futures = [torch.jit.fork(branch, feats_flat, B, missing_flat) for branch in self.branches]
-        branch_outputs = [torch.jit.wait(f) for f in futures]
+        # branches are independent — run concurrently on separate CUDA streams
+        if len(self.branches) > 1:
+            if feats_flat.is_cuda:
+                current_stream = torch.cuda.current_stream()
+                streams = [torch.cuda.Stream() for _ in self.branches]
+                branch_outputs = []
+                for stream, branch in zip(streams, self.branches):
+                    stream.wait_stream(current_stream)
+                    with torch.cuda.stream(stream):
+                        branch_outputs.append(branch(feats_flat, B, missing_flat))
+                for stream in streams:
+                    current_stream.wait_stream(stream)
+            else:
+                branch_outputs = [branch(feats_flat, B, missing_flat) for branch in self.branches]
+        else:
+            branch_outputs = [self.branches[0](feats_flat, B, missing_flat)]
 
         h = torch.cat(branch_outputs, dim=1)
         h = F.relu(self.scale_proj(h))

@@ -25,7 +25,9 @@ class IgnitionDataset(Dataset):
         burn_times: list[int] = None,
         chip_size: int = 129,
         jitter: int | None = 1,
-        treatment_area: Polygon | None = None, 
+        treatment_area: Polygon | None = None,
+        treatment_buff: Polygon | None = None,
+        treatment_seed: int = 42,
         ignition_density: float | None = None,
         circle_mask: bool = True
     ) -> None:
@@ -43,11 +45,18 @@ class IgnitionDataset(Dataset):
         self.chip_size = chip_size
         self.jitter = jitter
         self.treatment_area = treatment_area
+        self.treatment_buff = treatment_buff
+        self.treatment_seed = treatment_seed
         self.ignition_density = ignition_density
         self.circle_mask = circle_mask
-        self._set_ignitions(ignitions_path)
+        
+        self._set_ignitions(ignitions_path,
+                            treatment_area,
+                            treatment_buff,
+                            treatment_seed,
+                            ignition_density)
         self.fuels, self.topos, self.masks, self.profile = cache_inputs(
-            self.fuels_paths, self.topo_path, self.stats_path, self.window
+            self.fuels_paths, self.topo_path, self.stats_path, self.window_geo
         )
 
         if self.treatment_area is not None:
@@ -142,8 +151,6 @@ class IgnitionDataset(Dataset):
                 bps = [igd / "fire_type.tif"]
             for bp in bps:
                 with rasterio.open(bp) as src:
-                    # windowing was slower overall by a lot so reading entire array
-                    # caching 10000 images was unreasonable
                     arr = torch.tensor(src.read())
                 arr = arr[:, yslc, xslc]
                 if ydiff > 0:
@@ -157,31 +164,39 @@ class IgnitionDataset(Dataset):
         else:
             return arrX, mask, (ydiff, xdiff), (ymin, ymax, xmin, xmax), (sidx, bidx)
 
-    def _set_ignitions(self, ignitions_path):
-        match Path(ignitions_path).suffix:
-            case ".csv":
-                self.ignitions = pd.read_csv(ignitions_path)
-                if "cbp_burn" not in self.ignitions.columns:
-                    name = Path(ignitions_path).stem.split("_")[0]
-                    self.ignitions.loc[:, "cbp_burn"] = name
-                if "ignition_number" not in self.ignitions.columns:
-                    self.ignitions = self.ignitions.reset_index(names="ignition_number")
-                self.window = None
-            case (".gpkg" | ".geojson" | ".zip" ):
-                # I'm assuming the shapefile is zipped and in the appropriate EPSG code
-                gdf = gpd.read_file(self.ignitions)
-                self._sample_ignitions(gdf.geometry)
-            case "_":
-                ignitions_paths = Path(ignitions_path).glob("**/*.csv")
-                self.ignitions = []
-                for ignitions_path in sorted(ignitions_paths):
-                    name = ignitions_path.stem.split("_")[0]
-                    ignition = pd.read_csv(ignitions_path)
-                    ignition = ignition.reset_index(names="ignition_number")
-                    ignition.loc[:, "cbp_burn"] = name
-                    self.ignitions.append(ignition)
-                self.ignitions = pd.concat(self.ignitions)
-                self.window = None
+    def _set_ignitions(self,
+                       ignitions_path=None,
+                       treatment_area=None,
+                       treatment_buff=None,
+                       treatment_seed=42,
+                       ignition_density=None):
+        if ignitions_path is None:
+            buffer_gs = gpd.GeoSeries([treatment_buff])
+            self._sample_ignitions(buffer_gs, ignition_density, treatment_seed)
+        else:
+            match Path(ignitions_path).suffix:
+                case ".csv":
+                    self.ignitions = pd.read_csv(ignitions_path)
+                    if "cbp_burn" not in self.ignitions.columns:
+                        name = Path(ignitions_path).stem.split("_")[0]
+                        self.ignitions.loc[:, "cbp_burn"] = name
+                    if "ignition_number" not in self.ignitions.columns:
+                        self.ignitions = self.ignitions.reset_index(names="ignition_number")
+                    self.window_geo = None
+                case ( ".gpkg" | ".geojson" | ".zip" ):
+                    gdf = gpd.read_file(self.ignitions)
+                    self._sample_ignitions(gdf.geometry, ignition_density, self.treatment_seed)
+                case _:
+                    ignitions_paths = Path(ignitions_path).glob("**/*.csv")
+                    self.ignitions = []
+                    for ignitions_path in sorted(ignitions_paths):
+                        name = ignitions_path.stem.split("_")[0]
+                        ignition = pd.read_csv(ignitions_path)
+                        ignition = ignition.reset_index(names="ignition_number")
+                        ignition.loc[:, "cbp_burn"] = name
+                        self.ignitions.append(ignition)
+                    self.ignitions = pd.concat(self.ignitions)
+                    self.window_geo = None
 
     def _set_circle_mask(self) -> Tensor:
         h = w = self.chip_size
@@ -196,13 +211,17 @@ class IgnitionDataset(Dataset):
         self.cmask = (dist <= radius).float()
         return self.cmask.view(1, h, w)
     
-    def _sample_ignitions(self, gs: gpd.GeoSeries):
-        n_points = round(gs.area.sum() * self.ignition_density)
-
-        sampled = gs.sample_points(size=n_points)
+    def _sample_ignitions(self,
+                          gs: gpd.GeoSeries,
+                          ignition_density: float = 0.0001,
+                          treatment_seed: int = 42):
+        n_points = round(gs.area.sum() * ignition_density)
+        sampled = gs.sample_points(size=n_points, seed=treatment_seed)
         sampled = sampled.explode(index_parts=False).reset_index(drop=True)
-
-        self.ignitions = gpd.GeoDataFrame(geometry=sampled, crs=gdf.crs)
+        self.ignitions = gpd.GeoDataFrame(geometry=sampled, crs=gs.crs)
+        self.window_geo = gs.union_all().envelope
+    
+    def _locate_ignitions(self):
         xs = self.ignitions.geometry.x.to_numpy()
         ys = self.ignitions.geometry.y.to_numpy()
         rows, cols = rowcol(self.profile["transform"], xs, ys)

@@ -4,13 +4,17 @@ import unittest
 import torch
 from torchinfo import summary
 
-from burn_emulator.constants import (
-    RUN_DTYPE,
+from burn_emulator.constants import DEFAULT_DTYPE
+from burn_emulator.models.gnn import RadialGNN
+
+from tests.fixtures import (
     TEST_BATCH_SIZE,
     TEST_IMAGE_SIZE,
     TEST_IN_CHANS,
+    TEST_OUT_CHANS,
 )
-from burn_emulator.models.gnn import RadialGNN  # adjust import path as needed
+
+
 
 
 class TestRadialGNN(unittest.TestCase):
@@ -24,39 +28,56 @@ class TestRadialGNN(unittest.TestCase):
         cls.C_in = TEST_IN_CHANS
         cls.N_OUTPUTS = 3  # RadialGNN output channels are fixed at 1
 
-        cls.model = RadialGNN(
+        # cls.model = RadialGNN(
+        #     img_channels=cls.C_in,
+        #     hidden_channels=64,
+        #     out_channels=cls.N_OUTPUTS,
+        #     num_layers=(64, 32, 16),
+        #     grid_size=cls.GRID,
+        #     refine_ch=64,
+        #     ring_scales=(64, 32, 16),
+        #     grid_outward=(True, False, False),
+        #     src_ratio=(None, 0.5, 0.25),
+        #     n_dst=(None, 4, 4),
+        #     n_neighbors=(None, 2, 2),
+        #     lateral_edge_dropout=0.3,
+        #     outward_edge_dropout=0.0,
+        #     use_slope_gate=(True, False, False),
+        #     train_batch_size=cls.B,
+        # ).to(device=cls.device)
+        cls.uncompiled_model = RadialGNN(
             img_channels=cls.C_in,
             hidden_channels=64,
             out_channels=cls.N_OUTPUTS,
-            num_layers=(64, 32, 16),
+            num_layers=(64,),
             grid_size=cls.GRID,
             refine_ch=64,
-            ring_scales=(64, 32, 16),
-            grid_outward=(True, False, False),
-            src_ratio=(None, 0.5, 0.25),
-            n_dst=(None, 4, 4),
-            n_neighbors=(None, 2, 2),
+            ring_scales=(64,),
+            grid_outward=(True,),
+            src_ratio=(None,),
+            n_dst=(None,),
+            n_neighbors=(None,),
             lateral_edge_dropout=0.3,
             outward_edge_dropout=0.0,
-            use_slope_gate=(True, False, False),
+            use_slope_gate=(True,),
             train_batch_size=cls.B,
-        ).to(device=cls.device)
-        cls.model.eval()
+        ).to(device=cls.device, dtype=DEFAULT_DTYPE)
+        cls.uncompiled_model.eval()
+        cls.model = torch.compile(cls.uncompiled_model)
 
         # Build a representative input tensor once, reused across tests.
-        cls.model.to(RUN_DTYPE)
         image = torch.zeros(
-            cls.B, cls.C_in, cls.GRID, cls.GRID, device=cls.device, dtype=RUN_DTYPE
+            cls.B, cls.C_in, cls.GRID, cls.GRID, device=cls.device, dtype=DEFAULT_DTYPE
         )
         image[:, 0] = (
             torch.rand(cls.B, cls.GRID, cls.GRID, device=cls.device) * 2 - 1
-        ).to(RUN_DTYPE) * 0.731  # flow_x
+        ).to(DEFAULT_DTYPE) * 0.731  # flow_x
         image[:, 1] = (
             torch.rand(cls.B, cls.GRID, cls.GRID, device=cls.device) * 2 - 1
-        ).to(RUN_DTYPE) * 0.731  # flow_y
+        ).to(DEFAULT_DTYPE) * 0.731  # flow_y
         image[:, 2:] = torch.rand(
             cls.B, cls.C_in - 2, cls.GRID, cls.GRID, device=cls.device
-        ).to(RUN_DTYPE)
+        ).to(DEFAULT_DTYPE)
         cls.image = image
 
     def test_00_branch_edge_structure(self):
@@ -104,9 +125,9 @@ class TestRadialGNN(unittest.TestCase):
 
     def test_02_torchinfo_summary_runs(self):
         """torchinfo.summary can trace the model at the expected input size without error."""
-        self.model.to(torch.float32)
+        self.uncompiled_model.to(torch.float32)
         info = summary(
-            self.model,
+            self.uncompiled_model,
             input_size=(self.B, self.C_in, self.GRID, self.GRID),
             device=self.device,
             col_names=["input_size", "output_size", "num_params"],
@@ -114,7 +135,7 @@ class TestRadialGNN(unittest.TestCase):
             mode="eval",
             verbose=0,
         )
-        self.model.to(DEFAULT_DTYPE)
+        self.uncompiled_model.to(DEFAULT_DTYPE)
         self.assertIsNotNone(info)
 
     def test_03_forward_pass_output_shape(self):

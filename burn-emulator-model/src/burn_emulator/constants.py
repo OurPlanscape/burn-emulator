@@ -2,6 +2,11 @@ import os
 
 import torch
 
+
+torch.set_float32_matmul_precision('high')
+torch.backends.cudnn.benchmark = True
+
+
 RUN_DEVICE = os.environ.get("RUN_DEVICE", "cuda")
 RUN_DTYPE = os.environ.get("RUN_DTYPE", "float")
 USE_CLOUD_PATHS = os.environ.get("USE_CLOUD_PATHS") == 1
@@ -12,7 +17,7 @@ else:
 
 __all__ = ["Path"]
 
-
+# TODO: potentially change to enums
 # training constants
 DEFAULT_DTYPE = torch.bfloat16  # default trainining dtype for memory saving
 NO_DATA = -1  # no data value for NN inputs
@@ -52,13 +57,3 @@ INPUT_KEYS = ["cbd", "cbh", "cc", "fbfm", "th"]
 METHODS = ["train", "test", "test_iterations", "package", "run"]
 OUTDIR = Path("data/outputs")
 DOCKERDIR = Path("docker")
-
-# test constants
-TEST_BATCH_SIZE = 32
-TEST_IMAGE_SIZE = 129
-TEST_IN_CHANS = 19
-TEST_OUT_CHANS = 3
-
-# TODO: give these proper paths
-TEST_FIXTURES_DIR = Path(__file__).parent.parent.parent / "configs"
-TEST_CONFIG_PATH = TEST_FIXTURES_DIR / "ignition_dataset_config.yaml"

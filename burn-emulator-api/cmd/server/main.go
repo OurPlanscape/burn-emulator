@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -17,7 +17,8 @@ import (
 func env(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Fatalf("missing required env var: %s", key)
+		slog.Error("missing required env var", "key", key)
+		os.Exit(1)
 	}
 	return v
 }
@@ -30,29 +31,36 @@ func envDefault(key, fallback string) string {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	ctx := context.Background()
+
 	cfg := k8s.Config{
 		Namespace:      env("BURN_EMULATOR_JOB_NAMESPACE"),
 		ServiceAccount: env("BURN_EMULATOR_JOB_SERVICE_ACCOUNT"),
-		ImageStore:			env("BURN_EMULATOR_ARTIFACT_STORE"),
+		ImageStore:     env("BURN_EMULATOR_ARTIFACT_STORE"),
 		OutputBucket:   env("BURN_EMULATOR_OUTPUT_BUCKET"),
+		RedisAddr:      env("BURN_EMULATOR_REDIS_ADDR"),
 	}
 
-	k8sClient, err := k8s.NewClient(cfg)
+	k8sClient, err := k8s.NewClient(ctx, cfg)
 	if err != nil {
-		log.Fatalf("failed to init k8s client: %v", err)
+		slog.Error("failed to init k8s client", "error", err)
+		os.Exit(1)
 	}
 
 	variationsPath := envDefault("VARIATIONS_FILE", "configs/variations.yaml")
 	validVariations, err := handlers.LoadVariations(variationsPath)
 	if err != nil {
-		log.Fatalf("failed to load variations allow-list: %v", err)
+		slog.Error("failed to load variations allow-list", "path", variationsPath, "error", err)
+		os.Exit(1)
 	}
 
-	ctx := context.Background()
 	allowedCallers := strings.Split(env("BURN_EMULATOR_ALLOWED_CALLERS"), ",")
 	verifier, err := auth.NewVerifier(ctx, env("BURN_EMULATOR_TOKEN_AUDIENCE"), allowedCallers)
 	if err != nil {
-		log.Fatalf("failed to init auth verifier: %v", err)
+		slog.Error("failed to init auth verifier", "error", err)
+		os.Exit(1)
 	}
 	limiter := ratelimit.NewStore(1, 5)
 
@@ -77,11 +85,14 @@ func main() {
 	srv := &http.Server{
 		Addr:              ":8080",
 		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second, // SECURITY: mitigates slowloris-style attacks
+		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
 
-	log.Println("burn-emulator-api listening on :8080")
-	log.Fatal(srv.ListenAndServe())
+	slog.Info("burn-emulator-api listening", "addr", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil {
+		slog.Error("server exited", "error", err)
+		os.Exit(1)
+	}
 }

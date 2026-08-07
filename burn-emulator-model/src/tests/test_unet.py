@@ -4,14 +4,15 @@ import unittest
 import torch
 from torchinfo import summary
 
-from burn_emulator.constants import (
-    RUN_DTYPE,
+from burn_emulator.constants import DEFAULT_DTYPE
+from burn_emulator.models.unet import UNet
+
+from tests.fixtures import (
     TEST_BATCH_SIZE,
     TEST_IMAGE_SIZE,
     TEST_IN_CHANS,
     TEST_OUT_CHANS,
 )
-from burn_emulator.models.unet import UNet  # adjust import path as needed
 
 
 class TestUNet(unittest.TestCase):
@@ -25,27 +26,27 @@ class TestUNet(unittest.TestCase):
         cls.C_in = TEST_IN_CHANS
         cls.N_OUTPUTS = TEST_OUT_CHANS
 
-        cls.model = UNet(
+        cls.uncompiled_model = UNet(
             n_channels=cls.C_in,
             n_outputs=cls.N_OUTPUTS,
             bilinear=True,
-        ).to(device=cls.device)
-        cls.model.eval()
+        ).to(device=cls.device, dtype=DEFAULT_DTYPE)
+        cls.uncompiled_model.eval()
+        cls.model = torch.compile(cls.uncompiled_model)
 
         # Build a representative input tensor once, reused across tests.
-        cls.model.to(RUN_DTYPE)
         image = torch.zeros(
-            cls.B, cls.C_in, cls.GRID, cls.GRID, device=cls.device, dtype=RUN_DTYPE
+            cls.B, cls.C_in, cls.GRID, cls.GRID, device=cls.device, dtype=DEFAULT_DTYPE
         )
         image[:, 0] = (
             torch.rand(cls.B, cls.GRID, cls.GRID, device=cls.device) * 2 - 1
-        ).to(RUN_DTYPE) * 0.731  # flow_x
+        ).to(DEFAULT_DTYPE) * 0.731  # flow_x
         image[:, 1] = (
             torch.rand(cls.B, cls.GRID, cls.GRID, device=cls.device) * 2 - 1
-        ).to(RUN_DTYPE) * 0.731  # flow_y
+        ).to(DEFAULT_DTYPE) * 0.731  # flow_y
         image[:, 2:] = torch.rand(
             cls.B, cls.C_in - 2, cls.GRID, cls.GRID, device=cls.device
-        ).to(RUN_DTYPE)
+        ).to(DEFAULT_DTYPE)
         cls.image = image
 
     def test_00_parameter_breakdown(self):
@@ -75,9 +76,9 @@ class TestUNet(unittest.TestCase):
 
     def test_01_torchinfo_summary_runs(self):
         """torchinfo.summary can trace the model at the expected input size without error."""
-        self.model.to(torch.float32)
+        self.uncompiled_model.to(torch.float32)
         info = summary(
-            self.model,
+            self.uncompiled_model,
             input_size=(self.B, self.C_in, self.GRID, self.GRID),
             device=self.device,
             col_names=["input_size", "output_size", "num_params"],
@@ -85,7 +86,7 @@ class TestUNet(unittest.TestCase):
             mode="eval",
             verbose=0,
         )
-        self.model.to(DEFAULT_DTYPE)
+        self.uncompiled_model.to(DEFAULT_DTYPE)
         self.assertIsNotNone(info)
 
     def test_02_forward_pass_output_shape(self):

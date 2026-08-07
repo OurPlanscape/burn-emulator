@@ -1,12 +1,13 @@
 import heapq
 import importlib
-
 import numpy as np
 import rasterio
 import torch
 import torch.nn.functional as F
 import yaml
+
 from rasterio.windows import Window
+from shapely.geometry import Polygon
 
 from burn_emulator.constants import DEFAULT_DTYPE, FBFM_OH_MAP, INPUT_KEYS, NO_DATA, USE_CLOUD_PATHS, Path
 
@@ -32,7 +33,7 @@ def cache_inputs(
     topo_path: list[Path],
     stats_path: dict,
     flow: bool = True,
-    window: Window = None
+    window_geo: Polygon = None
 ) -> tuple[dict, dict, dict]:
     inputs = {}
     topos = {}
@@ -43,12 +44,13 @@ def cache_inputs(
 
         inputs[fkey] = {}
         fuels_files = fuels_path.glob("*.tif")
+        # TODO: convert to zarr/icechunk inputs
         for file in fuels_files:
             name = file.stem.rsplit("_", 1)[1]
             if name not in INPUT_KEYS:
                 continue
-            with rasterio.open(file, window=window) as src:
-                dat = torch.tensor(src.read())
+            with rasterio.open(file) as src:
+                dat = torch.tensor(src.read(window=window))
                 if name == 'fbfm':
                     profile = src.profile
                     masks[fkey] = torch.tensor(dat == src.nodata)
@@ -93,12 +95,11 @@ def cache_inputs(
         with stats_path.open("w") as file:
             yaml.dump(stats, file, sort_keys=False)
     
-    
     if flow:
-        with rasterio.open(topo_path / "aspect.tif", window=window) as src:
-            aspect = torch.tensor(src.read()).to(DEFAULT_DTYPE)
-        with rasterio.open(topo_path / "slope_degrees.tif", window=window) as src:
-            slope = torch.tensor(src.read()).to(DEFAULT_DTYPE)
+        with rasterio.open(topo_path / "aspect.tif") as src:
+            aspect = torch.tensor(src.read(window=window)).to(DEFAULT_DTYPE)
+        with rasterio.open(topo_path / "slope_degrees.tif") as src:
+            slope = torch.tensor(src.read(window=window)).to(DEFAULT_DTYPE)
         flow_x, flow_y = to_flow(aspect, slope)
         topos['flow_x'] = flow_x
         topos['flow_y'] = flow_y

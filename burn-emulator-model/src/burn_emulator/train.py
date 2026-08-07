@@ -2,7 +2,9 @@ import time
 from typing import Any
 
 import pandas as pd
+import torch
 import torch.nn as nn
+
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
@@ -24,6 +26,7 @@ def train_model(
 
     model.to("cuda", dtype=DEFAULT_DTYPE)
     model.train()
+    model = torch.compile(model)
     start_time = time.perf_counter()
     for epoch in range(num_epochs):
         train_loss_acc = 0
