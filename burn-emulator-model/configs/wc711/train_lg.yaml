@@ -1,7 +1,7 @@
 dataloader:
     class_path: torch.utils.data.DataLoader
     init_args:
-        batch_size: 256
+        batch_size: 512
         shuffle: true
         pin_memory: false
         drop_last: true
@@ -12,5 +12,5 @@ optimizer:
 criterion:
     class_path: burn_emulator.criterions.DiceCELoss
     init_args: {}
-num_epochs: 16
-model_name: wc711_480_of_rand_wind_10
+num_epochs: 32
+model_name: wc711_480_wind

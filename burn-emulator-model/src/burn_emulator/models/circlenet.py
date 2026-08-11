@@ -10,8 +10,6 @@ from torch import Tensor
 from torch.nn.modules.utils import _pair
 from torch.nn.parameter import Parameter
 
-from burn_emulator.models.unet import OutConv
-
 
 class CircleLayerBase(nn.Module):
     def __init__(
@@ -357,7 +355,7 @@ class CircleNet(nn.Module):
 
         self.conv0_4 = DoubleCircleConv(nb_filter[0] * 4 + uc0, nb_filter[0], cond_dim=cond_dim)
 
-        self.outc = OutConv(nb_filter[0], n_outputs)
+        self.outc = DoubleCircleConv(nb_filter[0], n_outputs, cond_dim=cond_dim)
 
     def forward(self, x: Tensor, angle_degrees: Tensor | None = None) -> Tensor:
         cond: Tensor | None = None
@@ -404,5 +402,5 @@ class CircleNet(nn.Module):
             torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1_0(x1_3, x0_0.shape[2:])], dim=1), cond
         )
 
-        logits: Tensor = self.outc(x0_4)
+        logits: Tensor = self.outc(x0_4, cond)
         return logits

@@ -5,9 +5,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=50000
+#SBATCH --mem=100000
 #SBATCH --nodelist=dragon04
-#SBATCH --array=0-1%2
+#SBATCH --array=0-0%2
 
 
 
@@ -21,8 +21,8 @@ source /mnt/data/mtruong/burn-emulator/burn-emulator-model/.venv/bin/activate
 CONFIG_DIR=/mnt/data/mtruong/burn-emulator/burn-emulator-model/configs/wc711
 
 TRAIN_CONFIGS=(
-    "train_of"
-    "train_sm"
+    "train_lg"
+    #"train_sm"
 )
 
 TRAIN_CFG=${TRAIN_CONFIGS[$SLURM_ARRAY_TASK_ID]}
@@ -42,10 +42,9 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
 fi
 
 burn_emulator -m train \
-    -c "$CONFIG_DIR/$TRAIN_CFG.yaml" \
-    -c "$CONFIG_DIR/dataloader.yaml" \
     -c "$CONFIG_DIR/dataset.yaml" \
-    -c "$CONFIG_DIR/circle.yaml"
+    -c "$CONFIG_DIR/circle.yaml" \
+    -c "$CONFIG_DIR/$TRAIN_CFG.yaml"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null
