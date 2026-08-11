@@ -19,6 +19,7 @@ __all__ = ["Path"]
 
 # TODO: potentially change to enums
 # training constants
+DEFAULT_DEVICE = torch.device(RUN_DEVICE)  # default device for training
 DEFAULT_DTYPE = torch.bfloat16  # default trainining dtype for memory saving
 NO_DATA = -1  # no data value for NN inputs
 
@@ -54,6 +55,5 @@ INF_PROFILE = {
 INPUT_KEYS = ["cbd", "cbh", "cc", "fbfm", "th"]
 
 # path constants
-METHODS = ["train", "test", "test_iterations", "package", "run"]
+METHODS = ["train", "test", "test_iterations", "run"]
 OUTDIR = Path("data/outputs")
-DOCKERDIR = Path("docker")

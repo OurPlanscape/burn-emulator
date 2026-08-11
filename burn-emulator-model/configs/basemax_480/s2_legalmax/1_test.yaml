@@ -8,7 +8,7 @@ dataset:
         topo_path: data/topo
         stats_path: data/stats.yaml
         burn_times: [480]
-        chip_size: 128
+        window_size: 128
         jitter: null
 activation: 
     class_path: torch.nn.Sigmoid

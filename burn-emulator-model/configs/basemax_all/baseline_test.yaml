@@ -9,7 +9,7 @@ dataset:
         topo_path: data/topo
         stats_path: data/burn_emulator/data/stats.yaml
         burn_times: [480, 960, 1440, 1920, 2400]
-        chip_size: 128
+        window_size: 128
         jitter: null
 
 test_name: baseline

@@ -9,15 +9,18 @@ class Reducer(nn.Module):
     def __init__(self, reduction: str) -> None:
         super().__init__()
         self.reduction = reduction
+        match reduction:
+            case "none":
+                self.reduce = lambda inputs: inputs
+            case "mean":
+                self.reduce = torch.mean
+            case "sum":
+                self.reduce = torch.sum
+            case _:
+                raise ValueError(f"unknown reduction option: {reduction}")
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        match self.reduction:
-            case "none":
-                return torch.identity(inputs)
-            case "mean":
-                return torch.mean(inputs)
-            case "sum":
-                return torch.sum(inputs)
+        return self.reduce(inputs)
 
 
 class DiceLoss(nn.Module):
@@ -25,14 +28,12 @@ class DiceLoss(nn.Module):
         self,
         reduction: str = "mean",
         multiclass: bool = False,
-        ignore_classes: list | None = None,
         epsilon: float = 1e-6,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.reduction = reduction
         self.multiclass = multiclass
-        self.ignore_classes = ignore_classes
         self.epsilon = epsilon
         self.reducer = Reducer(reduction)
 
@@ -56,11 +57,10 @@ class DiceLoss(nn.Module):
 class DiceCELoss(nn.Module):
     def __init__(
         self,
-        dice_weight: float = 1.0,
-        ce_weight: float = 1.0,
+        dice_weight: float = .5,
+        ce_weight: float = .5,
         reduction: str = "mean",
-        multiclass: bool = False,
-        ignore_classes: list | None = None,
+        multiclass: bool = True,
         epsilon: float = 1e-6,
         **kwargs,
     ) -> None:
@@ -70,10 +70,9 @@ class DiceCELoss(nn.Module):
         self.dice_loss = DiceLoss(
             reduction=reduction,
             multiclass=multiclass,
-            ignore_classes=ignore_classes,
             epsilon=epsilon,
         )
-        self.ce_loss = (
+        self.ce_loss = (    
             nn.CrossEntropyLoss(reduction=reduction)
             if multiclass
             else nn.BCEWithLogitsLoss(reduction=reduction)

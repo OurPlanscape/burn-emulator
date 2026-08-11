@@ -27,7 +27,7 @@ def load_configs(config_dir: str | None, config_paths: list[str] | None) -> Dict
 
 
 def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
-    for key in ("ckpt_path", "out_path", "run_name"):
+    for key in ("ckpt_path", "out_path", "run_name", "model_name"):
         value = getattr(args, key)
         if value is not None:
             OmegaConf.update(configs, key, value, merge=True)
@@ -42,20 +42,17 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
         if value
     }
 
-    treatment_area = shape(json.loads(args.treatment_area)) if args.treatment_area else None
-    treatment_buff = None
+    geometry_overrides = {}
+    geometry_overrides["treatment_area"] = shape(json.loads(args.treatment_area)) if args.treatment_area else None
     if args.treatment_buff:
-        if treatment_area is None:
-            treatment_area = OmegaConf.select(configs, "dataset.init_args.treatment_area")
         if treatment_area is None:
             raise ValueError(
                 "--treatment_buff requires --treatment_area (on the CLI or already in the "
                 "loaded config's dataset.init_args)"
             )
-        treatment_buff = treatment_area.envelope.buffer(args.treatment_buff)
+        geometry_overrides["treatment_buff"] = area_for_buff.envelope.buffer(args.treatment_buff)
 
-    has_dataset_overrides = scalar_dataset_overrides or treatment_area is not None or treatment_buff is not None
-    if has_dataset_overrides:
+    if scalar_dataset_overrides:
         if OmegaConf.select(configs, "dataset.init_args") is None:
             raise ValueError(
                 "dataset overrides were given on the CLI, but no 'dataset.init_args' section "
@@ -63,14 +60,8 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
             )
         for key, value in scalar_dataset_overrides.items():
             OmegaConf.update(configs, f"dataset.init_args.{key}", value, merge=True)
-
     configs = OmegaConf.to_container(configs, resolve=True)
 
-    geometry_overrides = {}
-    if args.treatment_area:
-        geometry_overrides["treatment_area"] = treatment_area
-    if treatment_buff is not None:
-        geometry_overrides["treatment_buff"] = treatment_buff
     if geometry_overrides:
         configs["dataset"]["init_args"].update(geometry_overrides)
 
@@ -82,14 +73,15 @@ def main():
     parser.add_argument("-m", "--method", default="train", choices=METHODS)
     parser.add_argument("-C", "--config_dir", action="store")
     parser.add_argument("-c", "--config", action="append")
-    parser.add_argument("-p", "--ckpt_path", action="store")
     parser.add_argument("-f", "--fuels_path", action="append")
     parser.add_argument("-ta", "--treatment_area", action="store")
     parser.add_argument("-tb", "--treatment_buff", action="store")
     parser.add_argument("-ts", "--treatment_seed", action="store", type=int, default=42)
     parser.add_argument("-id", "--ignition_density", action="store", type=float)
+    parser.add_argument("-p", "--ckpt_path", action="store")
     parser.add_argument("-o", "--out_path", action="store")
     parser.add_argument("-n", "--run_name", action="store")
+    parser.add_argument("-mn", "--model_name", action="store")
     args = parser.parse_args()
 
     configs = load_configs(args.config_dir, args.config)

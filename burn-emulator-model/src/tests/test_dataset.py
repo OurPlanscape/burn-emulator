@@ -40,7 +40,7 @@ class TestIgnitionDataset(unittest.TestCase):
                 f"{[str(p) for p in missing]}"
             )
 
-        cls.chip_size = cls.init_args["chip_size"]
+        cls.window_size = cls.init_args["window_size"]
         cls.n_burn_times = len(cls.init_args["burn_times"])
         cls.dataset = IgnitionDataset(**cls.init_args)
 
@@ -58,14 +58,14 @@ class TestIgnitionDataset(unittest.TestCase):
         arrX, arrY, mask = self.dataset[0]
 
         self.assertEqual(arrX.ndim, 3)
-        self.assertEqual(tuple(arrX.shape[-2:]), (self.chip_size, self.chip_size))
+        self.assertEqual(tuple(arrX.shape[-2:]), (self.window_size, self.window_size))
         self.assertEqual(arrX.dtype, DEFAULT_DTYPE)
 
-        self.assertEqual(tuple(arrY.shape[-2:]), (self.chip_size, self.chip_size))
+        self.assertEqual(tuple(arrY.shape[-2:]), (self.window_size, self.window_size))
         self.assertEqual(arrY.shape[0], self.n_burn_times)
         self.assertEqual(arrY.dtype, torch.bool)
 
-        self.assertEqual(tuple(mask.shape[-2:]), (self.chip_size, self.chip_size))
+        self.assertEqual(tuple(mask.shape[-2:]), (self.window_size, self.window_size))
         self.assertEqual(mask.dtype, torch.bool)
 
     def test_03_getitem_is_deterministic_without_jitter(self):
@@ -92,7 +92,7 @@ class TestIgnitionDataset(unittest.TestCase):
         indices = sorted({0, 1, n // 2, n - 2, n - 1})
         for idx in indices:
             arrX, _, _ = self.dataset[idx]
-            self.assertEqual(tuple(arrX.shape[-2:]), (self.chip_size, self.chip_size))
+            self.assertEqual(tuple(arrX.shape[-2:]), (self.window_size, self.window_size))
 
     def test_06_dataloader_batches_correctly(self):
         """Dataset is batchable via the default collate function (uniform chip shapes)."""
@@ -100,7 +100,7 @@ class TestIgnitionDataset(unittest.TestCase):
         arrX, arrY, mask = next(iter(loader))
 
         self.assertEqual(arrX.shape[0], 4)
-        self.assertEqual(tuple(arrX.shape[-2:]), (self.chip_size, self.chip_size))
+        self.assertEqual(tuple(arrX.shape[-2:]), (self.window_size, self.window_size))
         self.assertEqual(mask.shape[0], 4)
 
 
@@ -120,7 +120,7 @@ class TestIgnitionDatasetInferenceMode(unittest.TestCase):
                 f"{[str(p) for p in missing]}"
             )
 
-        cls.chip_size = init_args["chip_size"]
+        cls.window_size = init_args["window_size"]
         cls.dataset = IgnitionDataset(**init_args)
 
     def test_00_len_matches_ignitions_only(self):
@@ -131,8 +131,8 @@ class TestIgnitionDatasetInferenceMode(unittest.TestCase):
         """Inference-mode getitem returns arrX, mask, pad-diffs, window bounds, and indices."""
         arrX, mask, (ydiff, xdiff), (ymin, ymax, xmin, xmax), (sidx, bidx) = self.dataset[0]
 
-        self.assertEqual(tuple(arrX.shape[-2:]), (self.chip_size, self.chip_size))
-        self.assertEqual(tuple(mask.shape[-2:]), (self.chip_size, self.chip_size))
+        self.assertEqual(tuple(arrX.shape[-2:]), (self.window_size, self.window_size))
+        self.assertEqual(tuple(mask.shape[-2:]), (self.window_size, self.window_size))
         self.assertEqual(mask.dtype, torch.bool)
         self.assertIsInstance(sidx, int)
         self.assertIsInstance(bidx, int)

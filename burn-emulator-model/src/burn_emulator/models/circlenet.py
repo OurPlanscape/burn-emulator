@@ -166,9 +166,9 @@ class CircleConv3x3(CircleLayerBase):
         )
         self.init_weights()
         if self.kernel_size != 1:
-            w_transform_matrix: Tensor = self.get_w_transform_matrix()  
+            w_transform_matrix: Tensor = self.get_w_transform_matrix()
             self.register_buffer("w_transform_matrix", w_transform_matrix)
-            
+
             # this saves 3ms per forward pass for B=32 inference
             if not self.training:
                 self.weight = self.weight.view(-1, self.kernel_size * self.kernel_size)
@@ -206,36 +206,80 @@ class CircleConv3x3(CircleLayerBase):
         return np.array(weights), select_x_indexes
 
 
+class FiLM(nn.Module):
+    def __init__(self, cond_dim: int, num_channels: int, hidden_dim: int | None = None) -> None:
+        super().__init__()
+        hidden_dim = hidden_dim or max(cond_dim * 4, 16)
+        self.num_channels = num_channels
+        self.net = nn.Sequential(
+            nn.Linear(cond_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, num_channels * 2),
+        )
+        init.zeros_(self.net[-1].weight)
+        init.zeros_(self.net[-1].bias)
+
+    def forward(self, x: Tensor, cond: Tensor) -> Tensor:
+        gamma_beta: Tensor = self.net(cond)
+        gamma, beta = gamma_beta.chunk(2, dim=-1)
+        gamma = (1.0 + gamma).view(-1, self.num_channels, 1, 1)
+        beta = beta.view(-1, self.num_channels, 1, 1)
+        return gamma * x + beta
+
+
 class DoubleCircleConv(nn.Module):
     def __init__(
-        self, in_channels: int, out_channels: int, mid_channels: int | None = None
+        self,
+        in_channels: int,
+        out_channels: int,
+        mid_channels: int | None = None,
+        cond_dim: int | None = None,
     ) -> None:
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
-        self.double_conv = nn.Sequential(
-            CircleConv3x3(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            CircleConv3x3(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-        )
 
-    def forward(self, x: Tensor) -> Tensor:
-        return self.double_conv(x)
+        self.cond_dim = cond_dim
+
+        self.conv1 = CircleConv3x3(in_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(mid_channels)
+        self.relu1 = nn.ReLU(inplace=True)
+
+        self.conv2 = CircleConv3x3(mid_channels, out_channels, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu2 = nn.ReLU(inplace=True)
+
+        if cond_dim is not None:
+            self.film1 = FiLM(cond_dim, mid_channels)
+            self.film2 = FiLM(cond_dim, out_channels)
+
+    def forward(self, x: Tensor, cond: Tensor | None = None) -> Tensor:
+        x = self.conv1(x)
+        x = self.bn1(x)
+        if self.cond_dim is not None:
+            assert cond is not None, "cond_dim was set but no cond tensor was passed"
+            x = self.film1(x, cond)
+        x = self.relu1(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        if self.cond_dim is not None:
+            x = self.film2(x, cond)
+        x = self.relu2(x)
+        return x
 
 
 class CircleDown(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int) -> None:
+    def __init__(self, in_channels: int, out_channels: int, cond_dim: int | None = None) -> None:
         super().__init__()
-        self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
-            DoubleCircleConv(in_channels, out_channels),
-        )
+        # Split out of nn.Sequential because DoubleCircleConv now needs a
+        # second (cond) argument, which Sequential can't pass through.
+        self.pool = nn.MaxPool2d(2)
+        self.conv = DoubleCircleConv(in_channels, out_channels, cond_dim=cond_dim)
 
-    def forward(self, x: Tensor) -> Tensor:
-        return self.maxpool_conv(x)
+    def forward(self, x: Tensor, cond: Tensor | None = None) -> Tensor:
+        x = self.pool(x)
+        return self.conv(x, cond)
 
 
 class CircleUpsample(nn.Module):
@@ -253,22 +297,41 @@ class CircleUpsample(nn.Module):
         return self.up(x, output_size=target_size)
 
 
+class AngleEncoder(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, angle_degrees: Tensor) -> Tensor:
+        radians = angle_degrees * (math.pi / 180.0)
+        return torch.stack([torch.sin(radians), torch.cos(radians)], dim=-1)
+
+
 class CircleNet(nn.Module):
-    def __init__(self, n_channels: int, n_outputs: int, bilinear: bool = True) -> None:
+    def __init__(
+        self,
+        n_channels: int,
+        n_outputs: int,
+        bilinear: bool = True,
+        cond_dim: int | None = 2,
+    ) -> None:
         super().__init__()
         self.n_channels: int = n_channels
         self.n_outputs: int = n_outputs
         self.bilinear: bool = bilinear
+        self.cond_dim: int | None = cond_dim
+
+        if cond_dim is not None:
+            self.angle_encoder = AngleEncoder()
 
         factor: int = 2 if bilinear else 1
         nb_filter: list[int] = [64, 128, 256, 512, 1024 // factor]
         self.nb_filter: list[int] = nb_filter
 
-        self.conv0_0 = DoubleCircleConv(n_channels, nb_filter[0])
-        self.conv1_0 = CircleDown(nb_filter[0], nb_filter[1])
-        self.conv2_0 = CircleDown(nb_filter[1], nb_filter[2])
-        self.conv3_0 = CircleDown(nb_filter[2], nb_filter[3])
-        self.conv4_0 = CircleDown(nb_filter[3], nb_filter[4])
+        self.conv0_0 = DoubleCircleConv(n_channels, nb_filter[0], cond_dim=cond_dim)
+        self.conv1_0 = CircleDown(nb_filter[0], nb_filter[1], cond_dim=cond_dim)
+        self.conv2_0 = CircleDown(nb_filter[1], nb_filter[2], cond_dim=cond_dim)
+        self.conv3_0 = CircleDown(nb_filter[2], nb_filter[3], cond_dim=cond_dim)
+        self.conv4_0 = CircleDown(nb_filter[3], nb_filter[4], cond_dim=cond_dim)
 
         self.up1_0 = CircleUpsample(nb_filter[1], nb_filter[0], bilinear)
         self.up2_0 = CircleUpsample(nb_filter[2], nb_filter[1], bilinear)
@@ -280,60 +343,65 @@ class CircleNet(nn.Module):
         uc2: int = nb_filter[3] if bilinear else nb_filter[2]
         uc3: int = nb_filter[4] if bilinear else nb_filter[3]
 
-        self.conv0_1 = DoubleCircleConv(nb_filter[0] * 1 + uc0, nb_filter[0])
-        self.conv1_1 = DoubleCircleConv(nb_filter[1] * 1 + uc1, nb_filter[1])
-        self.conv2_1 = DoubleCircleConv(nb_filter[2] * 1 + uc2, nb_filter[2])
-        self.conv3_1 = DoubleCircleConv(nb_filter[3] * 1 + uc3, nb_filter[3])
+        self.conv0_1 = DoubleCircleConv(nb_filter[0] * 1 + uc0, nb_filter[0], cond_dim=cond_dim)
+        self.conv1_1 = DoubleCircleConv(nb_filter[1] * 1 + uc1, nb_filter[1], cond_dim=cond_dim)
+        self.conv2_1 = DoubleCircleConv(nb_filter[2] * 1 + uc2, nb_filter[2], cond_dim=cond_dim)
+        self.conv3_1 = DoubleCircleConv(nb_filter[3] * 1 + uc3, nb_filter[3], cond_dim=cond_dim)
 
-        self.conv0_2 = DoubleCircleConv(nb_filter[0] * 2 + uc0, nb_filter[0])
-        self.conv1_2 = DoubleCircleConv(nb_filter[1] * 2 + uc1, nb_filter[1])
-        self.conv2_2 = DoubleCircleConv(nb_filter[2] * 2 + uc2, nb_filter[2])
+        self.conv0_2 = DoubleCircleConv(nb_filter[0] * 2 + uc0, nb_filter[0], cond_dim=cond_dim)
+        self.conv1_2 = DoubleCircleConv(nb_filter[1] * 2 + uc1, nb_filter[1], cond_dim=cond_dim)
+        self.conv2_2 = DoubleCircleConv(nb_filter[2] * 2 + uc2, nb_filter[2], cond_dim=cond_dim)
 
-        self.conv0_3 = DoubleCircleConv(nb_filter[0] * 3 + uc0, nb_filter[0])
-        self.conv1_3 = DoubleCircleConv(nb_filter[1] * 3 + uc1, nb_filter[1])
+        self.conv0_3 = DoubleCircleConv(nb_filter[0] * 3 + uc0, nb_filter[0], cond_dim=cond_dim)
+        self.conv1_3 = DoubleCircleConv(nb_filter[1] * 3 + uc1, nb_filter[1], cond_dim=cond_dim)
 
-        self.conv0_4 = DoubleCircleConv(nb_filter[0] * 4 + uc0, nb_filter[0])
+        self.conv0_4 = DoubleCircleConv(nb_filter[0] * 4 + uc0, nb_filter[0], cond_dim=cond_dim)
 
         self.outc = OutConv(nb_filter[0], n_outputs)
 
-    def forward(self, x: Tensor) -> Tensor:
-        x0_0: Tensor = self.conv0_0(x)
-        x1_0: Tensor = self.conv1_0(x0_0)
+    def forward(self, x: Tensor, angle_degrees: Tensor | None = None) -> Tensor:
+        cond: Tensor | None = None
+        if self.cond_dim is not None:
+            assert angle_degrees is not None, "cond_dim is set but no angle_degrees was passed"
+            cond = self.angle_encoder(angle_degrees)  # (B, 2) = [sin, cos]
+
+        x0_0: Tensor = self.conv0_0(x, cond)
+        x1_0: Tensor = self.conv1_0(x0_0, cond)
         x0_1: Tensor = self.conv0_1(
-            torch.cat([x0_0, self.up1_0(x1_0, x0_0.shape[2:])], dim=1)
+            torch.cat([x0_0, self.up1_0(x1_0, x0_0.shape[2:])], dim=1), cond
         )
 
-        x2_0: Tensor = self.conv2_0(x1_0)
+        x2_0: Tensor = self.conv2_0(x1_0, cond)
         x1_1: Tensor = self.conv1_1(
-            torch.cat([x1_0, self.up2_0(x2_0, x1_0.shape[2:])], dim=1)
+            torch.cat([x1_0, self.up2_0(x2_0, x1_0.shape[2:])], dim=1), cond
         )
         x0_2: Tensor = self.conv0_2(
-            torch.cat([x0_0, x0_1, self.up1_0(x1_1, x0_0.shape[2:])], dim=1)
+            torch.cat([x0_0, x0_1, self.up1_0(x1_1, x0_0.shape[2:])], dim=1), cond
         )
 
-        x3_0: Tensor = self.conv3_0(x2_0)
+        x3_0: Tensor = self.conv3_0(x2_0, cond)
         x2_1: Tensor = self.conv2_1(
-            torch.cat([x2_0, self.up3_0(x3_0, x2_0.shape[2:])], dim=1)
+            torch.cat([x2_0, self.up3_0(x3_0, x2_0.shape[2:])], dim=1), cond
         )
         x1_2: Tensor = self.conv1_2(
-            torch.cat([x1_0, x1_1, self.up2_0(x2_1, x1_0.shape[2:])], dim=1)
+            torch.cat([x1_0, x1_1, self.up2_0(x2_1, x1_0.shape[2:])], dim=1), cond
         )
         x0_3: Tensor = self.conv0_3(
-            torch.cat([x0_0, x0_1, x0_2, self.up1_0(x1_2, x0_0.shape[2:])], dim=1)
+            torch.cat([x0_0, x0_1, x0_2, self.up1_0(x1_2, x0_0.shape[2:])], dim=1), cond
         )
 
-        x4_0: Tensor = self.conv4_0(x3_0)
+        x4_0: Tensor = self.conv4_0(x3_0, cond)
         x3_1: Tensor = self.conv3_1(
-            torch.cat([x3_0, self.up4_0(x4_0, x3_0.shape[2:])], dim=1)
+            torch.cat([x3_0, self.up4_0(x4_0, x3_0.shape[2:])], dim=1), cond
         )
         x2_2: Tensor = self.conv2_2(
-            torch.cat([x2_0, x2_1, self.up3_0(x3_1, x2_0.shape[2:])], dim=1)
+            torch.cat([x2_0, x2_1, self.up3_0(x3_1, x2_0.shape[2:])], dim=1), cond
         )
         x1_3: Tensor = self.conv1_3(
-            torch.cat([x1_0, x1_1, x1_2, self.up2_0(x2_2, x1_0.shape[2:])], dim=1)
+            torch.cat([x1_0, x1_1, x1_2, self.up2_0(x2_2, x1_0.shape[2:])], dim=1), cond
         )
         x0_4: Tensor = self.conv0_4(
-            torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1_0(x1_3, x0_0.shape[2:])], dim=1)
+            torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1_0(x1_3, x0_0.shape[2:])], dim=1), cond
         )
 
         logits: Tensor = self.outc(x0_4)

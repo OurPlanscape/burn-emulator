@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
-from burn_emulator.constants import DEFAULT_DTYPE, OUTDIR, Path
+from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, OUTDIR, Path
 from burn_emulator.utils import dynamic_import, save_checkpoint
 
 
@@ -24,7 +24,7 @@ def train_model(
     train_top3 = []
     step = 0
 
-    model.to("cuda", dtype=DEFAULT_DTYPE)
+    model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
     model.train()
     model = torch.compile(model)
     start_time = time.perf_counter()
@@ -32,15 +32,16 @@ def train_model(
         train_loss_acc = 0
         train_loss_avg = None
         log = []
-        for X, Y, M in train_loader:
-            X = X.to("cuda", dtype=DEFAULT_DTYPE)
-            Y = Y.to("cuda", dtype=DEFAULT_DTYPE)
-            M = M.to("cuda", dtype=DEFAULT_DTYPE)
+        for sample in train_loader:
+            X = sample["x"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+            Y = sample["y"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+            W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+            M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
 
-            # no validation loop for now
-            # validation is done post training since there is not spatial OOD
+            # no OOD validation loop in favor of post-training 
+            # evaluation of approximation accuracy
             optimizer.zero_grad()
-            Y_hat = model(X)
+            Y_hat = model(X, W)
             train_loss = criterion(Y_hat * M, Y * M)
             train_loss.backward()
             optimizer.step()
@@ -50,7 +51,7 @@ def train_model(
             train_loss_acc += train_loss_val
             log.append(
                 {
-                    "train_loss_avg": train_loss_avg,
+                    "train_loss_avg": None,
                     "train_loss_val": train_loss_val,
                     "epoch": epoch,
                     "step": step,

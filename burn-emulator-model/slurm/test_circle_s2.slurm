@@ -4,10 +4,10 @@
 #SBATCH --error=/mnt/data/mtruong/burn-emulator/burn-emulator-model/logs/test_circle_iter_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=120000
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=10000
 #SBATCH --nodelist=dragon04
-#SBATCH --array=0-1%1
+#SBATCH --array=0-19%8
 
 
 echo "Job started on $(hostname) at $(date)"
@@ -17,16 +17,17 @@ source $HOME/.bashrc
 cd /mnt/data/mtruong/burn-emulator/burn-emulator-model
 source .venv/bin/activate
 
-CONFIG_DIR=/mnt/data/mtruong/burn-emulator/burn-emulator-model/configs/basemax_480
+CONFIG_DIR=/mnt/data/mtruong/burn-emulator/burn-emulator-model/configs/wc711
 
 TEST_CONFIGS=(
     "baseline"
     "legalmax"
 )
 
-TEST_CFG=${TEST_CONFIGS[$SLURM_ARRAY_TASK_ID]}
+TEST_CFG=${TEST_CONFIGS[$(( SLURM_ARRAY_TASK_ID % 2 ))]}
+IGN=$((SLURM_ARRAY_TASK_ID / 2))
 
-echo "Using model config: test config: $TEST_CFG"
+echo "Using model configs - TEST_CFG: $TEST_CFG" for IGN: $((IGN+1))
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     (
@@ -40,10 +41,12 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     MONITOR_PID=$!
 fi
 
-burn_emulator -m test_iter \
+burn_emulator -m test \
+    -mn "wc711_480_sm_rand_wind_10" \
     -c "$CONFIG_DIR/circle.yaml" \
-    -c "$CONFIG_DIR/test.yaml" \
-    -c "$CONFIG_DIR/iters2_$TEST_CFG.yaml"
+    -c "$CONFIG_DIR/dataloader.yaml" \
+    -c "$CONFIG_DIR/test_${TEST_CFG}.yaml" \
+    -c "$CONFIG_DIR/s2_${TEST_CFG}/$((IGN+1))_test.yaml"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null

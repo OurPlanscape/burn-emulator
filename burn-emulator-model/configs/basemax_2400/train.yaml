@@ -11,7 +11,7 @@ dataset:
         topo_path: data/topo
         stats_path: /mnt/data/mtruong/burn-emulator/burn-emulator-model/data/stats.yaml
         burn_times: [2400]
-        chip_size: 128
+        window_size: 128
         jitter: null
 
 dataloader:

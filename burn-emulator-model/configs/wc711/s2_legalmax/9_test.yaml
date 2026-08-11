@@ -1,0 +1,7 @@
+dataset:
+    init_args:
+        ignitions_path: /mnt/data/dschmidt/cbp_approx_poc/validation/PS_scenarios/s2/outputs_10Aug2026/9_legalmax/9_ignitions_locations.csv
+        wind_ang_paths:
+            -  /mnt/data/dschmidt/cbp_approx_poc/validation/PS_scenarios/s2/outputs_10Aug2026/9_legalmax/9_outputs_table.csv
+
+test_name: 9_legalmax

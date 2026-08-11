@@ -1,0 +1,7 @@
+dataloader:
+    class_path: torch.utils.data.DataLoader
+    init_args:
+        batch_size: 32
+        shuffle: false
+        pin_memory: true
+        drop_last: false

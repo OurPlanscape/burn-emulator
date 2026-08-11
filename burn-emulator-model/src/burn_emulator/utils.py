@@ -31,7 +31,7 @@ def to_flow(aspect_raw: torch.Tensor, slope_deg: torch.Tensor):
 def cache_inputs(
     fuels_paths: list[Path],
     topo_path: list[Path],
-    stats_path: dict,
+    stats_path: str,
     flow: bool = True,
     window_geo: Polygon = None
 ) -> tuple[dict, dict, dict]:
@@ -50,21 +50,22 @@ def cache_inputs(
             if name not in INPUT_KEYS:
                 continue
             with rasterio.open(file) as src:
+                window = Window.from_bounds(*window_geo.bounds, transform=src.transform) if window_geo else None
                 dat = torch.tensor(src.read(window=window))
                 if name == 'fbfm':
                     profile = src.profile
-                    masks[fkey] = torch.tensor(dat == src.nodata)
-                    masks[fkey] = torch.logical_not(masks[fkey])
+                    masks[fkey] = dat != src.nodata
                     for k, v in FBFM_OH_MAP.items():
                         dat[dat == k] = v
                     dat = F.one_hot(dat.long(),
                                     num_classes=len(np.unique(list(FBFM_OH_MAP.values()))))
                     dat = dat.squeeze(0).permute(2, 0, 1)
-                    dat = dat[1:]
+                    dat = dat[1:].to(DEFAULT_DTYPE) # remove the 0th channel (no fuel data)
                 else:
+                    dat = dat.to(DEFAULT_DTYPE)
                     dat[dat == src.nodata] = np.nan
                     dat[dat < 0] = 0
-            inputs[fkey][name] = dat.to(DEFAULT_DTYPE)
+            inputs[fkey][name] = dat
     stats_data = stats_path.exists()
     if stats_data:
         with stats_path.open() as f:
@@ -81,15 +82,14 @@ def cache_inputs(
                 for fuels_path in fuels_paths:
                     fkey = fuels_path.stem
                     arrs.append(inputs[fkey][key])
-                arrs = np.concatenate(arrs)
-                mean = np.nanmean(arrs).item()
-                stdv = np.nanstd(arrs).item()
+                arrs = torch.concat(arrs)
+                mean = torch.nanmean(arrs).item()
+                stdv = torch.sqrt(torch.nanmean((arrs - mean) ** 2)).item()
                 stats[key] = {"mean": mean, "stdv": stdv}
             
             for fuels_path in fuels_paths:
                 fkey = fuels_path.stem
                 inputs[fkey][key] = (inputs[fkey][key] - mean) / stdv
-                inputs[fkey][key] = torch.tensor(inputs[fkey][key])
                 inputs[fkey][key][torch.isnan(inputs[fkey][key])] = NO_DATA
     if not stats_data and not USE_CLOUD_PATHS:
         with stats_path.open("w") as file:
@@ -182,7 +182,10 @@ def save_checkpoint(
     ckpt_name = f"{tag}_loss-{loss:.4f}_epoch-{epoch:04d}_step-{step:06d}.pt"
     ckpt_path = ckpt_dir / ckpt_name
     
-    torch.save(model.state_dict(), ckpt_path)
+    if isinstance(model, torch._dynamo.eval_frame.OptimizedModule):
+        torch.save(model._orig_mod.state_dict(), ckpt_path)
+    else:
+        torch.save(model.state_dict(), ckpt_path)
     heapq.heappush(heap, (-loss, epoch, step, ckpt_path.stem))
 
     if len(heap) > 3:

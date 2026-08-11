@@ -15,8 +15,6 @@ from tests.fixtures import (
 )
 
 
-
-
 class TestRadialGNN(unittest.TestCase):
     """Unit tests for the RadialGNN model: graph structure, forward pass, memory, timing."""
 
@@ -28,40 +26,40 @@ class TestRadialGNN(unittest.TestCase):
         cls.C_in = TEST_IN_CHANS
         cls.N_OUTPUTS = 3  # RadialGNN output channels are fixed at 1
 
-        # cls.model = RadialGNN(
-        #     img_channels=cls.C_in,
-        #     hidden_channels=64,
-        #     out_channels=cls.N_OUTPUTS,
-        #     num_layers=(64, 32, 16),
-        #     grid_size=cls.GRID,
-        #     refine_ch=64,
-        #     ring_scales=(64, 32, 16),
-        #     grid_outward=(True, False, False),
-        #     src_ratio=(None, 0.5, 0.25),
-        #     n_dst=(None, 4, 4),
-        #     n_neighbors=(None, 2, 2),
-        #     lateral_edge_dropout=0.3,
-        #     outward_edge_dropout=0.0,
-        #     use_slope_gate=(True, False, False),
-        #     train_batch_size=cls.B,
-        # ).to(device=cls.device)
         cls.uncompiled_model = RadialGNN(
             img_channels=cls.C_in,
             hidden_channels=64,
             out_channels=cls.N_OUTPUTS,
-            num_layers=(64,),
+            num_layers=(64, 32, 16),
             grid_size=cls.GRID,
             refine_ch=64,
-            ring_scales=(64,),
-            grid_outward=(True,),
-            src_ratio=(None,),
-            n_dst=(None,),
-            n_neighbors=(None,),
+            ring_scales=(64, 32, 16),
+            grid_outward=(True, False, False),
+            src_ratio=(None, 0.5, 0.25),
+            n_dst=(None, 4, 4),
+            n_neighbors=(None, 2, 2),
             lateral_edge_dropout=0.3,
             outward_edge_dropout=0.0,
-            use_slope_gate=(True,),
+            use_slope_gate=(True, False, False),
             train_batch_size=cls.B,
         ).to(device=cls.device, dtype=DEFAULT_DTYPE)
+        # cls.uncompiled_model = RadialGNN(
+        #     img_channels=cls.C_in,
+        #     hidden_channels=64,
+        #     out_channels=cls.N_OUTPUTS,
+        #     num_layers=(64,),
+        #     grid_size=cls.GRID,
+        #     refine_ch=64,
+        #     ring_scales=(64,),
+        #     grid_outward=(True,),
+        #     src_ratio=(None,),
+        #     n_dst=(None,),
+        #     n_neighbors=(None,),
+        #     lateral_edge_dropout=0.3,
+        #     outward_edge_dropout=0.0,
+        #     use_slope_gate=(True,),
+        #     train_batch_size=cls.B,
+        # ).to(device=cls.device, dtype=DEFAULT_DTYPE)
         cls.uncompiled_model.eval()
         cls.model = torch.compile(cls.uncompiled_model)
 
