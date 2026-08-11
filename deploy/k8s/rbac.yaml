@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: burn-emulator-variations
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: burn-emulator-api-sa
+  namespace: burn-emulator-variations
+  annotations:
+    iam.gke.io/gcp-service-account: burn-emulator-sa@planscape.iam.gserviceaccount.com
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: burn-emulator-api-job-manager
+  namespace: burn-emulator-variations
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: burn-emulator-api-job-manager
+  namespace: burn-emulator-variations
+subjects:
+  - kind: ServiceAccount
+    name: burn-emulator-api
+    namespace: burn-emulator-api
+roleRef:
+  kind: Role
+  name: burn-emulator-api-job-manager
+  apiGroup: rbac.authorization.k8s.io

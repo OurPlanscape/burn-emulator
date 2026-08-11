@@ -10,5 +10,3 @@ wheels/
 burn-emulator-model/.venv
 burn-emulator-model/data
 burn-emulator-model/logs
-
-deploy/k8s

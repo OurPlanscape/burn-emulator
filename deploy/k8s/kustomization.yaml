@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - redis.yaml
+  - deployment.yaml
+  - service.yaml
+  - gateway.yaml
+  - httproute.yaml
+
+secretGenerator:
+  - name: burn-emulator-api-secrets
+    namespace: burn-emulator-api
+    envs:
+      - secrets.env
