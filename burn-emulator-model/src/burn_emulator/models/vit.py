@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -70,7 +69,9 @@ class Attention(nn.Module):
         q, k, v = qkv.unbind(0)
 
         out = F.scaled_dot_product_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             dropout_p=self.attn_drop if self.training else 0.0,
         )  # (B, heads, N, head_dim)
 
@@ -174,19 +175,21 @@ class PixelViT(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
-        self.blocks = nn.ModuleList([
-            Block(
-                dim=embed_dim,
-                num_heads=num_heads,
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                drop=dropout,
-                attn_drop=attn_dropout,
-                drop_path=dpr[i],
-                layer_scale_init=layer_scale_init,
-            )
-            for i in range(depth)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                Block(
+                    dim=embed_dim,
+                    num_heads=num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    drop=dropout,
+                    attn_drop=attn_dropout,
+                    drop_path=dpr[i],
+                    layer_scale_init=layer_scale_init,
+                )
+                for i in range(depth)
+            ]
+        )
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
 
@@ -204,12 +207,12 @@ class PixelViT(nn.Module):
 
     def extract_pixels(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
-        assert H == self.img_size and W == self.img_size, (
+        assert self.img_size == H and self.img_size == W, (
             f"expected {self.img_size}x{self.img_size} images, got {H}x{W}"
         )
-        x_flat = x.reshape(B, C, H * W)              # view, no copy (x is contiguous)
+        x_flat = x.reshape(B, C, H * W)  # view, no copy (x is contiguous)
         pix = x_flat.index_select(2, self.flat_idx)  # (B, C, N)
-        pix = pix.permute(0, 2, 1)                   # (B, N, C)
+        pix = pix.permute(0, 2, 1)  # (B, N, C)
         return pix
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -218,8 +221,8 @@ class PixelViT(nn.Module):
         # tokens = self.pixel_embed(pix)             # (B, N, D)
         tokens = self.pixel_embed(x.reshape(B, C, H * W).permute(0, 2, 1))
 
-        cls = self.cls_token.expand(B, -1, -1)      # (B, 1, D)
-        tokens = torch.cat([cls, tokens], dim=1)    # (B, N+1, D)
+        cls = self.cls_token.expand(B, -1, -1)  # (B, 1, D)
+        tokens = torch.cat([cls, tokens], dim=1)  # (B, N+1, D)
         tokens = tokens + self.pos_embed
         tokens = self.dropout(tokens)
 
@@ -227,10 +230,11 @@ class PixelViT(nn.Module):
             tokens = block(tokens)
         tokens = self.norm(tokens)
 
-        pixel_tokens = tokens[:, 1:]                # (B, N, D) drop CLS
-        logits = self.head(pixel_tokens)            # (B, N, num_classes)
+        pixel_tokens = tokens[:, 1:]  # (B, N, D) drop CLS
+        logits = self.head(pixel_tokens)  # (B, N, num_classes)
 
         # out = logits.new_zeros(B, self.num_classes, self.img_size * self.img_size)
-        # out.index_copy_(2, self.flat_idx, logits.permute(0, 2, 1))  # (B, num_classes, N) -> flat scatter
+        # out.index_copy_(2, self.flat_idx, logits.permute(0, 2, 1))
+        # (B, num_classes, N) -> flat scatter
         out = logits.view(B, self.num_classes, self.img_size, self.img_size)
         return out

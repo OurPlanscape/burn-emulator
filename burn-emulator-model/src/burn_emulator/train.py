@@ -4,12 +4,17 @@ from typing import Any
 import pandas as pd
 import torch
 import torch.nn as nn
-
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
+from burn_emulator.config import dynamic_import
 from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, OUTDIR, Path
-from burn_emulator.utils import dynamic_import, save_checkpoint
+from burn_emulator.utils import (
+    find_latest_checkpoint,
+    optimizer_checkpoint_path,
+    parse_checkpoint_meta,
+    save_checkpoint,
+)
 
 
 def train_model(
@@ -20,28 +25,32 @@ def train_model(
     optimizer: Optimizer,
     criterion: nn.Module,
     out_path: Path,
+    start_epoch: int = 0,
+    start_step: int = 0,
 ) -> None:
     train_top3 = []
-    step = 0
+    step = start_step
 
     model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
     model.train()
     model = torch.compile(model)
-    start_time = time.perf_counter()
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
+        epoch_start_time = time.perf_counter()
         train_loss_acc = 0
         train_loss_avg = None
         log = []
         for sample in train_loader:
+            sample_start_time = time.perf_counter()
             X = sample["x"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
             Y = sample["y"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
             W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
             M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
 
-            # no OOD validation loop in favor of post-training 
+            # no OOD validation loop in favor of post-training
             # evaluation of approximation accuracy
             optimizer.zero_grad()
-            Y_hat = model(X, W)
+            Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
+            Y_hat = model(X * Mx, W)
             train_loss = criterion(Y_hat * M, Y * M)
             train_loss.backward()
             optimizer.step()
@@ -55,7 +64,7 @@ def train_model(
                     "train_loss_val": train_loss_val,
                     "epoch": epoch,
                     "step": step,
-                    "time": time.perf_counter() - start_time,
+                    "time": time.perf_counter() - sample_start_time,
                 }
             )
 
@@ -67,16 +76,33 @@ def train_model(
                 "train_loss_val": None,
                 "epoch": epoch,
                 "step": step,
-                "time": time.perf_counter() - start_time,
+                "time": time.perf_counter() - epoch_start_time,
             }
         )
         save_checkpoint(
-            model, f"{model_name}_train", epoch, step, train_loss_avg, train_top3, out_path
+            model,
+            f"{model_name}_train",
+            epoch,
+            step,
+            train_loss_avg,
+            train_top3,
+            out_path,
+            optimizer=optimizer,
         )
 
         header = not (out_path / "train_log.csv").exists()
         pd.DataFrame(log).to_csv(out_path / "train_log.csv", mode="a", index=False, header=header)
-    save_checkpoint(model, f"{model_name}_train", epoch, step, train_loss_avg, [], out_path)
+    if num_epochs > start_epoch:
+        save_checkpoint(
+            model,
+            f"{model_name}_train",
+            epoch,
+            step,
+            train_loss_avg,
+            [],
+            out_path,
+            optimizer=optimizer,
+        )
 
 
 def train(
@@ -93,8 +119,30 @@ def train(
     experiment_path.mkdir(exist_ok=True, parents=True)
 
     model = dynamic_import(model)
+    ckpt_path = kwargs.get("ckpt_path")
+    if ckpt_path is None:
+        ckpt_path = find_latest_checkpoint(experiment_path / "checkpoints")
+
+    start_epoch, start_step = 0, 0
+    if ckpt_path is not None:
+        ckpt_path = Path(ckpt_path)
+        ckpt = torch.load(ckpt_path, map_location=DEFAULT_DEVICE)
+        if next(iter(ckpt.keys())).startswith("_orig_mod"):
+            ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
+        model.load_state_dict(ckpt)
+        model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+
+        meta = parse_checkpoint_meta(ckpt_path)
+        if meta is not None:
+            start_epoch, start_step = meta[0] + 1, meta[1]
+
     dataset = dynamic_import(dataset, {"stats_path": experiment_path / "stat.yaml"})
     optimizer = dynamic_import(optimizer, {"params": model.parameters()})
+    if ckpt_path is not None:
+        optim_ckpt_path = optimizer_checkpoint_path(ckpt_path)
+        if optim_ckpt_path.exists():
+            optim_state_dict = torch.load(optim_ckpt_path, map_location=DEFAULT_DEVICE)
+            optimizer.load_state_dict(optim_state_dict)
     criterion = dynamic_import(criterion)
     train_loader = dynamic_import(dataloader, {"dataset": dataset})
 
@@ -106,4 +154,6 @@ def train(
         optimizer=optimizer,
         criterion=criterion,
         out_path=experiment_path,
+        start_epoch=start_epoch,
+        start_step=start_step,
     )

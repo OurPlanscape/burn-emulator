@@ -2,8 +2,7 @@ import os
 
 import torch
 
-
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 
 
@@ -22,6 +21,7 @@ __all__ = ["Path"]
 DEFAULT_DEVICE = torch.device(RUN_DEVICE)  # default device for training
 DEFAULT_DTYPE = torch.bfloat16  # default trainining dtype for memory saving
 NO_DATA = -1  # no data value for NN inputs
+RAW_NO_DATA = -9999
 
 # input fuel specific constants
 FBFM_OH_MAP = {

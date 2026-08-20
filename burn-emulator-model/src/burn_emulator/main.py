@@ -10,7 +10,6 @@ from burn_emulator.test import test, test_iterations
 from burn_emulator.train import train
 
 
-
 def load_configs(config_dir: str | None, config_paths: list[str] | None) -> DictConfig:
     config_files = []
     if config_dir:
@@ -43,14 +42,19 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
     }
 
     geometry_overrides = {}
-    geometry_overrides["treatment_area"] = shape(json.loads(args.treatment_area)) if args.treatment_area else None
+    parsed_treatment_area = json.loads(args.treatment_area) if args.treatment_area else None
+    geometry_overrides["treatment_area"] = (
+        shape(parsed_treatment_area) if args.treatment_area else None
+    )
     if args.treatment_buff:
-        if treatment_area is None:
+        if geometry_overrides["treatment_area"] is None:
             raise ValueError(
                 "--treatment_buff requires --treatment_area (on the CLI or already in the "
                 "loaded config's dataset.init_args)"
             )
-        geometry_overrides["treatment_buff"] = area_for_buff.envelope.buffer(args.treatment_buff)
+        geometry_overrides["treatment_buff"] = geometry_overrides["treatment_area"].envelope.buffer(
+            args.treatment_buff
+        )
 
     if scalar_dataset_overrides:
         if OmegaConf.select(configs, "dataset.init_args") is None:

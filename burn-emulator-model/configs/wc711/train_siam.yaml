@@ -1,0 +1,20 @@
+dataloader:
+    class_path: torch.utils.data.DataLoader
+    init_args:
+        batch_size: 32
+        shuffle: true
+        pin_memory: false
+        drop_last: true
+optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+        lr: .0003
+criterion:
+    class_path: burn_emulator.criterions.DiceFocalLoss
+    init_args:
+        multiclass: false
+        dice_weight: .5
+        focal_weight: .5
+        label_smoothing: .15
+num_epochs: 64
+model_name: wc711_480_siam_df64

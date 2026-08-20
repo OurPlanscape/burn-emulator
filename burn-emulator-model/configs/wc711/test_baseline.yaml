@@ -1,20 +1,22 @@
 dataset:
-    class_path: burn_emulator.datasets.IgnitionDataset
+    class_path: burn_emulator.datasets.varloc.VarLoc
     init_args:
-        ignitions_path: /mnt/data/dschmidt/cbp_approx_poc/training_data_07Aug2026/ignition_locations.csv
+        ignitions_path: data/training_data_14Aug2026/ignition_locations.csv
         fuels_paths:
-            -  /mnt/data/dschmidt/cbp_approx_poc/legalmax_baseline_FF_05Aug2026/
+            -  data/legalmax_baseline_FF_05Aug2026
         burn_paths: null
-        wind_ang_paths:
-            -  /mnt/data/dschmidt/cbp_approx_poc/training_data_10Aug2026/baseline/outputs_table.csv
         topo_path: data/topo
         stats_path: data/stats.yaml
         burn_times: [480]
         window_size: 129
         jitter: null
 activation:
-    class_path: torch.nn.Softmax
+    class_path: burn_emulator.criterions.DesmoothedActivation
     init_args:
-        dim: 1
+        activation:
+            class_path: torch.nn.Sigmoid
+        label_smoothing: .125
+        multiclass: false
 test_name: baseline
 max_write_workers: 4
+out_channels: 4

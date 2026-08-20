@@ -3,4 +3,5 @@ model:
     init_args:
         n_channels: 19
         n_outputs: 4
+        image_size: 129
         bilinear: true

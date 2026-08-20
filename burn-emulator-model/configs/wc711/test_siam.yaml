@@ -1,0 +1,20 @@
+dataset:
+    class_path: burn_emulator.datasets.varloc.VarLocDiff
+    init_args:
+        burn_paths: null
+        topo_path: data/topo
+        stats_path: data/stats.yaml
+        burn_times: [480]
+        window_size: 129
+        jitter: null
+        num_classes: 3
+activation:
+    class_path: burn_emulator.criterions.DesmoothedActivation
+    init_args:
+        activation:
+            class_path: torch.nn.Sigmoid
+        label_smoothing: .15
+        multiclass: false
+test_name: siam
+max_write_workers: 4
+out_channels: 3

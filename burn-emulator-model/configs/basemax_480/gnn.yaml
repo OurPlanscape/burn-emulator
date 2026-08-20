@@ -1,4 +1,0 @@
-model:
-    class_path: burn_emulator.models.gnn.RadialGNN
-    init_args: {}
-model_name: gnn_basemax_480

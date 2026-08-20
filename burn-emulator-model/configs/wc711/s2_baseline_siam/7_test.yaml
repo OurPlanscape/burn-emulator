@@ -1,0 +1,12 @@
+dataset:
+    init_args:
+        ignitions_path: data/outputs_12Aug2026_re/7_baseline/7_ignitions_locations.csv
+        fuels_paths:
+            -  data/legalmax_baseline_FF_05Aug2026
+            -  data/outputs_12Aug2026_re/7_legalmax
+        wind_ang_paths:
+            -  data/outputs_12Aug2026_re/7_baseline/7_outputs_table.csv
+            -  data/outputs_12Aug2026_re/7_baseline/7_outputs_table.csv
+            
+
+test_name: pa_7

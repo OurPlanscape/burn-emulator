@@ -1,14 +1,16 @@
 import math
+from abc import abstractmethod
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.init as init
-
-from abc import abstractmethod
 from numpy.typing import NDArray
 from torch import Tensor
 from torch.nn.modules.utils import _pair
 from torch.nn.parameter import Parameter
+
+from burn_emulator.models.utils import circular_components
 
 
 class CircleLayerBase(nn.Module):
@@ -24,12 +26,12 @@ class CircleLayerBase(nn.Module):
         bias: bool = True,
     ) -> None:
         super().__init__()
-        if isinstance(kernel_size, list) or isinstance(kernel_size, tuple):
+        if isinstance(kernel_size, (list, tuple)):
             if kernel_size[0] != kernel_size[1]:
                 raise NotImplementedError("Kernel_size h must be equal to w")
             kernel_size = kernel_size[0]
         if kernel_size % 2 != 1:
-            print("Kernel_size must be even, %d was given" % kernel_size)
+            print(f"Kernel_size must be even, {kernel_size} was given")
             raise NotImplementedError("Kernel_size must be even")
         self.in_channels: int = in_channels
         self.out_channels: int = out_channels
@@ -157,7 +159,7 @@ class CircleConv3x3(CircleLayerBase):
             bias,
         )
         if self.kernel_size != 3 and self.kernel_size != 1:
-            print("Kernel_size must be 1 or 3, %d was given" % kernel_size)
+            print(f"Kernel_size must be 1 or 3, {kernel_size} was given")
             raise NotImplementedError("Kernel_size must be 1 or 3")
         self.weight = Parameter(
             torch.empty(out_channels, self.in_channel_group, self.kernel_size, self.kernel_size)
@@ -170,17 +172,14 @@ class CircleConv3x3(CircleLayerBase):
             # this saves 3ms per forward pass for B=32 inference
             if not self.training:
                 self.weight = self.weight.view(-1, self.kernel_size * self.kernel_size)
-                self.weight = self.weight.matmul(
-                    self.w_transform_matrix
-                )
+                self.weight = self.weight.matmul(self.w_transform_matrix)
 
     def forward(self, x: Tensor) -> Tensor:
         w_size: torch.Size = self.weight.shape
         w: Tensor = self.weight
-        if self.kernel_size != 1:
-            if self.training:
-                w = w.view(-1, self.kernel_size * self.kernel_size)
-                w = w.matmul(self.w_transform_matrix)
+        if self.kernel_size != 1 and self.training:
+            w = w.view(-1, self.kernel_size * self.kernel_size)
+            w = w.matmul(self.w_transform_matrix)
         w = w.view(w_size[0], w_size[1], self.kernel_size, self.kernel_size)
         return nn.functional.conv2d(
             x, w, self.bias, self.stride, self.padding, self.dilation, groups=self.groups
@@ -268,11 +267,15 @@ class DoubleCircleConv(nn.Module):
 
 
 class CircleDown(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, cond_dim: int | None = None) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        out_size: int | tuple[int, int],
+        cond_dim: int | None = None,
+    ) -> None:
         super().__init__()
-        # Split out of nn.Sequential because DoubleCircleConv now needs a
-        # second (cond) argument, which Sequential can't pass through.
-        self.pool = nn.MaxPool2d(2)
+        self.pool = nn.AdaptiveMaxPool2d(out_size)
         self.conv = DoubleCircleConv(in_channels, out_channels, cond_dim=cond_dim)
 
     def forward(self, x: Tensor, cond: Tensor | None = None) -> Tensor:
@@ -300,8 +303,8 @@ class AngleEncoder(nn.Module):
         super().__init__()
 
     def forward(self, angle_degrees: Tensor) -> Tensor:
-        radians = angle_degrees * (math.pi / 180.0)
-        return torch.stack([torch.sin(radians), torch.cos(radians)], dim=-1)
+        sin, cos = circular_components(angle_degrees)
+        return torch.stack([sin, cos], dim=-1)
 
 
 class CircleNet(nn.Module):
@@ -309,12 +312,14 @@ class CircleNet(nn.Module):
         self,
         n_channels: int,
         n_outputs: int,
+        image_size: int,
         bilinear: bool = True,
         cond_dim: int | None = 2,
     ) -> None:
         super().__init__()
         self.n_channels: int = n_channels
         self.n_outputs: int = n_outputs
+        self.image_size: int = image_size
         self.bilinear: bool = bilinear
         self.cond_dim: int | None = cond_dim
 
@@ -325,11 +330,13 @@ class CircleNet(nn.Module):
         nb_filter: list[int] = [64, 128, 256, 512, 1024 // factor]
         self.nb_filter: list[int] = nb_filter
 
+        down_sizes: list[int] = [image_size // 2**depth for depth in range(1, 5)]
+
         self.conv0_0 = DoubleCircleConv(n_channels, nb_filter[0], cond_dim=cond_dim)
-        self.conv1_0 = CircleDown(nb_filter[0], nb_filter[1], cond_dim=cond_dim)
-        self.conv2_0 = CircleDown(nb_filter[1], nb_filter[2], cond_dim=cond_dim)
-        self.conv3_0 = CircleDown(nb_filter[2], nb_filter[3], cond_dim=cond_dim)
-        self.conv4_0 = CircleDown(nb_filter[3], nb_filter[4], cond_dim=cond_dim)
+        self.conv1_0 = CircleDown(nb_filter[0], nb_filter[1], down_sizes[0], cond_dim=cond_dim)
+        self.conv2_0 = CircleDown(nb_filter[1], nb_filter[2], down_sizes[1], cond_dim=cond_dim)
+        self.conv3_0 = CircleDown(nb_filter[2], nb_filter[3], down_sizes[2], cond_dim=cond_dim)
+        self.conv4_0 = CircleDown(nb_filter[3], nb_filter[4], down_sizes[3], cond_dim=cond_dim)
 
         self.up1_0 = CircleUpsample(nb_filter[1], nb_filter[0], bilinear)
         self.up2_0 = CircleUpsample(nb_filter[2], nb_filter[1], bilinear)
@@ -355,7 +362,9 @@ class CircleNet(nn.Module):
 
         self.conv0_4 = DoubleCircleConv(nb_filter[0] * 4 + uc0, nb_filter[0], cond_dim=cond_dim)
 
-        self.outc = DoubleCircleConv(nb_filter[0], n_outputs, cond_dim=cond_dim)
+        self.outc = nn.Sequential(
+            CircleConv3x3(nb_filter[0], nb_filter[0]), CircleConv3x3(nb_filter[0], n_outputs)
+        )
 
     def forward(self, x: Tensor, angle_degrees: Tensor | None = None) -> Tensor:
         cond: Tensor | None = None
@@ -402,5 +411,77 @@ class CircleNet(nn.Module):
             torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1_0(x1_3, x0_0.shape[2:])], dim=1), cond
         )
 
-        logits: Tensor = self.outc(x0_4, cond)
+        logits: Tensor = self.outc(x0_4)
+        return logits
+
+
+class CircleNetSiamese(CircleNet):
+    def _encode(
+        self, x: Tensor, cond: Tensor | None
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        x0_0: Tensor = self.conv0_0(x, cond)
+        x1_0: Tensor = self.conv1_0(x0_0, cond)
+        x2_0: Tensor = self.conv2_0(x1_0, cond)
+        x3_0: Tensor = self.conv3_0(x2_0, cond)
+        x4_0: Tensor = self.conv4_0(x3_0, cond)
+        return x0_0, x1_0, x2_0, x3_0, x4_0
+
+    @staticmethod
+    def _diff(baseline: Tensor, change: Tensor) -> Tensor:
+        return change - baseline
+
+    def forward(
+        self,
+        x: Tensor,
+        angle_degrees: Tensor | None = None,
+    ) -> Tensor:
+        cond: Tensor | None = None
+        if self.cond_dim is not None:
+            assert angle_degrees is not None, "cond_dim is set but no angle_degrees was passed"
+            cond = self.angle_encoder(angle_degrees)  # (B, 2) = [sin, cos]
+
+        a0_0, a1_0, a2_0, a3_0, a4_0 = self._encode(x[:, 0], cond)
+        b0_0, b1_0, b2_0, b3_0, b4_0 = self._encode(x[:, 1], cond)
+
+        x0_0: Tensor = self._diff(a0_0, b0_0)
+        x1_0: Tensor = self._diff(a1_0, b1_0)
+        x2_0: Tensor = self._diff(a2_0, b2_0)
+        x3_0: Tensor = self._diff(a3_0, b3_0)
+        x4_0: Tensor = self._diff(a4_0, b4_0)
+
+        x0_1: Tensor = self.conv0_1(
+            torch.cat([x0_0, self.up1_0(x1_0, x0_0.shape[2:])], dim=1), cond
+        )
+
+        x1_1: Tensor = self.conv1_1(
+            torch.cat([x1_0, self.up2_0(x2_0, x1_0.shape[2:])], dim=1), cond
+        )
+        x0_2: Tensor = self.conv0_2(
+            torch.cat([x0_0, x0_1, self.up1_0(x1_1, x0_0.shape[2:])], dim=1), cond
+        )
+
+        x2_1: Tensor = self.conv2_1(
+            torch.cat([x2_0, self.up3_0(x3_0, x2_0.shape[2:])], dim=1), cond
+        )
+        x1_2: Tensor = self.conv1_2(
+            torch.cat([x1_0, x1_1, self.up2_0(x2_1, x1_0.shape[2:])], dim=1), cond
+        )
+        x0_3: Tensor = self.conv0_3(
+            torch.cat([x0_0, x0_1, x0_2, self.up1_0(x1_2, x0_0.shape[2:])], dim=1), cond
+        )
+
+        x3_1: Tensor = self.conv3_1(
+            torch.cat([x3_0, self.up4_0(x4_0, x3_0.shape[2:])], dim=1), cond
+        )
+        x2_2: Tensor = self.conv2_2(
+            torch.cat([x2_0, x2_1, self.up3_0(x3_1, x2_0.shape[2:])], dim=1), cond
+        )
+        x1_3: Tensor = self.conv1_3(
+            torch.cat([x1_0, x1_1, x1_2, self.up2_0(x2_2, x1_0.shape[2:])], dim=1), cond
+        )
+        x0_4: Tensor = self.conv0_4(
+            torch.cat([x0_0, x0_1, x0_2, x0_3, self.up1_0(x1_3, x0_0.shape[2:])], dim=1), cond
+        )
+
+        logits: Tensor = self.outc(x0_4)
         return logits

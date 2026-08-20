@@ -1,7 +1,0 @@
-model:
-    class_path: burn_emulator.models.unet.UNet
-    init_args:
-        n_channels: 19
-        n_outputs: 1
-        bilinear: true
-model_name: unet_basemax_960
