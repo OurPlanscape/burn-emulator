@@ -83,6 +83,9 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (claimed boo
 	return false, runRecord{}, fmt.Errorf("claiming run %s: exceeded %d attempts under contention", key, maxClaimAttempts)
 }
 
+// how long the fire-and-forget ledger delete in releaseRun gets to run.
+const releaseTimeout = 10 * time.Second
+
 // delete the ledger object: called once a run finishes (output now exists) or
 // fails (so the next request can retry without waiting out runStaleAfter).
 func (c *Client) releaseRun(ctx context.Context, key string) {
@@ -91,6 +94,8 @@ func (c *Client) releaseRun(ctx context.Context, key string) {
 		slog.Warn("failed to clear run claim: bad output bucket", "key", key, "error", err)
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
 	if err := c.storage.Objects.Delete(bucket, ledgerObjectName(key)).Context(ctx).Do(); err != nil {
 		slog.Warn("failed to clear run claim", "key", key, "error", err)
 	}
