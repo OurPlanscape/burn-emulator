@@ -1,0 +1,31 @@
+model:
+    class_path: burn_emulator.models.circlenet.CircleNet
+    init_args:
+        n_channels: 19
+        n_outputs: 4
+        image_size: 129
+        bilinear: true
+
+activation:
+    class_path: torch.nn.Sigmoid
+
+dataset:
+    class_path: burn_emulator.datasets.varloc.VarLoc
+    init_args:
+        treatment_buff: 960
+        ignition_density: 5e-05
+        ignition_method: uniform
+        treatment_seed: 42
+        wind_range: [225, 269]
+        burn_times: [480]
+        window_size: 129
+        jitter: null
+        num_classes: 4
+
+dataloader:
+    class_path: torch.utils.data.DataLoader
+    init_args:
+        batch_size: 4
+        shuffle: false
+        pin_memory: false
+        drop_last: false

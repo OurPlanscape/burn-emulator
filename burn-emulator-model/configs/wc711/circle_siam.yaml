@@ -1,7 +1,0 @@
-model:
-    class_path: burn_emulator.models.circlenet.CircleNetSiamese
-    init_args:
-        n_channels: 19
-        n_outputs: 3
-        image_size: 129
-        bilinear: true

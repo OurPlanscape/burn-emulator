@@ -119,7 +119,7 @@ class Block(nn.Module):
         return x
 
 
-def circular_mask_indices(H: int, W: int, radius: float = None):
+def circular_mask_indices(H: int, W: int, radius: float | None = None):
     cy, cx = (H - 1) / 2.0, (W - 1) / 2.0
     yy, xx = torch.meshgrid(
         torch.arange(H, dtype=torch.float32),

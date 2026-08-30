@@ -8,8 +8,9 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 from burn_emulator.config import dynamic_import
-from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, OUTDIR, Path
+from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, Path
 from burn_emulator.utils import (
+    experiment_dir,
     find_latest_checkpoint,
     optimizer_checkpoint_path,
     parse_checkpoint_meta,
@@ -115,7 +116,7 @@ def train(
     num_epochs: int,
     **kwargs: Any,
 ) -> None:
-    experiment_path = OUTDIR / model_name
+    experiment_path = experiment_dir(model_name)
     experiment_path.mkdir(exist_ok=True, parents=True)
 
     model = dynamic_import(model)

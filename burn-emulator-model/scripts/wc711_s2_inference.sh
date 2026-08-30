@@ -1,7 +1,6 @@
 #!/bin/bash
 
 ARRAY_START=0
-# ARRAY_END=1
 ARRAY_END=19
 MAX_CONCURRENT=4
 
@@ -25,14 +24,6 @@ run_task () {
         -c "$CONFIG_DIR/circle.yaml" \
         -c "$CONFIG_DIR/test_${TEST_CFG}.yaml" \
         -c "$CONFIG_DIR/s2_${TEST_CFG}/$((IGN+1))_test.yaml"
-
-    # IGN=${TASK_ID}
-    # burn_emulator -m test \
-    #     -mn "wc711_480_siam_df64" \
-    #     -c "$CONFIG_DIR/dataloader.yaml" \
-    #     -c "$CONFIG_DIR/circle_siam.yaml" \
-    #     -c "$CONFIG_DIR/test_siam.yaml" \
-    #     -c "$CONFIG_DIR/s2_baseline_siam/$((IGN+1))_test.yaml"
 }
 
 running=0

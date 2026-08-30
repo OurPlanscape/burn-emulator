@@ -9,12 +9,7 @@ dataset:
         window_size: 129
         jitter: null
 activation:
-    class_path: burn_emulator.criterions.DesmoothedActivation
-    init_args:
-        activation:
-            class_path: torch.nn.Sigmoid
-        label_smoothing: .125
-        multiclass: false
+    class_path: torch.nn.Sigmoid
 test_name: legalmax
 max_write_workers: 4
 out_channels: 4

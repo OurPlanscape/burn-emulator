@@ -10,7 +10,7 @@ dependencies = [
     "google-cloud-storage>=3.13.0",
     "matplotlib>=3.11.1",
     "omegaconf>=2.3.0",
-    "pyretechnics",
+    "pointpats",
     "pyyaml>=6.0.3",
     "rasterio>=1.4.3,<1.5",
     "torch>=2.13.0",
@@ -18,6 +18,10 @@ dependencies = [
     "torchinfo>=1.8.0",
     "torchvision>=0.28.0",
 ]
+
+[project.optional-dependencies]
+# training-data generation only (scripts/create_training_data.py, scripts/pyretechnics.py)
+data = ["pyretechnics"]
 
 [project.scripts]
 burn_emulator = "burn_emulator.main:main"
