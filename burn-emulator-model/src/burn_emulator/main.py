@@ -1,10 +1,10 @@
 import argparse
-import json
 
 from omegaconf import DictConfig, OmegaConf
-from shapely.geometry import shape
 
-from burn_emulator.constants import METHODS, Path
+from burn_emulator.bundle import bundle
+from burn_emulator.config import load_treatment_area
+from burn_emulator.constants import BUNDLE_DIR, METHODS, Path
 from burn_emulator.run import run
 from burn_emulator.test import test, test_iterations
 from burn_emulator.train import train
@@ -26,48 +26,48 @@ def load_configs(config_dir: str | None, config_paths: list[str] | None) -> Dict
 
 
 def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
-    for key in ("ckpt_path", "out_path", "run_name", "model_name"):
+    for key in ("ckpt_path", "out_path", "model_name"):
         value = getattr(args, key)
         if value is not None:
             OmegaConf.update(configs, key, value, merge=True)
 
-    scalar_dataset_overrides = {
+    dataset_overrides = {
         key: value
         for key, value in (
-            ("fuels_path", args.fuels_path),
+            ("treatment_area", args.treatment_area),
+            ("treatment_buff", args.treatment_buff),
             ("treatment_seed", args.treatment_seed),
             ("ignition_density", args.ignition_density),
+            ("wind_seed", args.wind_seed)
         )
-        if value
+        if value is not None
     }
 
-    geometry_overrides = {}
-    parsed_treatment_area = json.loads(args.treatment_area) if args.treatment_area else None
-    geometry_overrides["treatment_area"] = (
-        shape(parsed_treatment_area) if args.treatment_area else None
-    )
-    if args.treatment_buff:
-        if geometry_overrides["treatment_area"] is None:
-            raise ValueError(
-                "--treatment_buff requires --treatment_area (on the CLI or already in the "
-                "loaded config's dataset.init_args)"
-            )
-        geometry_overrides["treatment_buff"] = geometry_overrides["treatment_area"].envelope.buffer(
-            args.treatment_buff
-        )
-
-    if scalar_dataset_overrides:
+    if dataset_overrides:
         if OmegaConf.select(configs, "dataset.init_args") is None:
             raise ValueError(
                 "dataset overrides were given on the CLI, but no 'dataset.init_args' section "
                 "was found in the loaded config files"
             )
-        for key, value in scalar_dataset_overrides.items():
+        for key, value in dataset_overrides.items():
             OmegaConf.update(configs, f"dataset.init_args.{key}", value, merge=True)
+
     configs = OmegaConf.to_container(configs, resolve=True)
 
-    if geometry_overrides:
-        configs["dataset"]["init_args"].update(geometry_overrides)
+    init_args = configs.get("dataset", {}).get("init_args") or {}
+    fuels_paths = dict(init_args.get("fuels_paths") or {})
+    if args.baseline_fuels:
+        fuels_paths["baseline"] = args.baseline_fuels
+    if args.legalmax_fuels:
+        fuels_paths["treatment"] = args.legalmax_fuels
+    if fuels_paths:
+        init_args["fuels_paths"] = fuels_paths
+    if args.topo_path:
+        init_args["topo_path"] = args.topo_path
+    if init_args.get("treatment_area") is not None:
+        init_args["treatment_area"] = load_treatment_area(init_args["treatment_area"])
+    elif init_args.get("treatment_buff") is not None:
+        raise ValueError("treatment_buff requires treatment_area")
 
     return configs
 
@@ -77,19 +77,31 @@ def main():
     parser.add_argument("-m", "--method", default="train", choices=METHODS)
     parser.add_argument("-C", "--config_dir", action="store")
     parser.add_argument("-c", "--config", action="append")
-    parser.add_argument("-f", "--fuels_path", action="append")
+    parser.add_argument("-bf", "--baseline_fuels", action="store")
+    parser.add_argument("-lf", "--legalmax_fuels", action="store")
+    parser.add_argument("-tp", "--topo_path", action="store")
     parser.add_argument("-ta", "--treatment_area", action="store")
-    parser.add_argument("-tb", "--treatment_buff", action="store")
-    parser.add_argument("-ts", "--treatment_seed", action="store", type=int, default=42)
+    parser.add_argument("-tb", "--treatment_buff", action="store", type=float)
+    parser.add_argument("-ts", "--treatment_seed", action="store", type=float)
     parser.add_argument("-id", "--ignition_density", action="store", type=float)
+    parser.add_argument("-ws", "--wind_seed", action="store", type=int)
     parser.add_argument("-p", "--ckpt_path", action="store")
     parser.add_argument("-o", "--out_path", action="store")
-    parser.add_argument("-n", "--run_name", action="store")
     parser.add_argument("-mn", "--model_name", action="store")
+    parser.add_argument("-vl", "--varloc", action="store")
+    parser.add_argument("-d", "--debug", action="store_true")
     args = parser.parse_args()
 
     configs = load_configs(args.config_dir, args.config)
-    configs = apply_overrides(configs, args)
+
+    if args.method == "bundle":
+        configs = OmegaConf.to_container(configs, resolve=True)
+        for key in ("ckpt_path", "model_name"):
+            if getattr(args, key) is not None:
+                configs[key] = getattr(args, key)
+    else:
+        configs = apply_overrides(configs, args)
+        configs["debug"] = args.debug
 
     match args.method:
         case "train":
@@ -100,6 +112,14 @@ def main():
             test_iterations(**configs)
         case "run":
             run(**configs)
+        case "bundle":
+            if args.out_path:
+                dest = args.out_path
+            elif args.varloc:
+                dest = str(BUNDLE_DIR / args.varloc)
+            else:
+                parser.error("bundle needs -o, -vl, or -C")
+            bundle(dest=dest, **configs)
 
 
 if __name__ == "__main__":

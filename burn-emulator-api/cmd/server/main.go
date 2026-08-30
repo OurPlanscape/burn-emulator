@@ -5,15 +5,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	"burn-emulator-api/internal/auth"
-	"burn-emulator-api/internal/gke"
+	"burn-emulator-api/internal/dispatch"
 	"burn-emulator-api/internal/handlers"
-	"burn-emulator-api/internal/rate_limit"
 )
 
+// read a required env var, or exit.
 func env(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -23,6 +21,7 @@ func env(key string) string {
 	return v
 }
 
+// read an optional env var, or return fallback.
 func envDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -30,49 +29,34 @@ func envDefault(key, fallback string) string {
 	return fallback
 }
 
+// wire up the dispatch client and serve POST /v1/jobs and GET /healthz on :8080.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	ctx := context.Background()
 
-	cfg := k8s.Config{
-		Namespace:      env("BURN_EMULATOR_JOB_NAMESPACE"),
-		ServiceAccount: env("BURN_EMULATOR_JOB_SERVICE_ACCOUNT"),
-		ImageStore:     env("BURN_EMULATOR_ARTIFACT_STORE"),
-		OutputBucket:   env("BURN_EMULATOR_OUTPUT_BUCKET"),
-		RedisAddr:      env("BURN_EMULATOR_REDIS_ADDR"),
+	cfg := dispatch.Config{
+		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
+		OutputBucket: env("BURN_EMULATOR_OUTPUT_BUCKET"),
+		RunnerURL:    env("BURN_EMULATOR_RUNNER_URL"),
 	}
 
-	k8sClient, err := k8s.NewClient(ctx, cfg)
+	client, err := dispatch.NewClient(ctx, cfg)
 	if err != nil {
-		slog.Error("failed to init k8s client", "error", err)
+		slog.Error("failed to init dispatch client", "error", err)
 		os.Exit(1)
 	}
 
-	variationsPath := envDefault("VARIATIONS_FILE", "configs/variations.yaml")
-	validVariations, err := handlers.LoadVariations(variationsPath)
+	varLocsPath := envDefault("VARLOCS_FILE", "configs/varlocs.yaml")
+	validVarLocs, err := handlers.LoadVarLocs(varLocsPath)
 	if err != nil {
-		slog.Error("failed to load variations allow-list", "path", variationsPath, "error", err)
+		slog.Error("failed to load varlocs allow-list", "path", varLocsPath, "error", err)
 		os.Exit(1)
 	}
-
-	allowedCallers := strings.Split(env("BURN_EMULATOR_ALLOWED_CALLERS"), ",")
-	verifier, err := auth.NewVerifier(ctx, env("BURN_EMULATOR_TOKEN_AUDIENCE"), allowedCallers)
-	if err != nil {
-		slog.Error("failed to init auth verifier", "error", err)
-		os.Exit(1)
-	}
-	limiter := ratelimit.NewStore(1, 5)
-
-	stop := make(chan struct{})
-	defer close(stop)
-	go limiter.Cleanup(10*time.Minute, stop)
 
 	jobsHandler := &handlers.JobsHandler{
-		K8s:        k8sClient,
-		Verifier:   verifier,
-		Limiter:    limiter,
-		Variations: validVariations,
+		Dispatch: client,
+		VarLocs:  validVarLocs,
 	}
 
 	mux := http.NewServeMux()
@@ -86,8 +70,10 @@ func main() {
 		Addr:              ":8080",
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		// a request blocks on the synchronous runner call; keep this above the
+		// handler's own request timeout.
+		WriteTimeout: 150 * time.Second,
 	}
 
 	slog.Info("burn-emulator-api listening", "addr", srv.Addr)

@@ -1,48 +1,194 @@
+from functools import lru_cache
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
 import torch
 import torch.nn.functional as F
+import yaml
 from rasterio.features import geometry_mask
 from rasterio.transform import rowcol
+from rasterio.windows import Window, from_bounds
 from shapely import Polygon
 from torch.utils.data import Dataset
 
-from burn_emulator.constants import NO_DATA, Path
-from burn_emulator.utils import cache_bfuels_inputs, circle_mask
+from burn_emulator.constants import (
+    DEFAULT_DTYPE,
+    FBFM_OH_MAP,
+    INPUT_KEYS,
+    NO_DATA,
+    USE_CLOUD_PATHS,
+    Path,
+)
+from burn_emulator.datasets.utils import compute_bounds, compute_padding
+from burn_emulator.types import IgnitionMethod
+from burn_emulator.utils import circle_mask, to_flow
+
+
+def _window(src, window_bounds: tuple | None) -> Window | None:
+    """Pixel-aligned rasterio Window for the given bounds, or None for a full read."""
+    if window_bounds is None:
+        return None
+    return (
+        from_bounds(*window_bounds, transform=src.transform).round_offsets().round_lengths()
+    )
+
+
+def _windowed_profile(src, window: Window | None, dat: torch.Tensor) -> dict:
+    profile = src.profile
+    if window is not None:
+        profile.update(
+            transform=src.window_transform(window),
+            width=dat.shape[-1],
+            height=dat.shape[-2],
+        )
+    return profile
+
+
+def _encode_fbfm(dat: torch.Tensor) -> torch.Tensor:
+    for k, v in FBFM_OH_MAP.items():
+        dat[dat == k] = v
+    dat = F.one_hot(dat.long(), num_classes=len(np.unique(list(FBFM_OH_MAP.values()))))
+    return dat.squeeze(0).permute(2, 0, 1)[1:].to(DEFAULT_DTYPE)  # drop the no-data channel
+
+
+def _clean_continuous(dat: torch.Tensor, nodata: float | None) -> torch.Tensor:
+    dat = dat.to(DEFAULT_DTYPE)
+    dat[dat == nodata] = torch.nan
+    dat[dat < 0] = 0
+    return dat
+
+
+def _read_fuel_dir(
+    fuels_path: Path,
+    window_bounds: tuple | None,
+    sample_region: Polygon | None,
+    window_size: int,
+) -> tuple[dict, torch.Tensor | None, dict | None, tuple | None]:
+    """Read + preprocess one fuel directory. Returns (layer, mask, profile, window_bounds);
+    window_bounds is resolved here (from the first raster's resolution) when not yet known."""
+    # TODO: convert to zarr and/or icechunk inputs
+    files = {f.stem.rsplit("_", 1)[1]: f for f in fuels_path.glob("*.tif")}
+    layer, mask, profile = {}, None, None
+    for name in INPUT_KEYS:
+        file = files.get(name)
+        if file is None:
+            continue
+        with rasterio.open(file) as src:
+            if window_bounds is None and sample_region is not None:
+                # margin so every ignition's full model window fits in the read
+                window_bounds = tuple(
+                    sample_region.buffer(window_size * max(src.res), join_style="mitre").bounds
+                )
+            window = _window(src, window_bounds)
+            dat = torch.tensor(src.read(window=window))
+            if name == "fbfm":
+                profile = _windowed_profile(src, window, dat)
+                mask = dat != src.nodata
+                dat = _encode_fbfm(dat)
+            else:
+                dat = _clean_continuous(dat, src.nodata)
+        layer[name] = dat
+    return layer, mask, profile, window_bounds
+
+
+def _normalize_inputs(inputs: dict, stats_path: Path) -> None:
+    """Standardize continuous inputs in place; load stats.yaml or compute + persist it."""
+    stats_data = stats_path.exists()
+    if stats_data:
+        with stats_path.open() as f:
+            stats = yaml.safe_load(f)
+    else:
+        stats = {}
+    for key in INPUT_KEYS:
+        if key == "fbfm":
+            continue
+        if stats_data:
+            mean, stdv = stats[key]["mean"], stats[key]["stdv"]
+        else:
+            arrs = torch.concat([inputs[r][key] for r in inputs])
+            mean = torch.nanmean(arrs).item()
+            stdv = torch.sqrt(torch.nanmean((arrs - mean) ** 2)).item()
+            stats[key] = {"mean": mean, "stdv": stdv}
+        for r in inputs:
+            inputs[r][key] = (inputs[r][key] - mean) / stdv
+            inputs[r][key][torch.isnan(inputs[r][key])] = NO_DATA
+    if not stats_data and not USE_CLOUD_PATHS:
+        with stats_path.open("w") as f:
+            yaml.dump(stats, f, sort_keys=False)
+
+
+@lru_cache(maxsize=4)
+def _load_topos(topo_path: str, flow: bool, window_bounds: tuple | None) -> dict:
+    topo_path = Path(topo_path)
+    topos = {}
+
+    with rasterio.open(topo_path / "aspect.tif") as src:
+        aspect = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
+    with rasterio.open(topo_path / "slope_degrees.tif") as src:
+        slope = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
+
+    if flow:
+        flow_x, flow_y = to_flow(aspect, slope)
+        topos["flow_x"] = flow_x
+        topos["flow_y"] = flow_y
+    else:
+        topos["aspect"] = aspect
+        topos["slope"] = slope
+    return topos
+
+
+def cache_fuels_inputs(
+    fuels_paths: dict[str, Path],
+    topo_path: Path,
+    stats_path: Path,
+    sample_region: Polygon | None = None,
+    window_size: int = 129,
+    flow: bool = True,
+) -> tuple[dict, dict, dict, dict]:
+    inputs, masks, profile, bounds = {}, {}, None, None
+    for fkey, fuels_path in fuels_paths.items():
+        inputs[fkey], masks[fkey], profile, bounds = _read_fuel_dir(
+            fuels_path, bounds, sample_region, window_size
+        )
+    _normalize_inputs(inputs, stats_path)
+    topos = _load_topos(str(topo_path), flow, bounds)
+    return inputs, topos, masks, profile
 
 
 class VarLoc(Dataset):
     def __init__(
         self,
-        ignitions_path: Path | None,
-        fuels_paths: list[Path],
-        burn_paths: list[Path] | None,
-        wind_ang_paths: list[Path] | None,
-        topo_path: Path,
-        stats_path: Path,
-        burn_times: list[int] = None,
+        ignitions_path: str | Path | None,
+        fuels_paths: dict[str, str | Path],
+        burn_paths: dict[str, str | Path] | None,
+        wind_ang_paths: list[str | Path] | None,
+        topo_path: str | Path,
+        stats_path: str | Path,
+        burn_times: list[int] | None = None,
         window_size: int = 129,
         jitter: int | None = None,
         treatment_area: Polygon | None = None,
-        treatment_buff: Polygon | None = None,
+        treatment_buff: float | None = None,  # metres to buffer treatment_area by
         treatment_seed: int = 42,
-        ignition_density: float | None = None,
+        ignition_method: IgnitionMethod = "uniform",
+        ignition_density: float | None = 5e-5,
         wind_seed: int = 42,
         wind_range: list[float] | None = None,
         circle_mask: bool = True,
         one_hot: bool = True,
         num_classes: int = 4,  # unburned, surface, passive crown, active crown
     ) -> None:
-        self.fuels_paths = [Path(p) for p in fuels_paths]
+        # fuels_paths / burn_paths are role-keyed: {"baseline": ..., "treatment": ...}
+        self.fuels_paths = {k: Path(p) for k, p in fuels_paths.items()}
 
         self.burn_paths = burn_paths
-        if self.burn_paths is not None:
-            assert len(self.fuels_paths) == len(self.burn_paths), (
-                "Each fuel layer set should have a single associated burn directory"
+        if burn_paths is not None:
+            self.burn_paths = {k: Path(p) for k, p in burn_paths.items()}
+            assert self.fuels_paths.keys() == self.burn_paths.keys(), (
+                "fuels_paths and burn_paths must have the same roles"
             )
-            self.burn_paths = [Path(p) for p in burn_paths]
 
         self.wind_ang_paths = wind_ang_paths
         if self.wind_ang_paths is not None:
@@ -54,6 +200,7 @@ class VarLoc(Dataset):
         self.topo_path = Path(topo_path)
         self.stats_path = Path(stats_path)
 
+        # NOTE: unused for v1 but leaving for future development
         self.burn_times = [str(bt) for bt in burn_times] if burn_times else [480]
         self.window_size = window_size
         self.jitter = jitter
@@ -62,6 +209,7 @@ class VarLoc(Dataset):
         self.treatment_buff = treatment_buff
         self.treatment_seed = treatment_seed
         self.ignition_density = ignition_density
+        self.ignition_method = ignition_method
 
         self.wind_seed = wind_seed
         self.wind_range = wind_range
@@ -69,10 +217,23 @@ class VarLoc(Dataset):
         self.one_hot = one_hot
         self.num_classes = num_classes
 
-        self._set_ignitions(ignitions_path, treatment_buff, treatment_seed, ignition_density)
-        self.fuels, self.topos, self.masks, self.profile = cache_bfuels_inputs(
-            self.fuels_paths, self.topo_path, self.stats_path, self.window_geo
+        self._set_ignitions(ignitions_path,
+                            treatment_area,
+                            treatment_buff,
+                            treatment_seed,
+                            ignition_density,
+                            ignition_method)
+        self.fuels, self.topos, self.masks, self.profile = cache_fuels_inputs(
+            self.fuels_paths,
+            self.topo_path,
+            self.stats_path,
+            sample_region=self.sample_region,
+            window_size=self.window_size,
         )
+
+        # sampled ignitions carry only geometry; derive raster row/col from the profile
+        if "row" not in self.ignitions.columns:
+            self._locate_ignitions()
 
         if self.treatment_area is not None:
             self._collate_treatments(treatment_area)
@@ -87,16 +248,17 @@ class VarLoc(Dataset):
         else:
             return len(self.ignitions) * len(self.burn_paths)
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> dict:
         if self.burn_paths is None:
             sidx = idx
             bidx = 0
         else:
             sidx = idx // len(self.burn_paths)
             bidx = idx % len(self.burn_paths)
-            burn_path = self.burn_paths[bidx]
 
-        fkey = self.fuels_paths[bidx].stem
+        fkey = list(self.fuels_paths)[bidx]
+        if self.burn_paths is not None:
+            burn_path = self.burn_paths[fkey]
         ignition = self.ignitions.iloc[sidx]
 
         y = int(ignition["row"].item())
@@ -105,17 +267,26 @@ class VarLoc(Dataset):
         if self.wind_angles is not None:
             wind = self.wind_angles[bidx].iloc[sidx]
 
+        # only to be used for training
         if self.jitter is not None:
             y += np.random.randint(-(self.jitter + 1), self.jitter)
             x += np.random.randint(-(self.jitter + 1), self.jitter)
 
-        ymin, ymax, xmin, xmax, yslc, xslc = self._compute_bounds(fkey, y, x)
-        ydiff, xdiff, ypad, xpad = self._compute_padding(ymin, ymax, xmin, xmax)
+        _, h, w = self.fuels[fkey]["fbfm"].shape
+        ymin, ymax, xmin, xmax, yslc, xslc = compute_bounds(y, x, h, w, self.window_size)
+        ydiff, xdiff, ypad, xpad = compute_padding(ymin, ymax, xmin, xmax, self.window_size)
 
+        # stacking treated area as a secondary X
         mask = self._build_mask(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
-        arrX = self._build_arrx(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
+        if self.treatment_area is not None:
+            arrX = torch.stack([
+                self._build_arrx(k, yslc, xslc, ydiff, xdiff, ypad, xpad)
+                for k in self.fuels_paths
+            ])
+        else:
+            arrX = self._build_arrx(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
 
-        # burns are not necessary for inference
+        # padding information is not necessary for training
         if self.burn_paths is not None:
             arrY = self._build_arry(ignition, burn_path, yslc, xslc, ydiff, xdiff, ypad, xpad)
             return {
@@ -124,6 +295,7 @@ class VarLoc(Dataset):
                 "wind": wind,
                 "mask": mask,
             }
+        # burns are not necessary for inference
         else:
             return {
                 "x": arrX,
@@ -133,26 +305,6 @@ class VarLoc(Dataset):
                 "bounds": (ymin, ymax, xmin, xmax),
                 "indxes": (sidx, bidx),
             }
-
-    def _compute_bounds(self, fkey: str, y: int, x: int) -> tuple[int, int, int, int, slice, slice]:
-        # occasionally ignitions are at a border
-        S = self.window_size // 2
-        Off = self.window_size % 2
-        _, H, W = self.fuels[fkey]["fbfm"].shape
-        ymin, ymax = max(0, y - S), min(y + S + Off, H)
-        xmin, xmax = max(0, x - S), min(x + S + Off, W)
-        yslc = slice(ymin, ymax)
-        xslc = slice(xmin, xmax)
-        return ymin, ymax, xmin, xmax, yslc, xslc
-
-    def _compute_padding(
-        self, ymin: int, ymax: int, xmin: int, xmax: int
-    ) -> tuple[int, int, tuple[int, int, int, int], tuple[int, int, int, int]]:
-        ydiff = self.window_size - (ymax - ymin)
-        xdiff = self.window_size - (xmax - xmin)
-        ypad = (0, 0, ydiff, 0) if ymin == 0 else (0, 0, 0, ydiff)
-        xpad = (xdiff, 0, 0, 0) if xmin == 0 else (0, xdiff, 0, 0)
-        return ydiff, xdiff, ypad, xpad
 
     def _pad(
         self,
@@ -262,11 +414,24 @@ class VarLoc(Dataset):
         return arrY
 
     def _set_ignitions(
-        self, ignitions_path=None, treatment_buff=None, treatment_seed=42, ignition_density=None
-    ):
+        self,
+        ignitions_path: Path | None = None,
+        treatment_area: Polygon | None = None,
+        treatment_buff: float | None = None,
+        treatment_seed: int = 42,
+        ignition_density: float | None = None,
+        ignition_method: IgnitionMethod = "uniform",
+    ) -> None:
+        # envelope of where ignitions were sampled from; cache_fuels_inputs margins
+        # this by window_size * pixel_size to bound the raster read. None -> full read.
+        self.sample_region = None
+        region = treatment_area
+        if treatment_buff is not None:
+            region = treatment_area.buffer(treatment_buff)  # metres
         if ignitions_path is None:
-            buffer_gs = gpd.GeoSeries([treatment_buff])
-            self._sample_ignitions(buffer_gs, ignition_density, treatment_seed)
+            self._sample_ignitions(
+                gpd.GeoSeries([region]), ignition_density, treatment_seed, ignition_method
+            )
         else:
             match Path(ignitions_path).suffix:
                 case ".csv":
@@ -278,10 +443,11 @@ class VarLoc(Dataset):
                         self.ignitions["ignition_number"] = self.ignitions["index"]
                     if "ignition_number" not in self.ignitions.columns:
                         self.ignitions = self.ignitions.reset_index(names="ignition_number")
-                    self.window_geo = None
                 case ".gpkg" | ".geojson" | ".zip":
-                    gdf = gpd.read_file(self.ignitions)
-                    self._sample_ignitions(gdf.geometry, ignition_density, self.treatment_seed)
+                    gdf = gpd.read_file(ignitions_path)
+                    self._sample_ignitions(
+                        gdf.geometry, ignition_density, treatment_seed, ignition_method
+                    )
                 case _:
                     ignitions_paths = Path(ignitions_path).glob("**/*.csv")
                     self.ignitions = []
@@ -292,9 +458,8 @@ class VarLoc(Dataset):
                         ignition.loc[:, "cbp_burn"] = name
                         self.ignitions.append(ignition)
                     self.ignitions = pd.concat(self.ignitions)
-                    self.window_geo = None
 
-    def _set_wind_angles(self):
+    def _set_wind_angles(self) -> None:
         self.wind_angles = []
         assert self.wind_ang_paths is not None or self.wind_range is not None, (
             "Either wind_ang_paths or wind_range must be provided to set wind angles"
@@ -310,32 +475,37 @@ class VarLoc(Dataset):
                 )
                 self.wind_angles.append(pd.Series(wind_angle, name="upwind_direction"))
 
-    def _set_circle_mask(self) -> torch.Tensor:
+    def _set_circle_mask(self) -> None:
         self.cmask = circle_mask(self.window_size)
 
     def _sample_ignitions(
-        self, gs: gpd.GeoSeries, ignition_density: float = 0.0001, treatment_seed: int = 42
-    ):
+        self,
+        gs: gpd.GeoSeries,
+        ignition_density: float = 5e-5,
+        treatment_seed: int = 42,
+        method: IgnitionMethod = "uniform",
+    ) -> None:
         n_points = round(gs.area.sum() * ignition_density)
-        sampled = gs.sample_points(size=n_points, rng=treatment_seed)
+        sampled = gs.sample_points(size=n_points, method=method, rng=treatment_seed)
         sampled = sampled.explode(index_parts=False).reset_index(drop=True)
         self.ignitions = gpd.GeoDataFrame(geometry=sampled, crs=gs.crs)
-        self.window_geo = gs.union_all().envelope
+        self.sample_region = gs.union_all().envelope
 
-    def _locate_ignitions(self):
+    def _locate_ignitions(self) -> None:
         xs = self.ignitions.geometry.x.to_numpy()
         ys = self.ignitions.geometry.y.to_numpy()
         rows, cols = rowcol(self.profile["transform"], xs, ys)
         self.ignitions["row"] = rows
         self.ignitions["col"] = cols
 
-    def _collate_treatments(self, treatment_area: Polygon):
-        # TODO: get a better naming convention
-        # we're assuming the second fuel layer is the treatment layer
-        fkey0 = self.fuels_paths[0].stem
-        fkey1 = self.fuels_paths[1].stem
+    def _collate_treatments(self, treatment_area: Polygon) -> None:
+        assert {"baseline", "treatment"} <= self.fuels.keys(), (
+            "treatment_area needs fuels_paths as {'baseline': ..., 'treatment': ...}"
+        )
+        # treatment layer becomes: treatment fuels inside the area, baseline outside
+        base, treat = self.fuels["baseline"], self.fuels["treatment"]
 
-        _, H, W = self.fuels[fkey0]["fbfm"].shape
+        _, H, W = base["fbfm"].shape
         treated = geometry_mask(
             [treatment_area],
             out_shape=(H, W),
@@ -344,95 +514,5 @@ class VarLoc(Dataset):
         )
         treated = torch.from_numpy(treated)
 
-        for key, arr in self.fuels[fkey1].items():
-            self.fuels[fkey0][key][:, treated] = arr[:, treated]
-        del self.fuels[fkey1]
-
-
-class VarLocDiff(VarLoc):
-    def __init__(self, percent_no_change=None, **kwargs):
-        super().__init__(**kwargs)
-        self.percent_no_change = percent_no_change
-
-    def __len__(self) -> int:
-        return len(self.ignitions)
-
-    def __getitem__(self, idx: int):
-        sidx = idx
-        ignition = self.ignitions.iloc[sidx]
-
-        y = int(ignition["row"].item())
-        x = int(ignition["col"].item())
-
-        if self.wind_angles is not None:
-            wind = self.wind_angles[0].iloc[sidx]
-
-        if self.jitter is not None:
-            y += np.random.randint(-(self.jitter + 1), self.jitter)
-            x += np.random.randint(-(self.jitter + 1), self.jitter)
-
-        fkey0 = self.fuels_paths[0].stem
-        ymin, ymax, xmin, xmax, yslc, xslc = self._compute_bounds(fkey0, y, x)
-        ydiff, xdiff, ypad, xpad = self._compute_padding(ymin, ymax, xmin, xmax)
-
-        mask = self._build_mask(fkey0, yslc, xslc, ydiff, xdiff, ypad, xpad)
-
-        fkey1 = self.fuels_paths[1].stem
-
-        if self.percent_no_change is not None and np.random.rand() < self.percent_no_change:
-            fkey = fkey0  # maintain baseline only
-            arr = self._build_arrx(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
-            arrX = torch.stack([arr, arr])
-            arrY = torch.zeros((self.num_classes, self.window_size, self.window_size))
-            arrY[0] = 1
-            return {
-                "x": arrX,
-                "y": arrY,
-                "wind": wind,
-                "mask": mask,
-            }
-        else:
-            arrX = torch.stack(
-                [
-                    self._build_arrx(fkey0, yslc, xslc, ydiff, xdiff, ypad, xpad),
-                    self._build_arrx(fkey1, yslc, xslc, ydiff, xdiff, ypad, xpad),
-                ]
-            )
-
-            if self.burn_paths is not None:
-                arrY_baseline = self._build_arry_raw(ignition, self.burn_paths[0], yslc, xslc)
-                arrY_treatment = self._build_arry_raw(ignition, self.burn_paths[1], yslc, xslc)
-
-                # fire_type classes: 0 unburned | 1 surface | 2 passive crown | 3 active crown
-                # crowned (passive or active) is class >= 2
-                baseline_crowned = arrY_baseline >= 2
-                treatment_crowned = arrY_treatment >= 2
-
-                # 0 (no change) | 1 (surface or nonburned to passive or active)
-                # | 2 (passive or active to surface or non-burned)
-                arrY = torch.zeros_like(arrY_baseline)
-                arrY[~baseline_crowned & treatment_crowned] = 1
-                arrY[baseline_crowned & ~treatment_crowned] = 2
-
-                if self.one_hot:
-                    arrY = F.one_hot(arrY.long(), num_classes=self.num_classes)
-                    arrY = arrY.permute(0, 3, 1, 2).flatten(0, 1)
-                else:
-                    arrY = arrY >= 1
-                arrY = self._pad(arrY, ydiff, xdiff, ypad, xpad, value=0)
-
-                return {
-                    "x": arrX,
-                    "y": arrY,
-                    "wind": wind,
-                    "mask": mask,
-                }
-            else:
-                return {
-                    "x": arrX,
-                    "wind": wind,
-                    "mask": mask,
-                    "pdiffs": (ydiff, xdiff),
-                    "bounds": (ymin, ymax, xmin, xmax),
-                    "indxes": (sidx, torch.empty(0)),
-                }
+        for key, arr in base.items():
+            treat[key][:, ~treated] = arr[:, ~treated]

@@ -5,22 +5,21 @@ import torch
 torch.set_float32_matmul_precision("high")
 torch.backends.cudnn.benchmark = True
 
-
-RUN_DEVICE = os.environ.get("RUN_DEVICE", "cuda")
-RUN_DTYPE = os.environ.get("RUN_DTYPE", "float")
-USE_CLOUD_PATHS = os.environ.get("USE_CLOUD_PATHS") == 1
+# switch for bare metal -> cloud
+USE_CLOUD_PATHS = bool(os.environ.get("USE_CLOUD_PATHS"))
 if USE_CLOUD_PATHS:
     from cloudpathlib import AnyPath as Path
 else:
     from pathlib import Path
-
 __all__ = ["Path"]
 
 # TODO: potentially change to enums
-# training constants
-DEFAULT_DEVICE = torch.device(RUN_DEVICE)  # default device for training
-DEFAULT_DTYPE = torch.bfloat16  # default trainining dtype for memory saving
-NO_DATA = -1  # no data value for NN inputs
+# training and inference constants
+RUN_DEVICE = os.environ.get("RUN_DEVICE", "cuda")
+RUN_DTYPE = getattr(torch, os.environ.get("RUN_DTYPE", "bfloat16"))
+DEFAULT_DEVICE = torch.device(RUN_DEVICE)   # default device for training
+DEFAULT_DTYPE = torch.bfloat16              # default trainining dtype for memory saving
+NO_DATA = -1                                # no data value for NN inputs
 RAW_NO_DATA = -9999
 
 # input fuel specific constants
@@ -54,6 +53,7 @@ INF_PROFILE = {
 }
 INPUT_KEYS = ["cbd", "cbh", "cc", "fbfm", "th"]
 
-# path constants
-METHODS = ["train", "test", "test_iterations", "run"]
+# cli path constants
+METHODS = ["train", "test", "test_iterations", "run", "bundle"]
 OUTDIR = Path("data/outputs")
+BUNDLE_DIR = Path("data/bundles")

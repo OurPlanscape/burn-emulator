@@ -3,33 +3,29 @@ SHELL      := /bin/bash
 
 API_DIR    ?= burn-emulator-api
 MODEL_DIR  ?= burn-emulator-model
-DOCKER_DIR ?= deploy/docker
+RUNNER_DIR ?= burn-emulator-runner
 REGISTRY   ?= $(BURN_EMULATOR_ARTIFACT_STORE)
 VERSION    ?= $(shell git rev-parse --short HEAD)
 
-API_IMAGE   := $(REGISTRY)/burn-emulator-api/:$(VERSION)
-MODEL_IMAGE := $(REGISTRY)/burn-emulator-model/:$(VERSION)
+API_IMAGE    := $(REGISTRY)/burn-emulator-api:$(VERSION)
+RUNNER_IMAGE := $(REGISTRY)/burn-emulator-runner:$(VERSION)
 
-XLA_VERSION ?=
-CKPT_NAME   ?=
-CKPT_PATH   ?=
-STAGE_DIR   ?=
-
-.PHONY: build-api push-api build-model push-model build-all push-all deploy-api
+.PHONY: build-api push-api build-runner push-runner publish-model
 
 build-api:
-	docker build -f $(DOCKER_DIR)/Dockerfile.api -t $(API_IMAGE) $(API_DIR)
+	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) $(API_DIR)
 
 push-api: build-api
 	docker push $(API_IMAGE)
 
-build-model:
-	docker build -f $(DOCKER_DIR)/Dockerfile.model \
-		--build-arg XLA_VERSION=$(XLA_VERSION) \
-		--build-arg CKPT_NAME=$(CKPT_NAME) \
-		--build-arg CKPT_PATH=$(CKPT_PATH) \
-		--build-arg STAGE_DIR=$(STAGE_DIR) \
-		-t $(MODEL_IMAGE) $(MODEL_DIR)
+build-runner:
+	docker build -f $(RUNNER_DIR)/Dockerfile -t $(RUNNER_IMAGE) .
 
-push-model: build-model
-	docker push $(MODEL_IMAGE)
+push-runner: build-runner
+	docker push $(RUNNER_IMAGE)
+
+# make publish-model VARLOC=wc711 [BUNDLE_DIR=...] [MODELS_URI=gs://...]
+# BUNDLE_DIR defaults to where `burn_emulator -m bundle` writes it.
+BUNDLE_DIR ?= $(MODEL_DIR)/data/bundles/$(VARLOC)
+publish-model:
+	$(MODEL_DIR)/scripts/publish_model.sh $(VARLOC) $(BUNDLE_DIR) $(MODELS_URI)

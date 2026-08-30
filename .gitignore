@@ -6,7 +6,8 @@ dist/
 wheels/
 *.egg-info
 .ruff_cache
+.venv/
 
-burn-emulator-model/.venv
+# model project scratch
 burn-emulator-model/data
 burn-emulator-model/logs
