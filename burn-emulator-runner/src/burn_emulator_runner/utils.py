@@ -9,9 +9,14 @@ def env_flag(name: str) -> bool:
 
 
 def warm_gpu() -> None:
-    """Pay the one-time CUDA init cost at startup instead of on the first request."""
     import torch
     from burn_emulator.constants import RUN_DEVICE
 
-    if RUN_DEVICE == "cuda" and torch.cuda.is_available():
-        torch.zeros(1, device="cuda")
+    if RUN_DEVICE != "cuda":
+        return
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "RUN_DEVICE=cuda but torch reports no CUDA device available; "
+            "check the GPU is attached and the image has the CUDA runtime"
+        )
+    torch.zeros(1, device="cuda")
