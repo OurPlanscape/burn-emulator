@@ -15,9 +15,10 @@ uv sync --extra data     # for scripts/ (training-data generation from Pyretechn
 
 ## Train
 
+All configs are composable any with priority going to cli flags then the latest config entered. 
 ```bash
-burn_emulator -m train -c <model.yaml> -c <train.yaml>
-burn_emulator -m test  -c <model.yaml> -c <test.yaml>
+burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
+burn_emulator -m test  -c <model.yaml> -c <test.yaml> -c <data.yaml>
 ```
 
 Output: `data/outputs/<model_name>/` — `checkpoints/`, `stats.yaml`, `train_log.csv`.
@@ -33,10 +34,12 @@ burn_emulator -m run -c <model.yaml> -c <data.yaml> \
 1. merge -c YAMLs + CLI overrides
 2. build the VarLoc dataset: sample seeded ignitions across the buffered treatment_area,
    one window per ignition (baseline + collated-treatment fuels, wind, circular mask)
-3. load the checkpoint (-p, else lowest-loss in <dir>/checkpoints)
+3. load the checkpoint if exists (-p, else lowest-loss in <dir>/checkpoints)
 4. per batch: forward baseline + treatment -> activation -> argmax -> fire_type per pixel
-5. per fire: keep the center-connected burn, classify crown change, drop fires that
-   miss the treatment region
+5. per fire:
+    keep the center-connected burn (NN outputs have minor speckling)
+    classify crown change, drop fires that
+    miss the treatment region
 6. aggregate kept fires onto the full raster (fp32) -> per-pixel change probabilities
 7. write <dir>/<model_name>_run.tif   (3-band float32 GeoTIFF)
 ```
@@ -50,9 +53,9 @@ Env: `RUN_DEVICE` (`cuda` | `XLA` | `cpu`), `RUN_DTYPE` (`bfloat16`), `USE_CLOUD
 ```
 ignitions_path/        # ignition points (or sampled from treatment_area)
 topo_path/             # tifs: aspect / slope
-baseline_fuels_path/   # tifs: baseline fuels
-legalmax_fuels_path/   # tifs: treatment fuels
-burn_paths/{ignition_number}/fire_type.tif
+baseline_fuels_path/   # tifs: baseline fuels ("cbd", "cbh", "cc", "fbfm", "th")
+legalmax_fuels_path/   # tifs: treatment fuels ("cbd", "cbh", "cc", "fbfm", "th")
+burn_paths/{ignition_number}/fire_type.tif # only for training
 ```
 
 ## Publish a model

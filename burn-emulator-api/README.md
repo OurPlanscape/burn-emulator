@@ -1,6 +1,6 @@
 # burn-emulator-api
 
-Go service. Validates a request, resolves the model version, checks the GCS output cache and claim ledger, and on a miss runs the emulation synchronously on [`burn-emulator-runner`](../burn-emulator-runner). No ML code; caller identity is verified upstream.
+Go service. Validates a request, resolves the model version, checks the GCS output cache and claim ledger, and on a miss runs the emulation synchronously on [`burn-emulator-runner`](../burn-emulator-runner). No ML code; caller identity is verified upstream via GCP identities.
 
 ## Config
 
