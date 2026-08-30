@@ -58,7 +58,7 @@ def run(
 
     base_init = dataset.setdefault("init_args", {})
     base_init.setdefault("ignitions_path", None)  # sampled from treatment_area
-    base_init.setdefault("stats_path", experiment_dir(model_name) / "stat.yaml")
+    base_init.setdefault("stats_path", experiment_dir(model_name) / "stats.yaml")
     region = base_init.get("treatment_area")
     assert region is not None, "run needs dataset.init_args.treatment_area"
     assert len(base_init.get("fuels_paths", [])) == 2, "run needs 2 fuels_paths"

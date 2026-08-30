@@ -39,10 +39,10 @@ def bundle(
     init = dict(dataset.get("init_args") or {})
     for key in _RUNTIME_DATASET_KEYS:
         init.pop(key, None)
-    init["stats_path"] = "stat.yaml"
+    init["stats_path"] = "stats.yaml"
 
     shutil.copy2(ckpt, dst / "model.pt")
-    shutil.copy2(stats, dst / "stat.yaml")
+    shutil.copy2(stats, dst / "stats.yaml")
 
     config = {
         "model_name": model_name,
@@ -64,7 +64,7 @@ def _resolve_stats(dataset: dict, training_dir: Path) -> Path:
     cfg = (dataset.get("init_args") or {}).get("stats_path")
     if cfg and Path(cfg).is_file():
         return Path(cfg)
-    for name in ("stat.yaml", "stats.yaml"):
+    for name in ("stats.yaml", "stats.yaml"):
         if (training_dir / name).is_file():
             return training_dir / name
-    raise ValueError(f"no stats file: expected {training_dir / 'stat.yaml'}")
+    raise ValueError(f"no stats file: expected {training_dir / 'stats.yaml'}")

@@ -1,8 +1,6 @@
 # burn-emulator
 
-A deep-learning emulator of a burn spread model — thousands of burns in seconds for conditional burn probability (CBP).
-
-Deployment (Terraform, IAM, scaling) lives in a separate private repo.
+A deep-learning emulator of a burn spread model to generate thousands of burns in seconds for conditional burn probability (CBP).
 
 ## Components
 
@@ -15,8 +13,8 @@ Deployment (Terraform, IAM, scaling) lives in a separate private repo.
 ## Model registry (GCS)
 
 ```
-gs://<models>/<varloc>/current       # text file: the active version
-gs://<models>/<varloc>/<version>/    # model.pt, stat.yaml, config.yaml
+gs://<bucket_name>/<models>/<varloc>/current       # text file: the active version
+gs://<bucket_name>/<models>/<varloc>/<version>/    # model.pt, stats.yaml, config.yaml
 ```
 
 `<version>` = `<model.pt mtime>-<git sha>`. `make publish-model VARLOC=…` uploads a bundle and repoints `current`.

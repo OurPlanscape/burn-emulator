@@ -20,7 +20,7 @@ burn_emulator -m train -c <model.yaml> -c <train.yaml>
 burn_emulator -m test  -c <model.yaml> -c <test.yaml>
 ```
 
-Output: `data/outputs/<model_name>/` — `checkpoints/`, `stat.yaml`, `train_log.csv`.
+Output: `data/outputs/<model_name>/` — `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
 ## Run
 
@@ -68,7 +68,7 @@ make publish-model VARLOC=<varloc>
 | file | from |
 | --- | --- |
 | `model.pt` | `-p`, else the lowest-loss checkpoint under `data/outputs/<model_name>/checkpoints` |
-| `stat.yaml` | the same training dir |
+| `stats.yaml` | the same training dir |
 | `config.yaml` | the `-c` config with runtime-injected fields removed |
 
 `make publish-model` uploads it to `gs://<models>/<varloc>/<version>/` and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.

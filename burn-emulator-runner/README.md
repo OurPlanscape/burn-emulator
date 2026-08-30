@@ -20,7 +20,7 @@ GPU service. Loads a model bundle per request and runs `burn_emulator.run.run()`
 <MODELS_DIR>/<varloc>/current       # text file: the active version
 <MODELS_DIR>/<varloc>/<version>/
 ├── model.pt      # checkpoint
-├── stat.yaml     # normalization stats
+├── stats.yaml     # normalization stats
 └── config.yaml   # model + activation + dataset + dataloader + model_name
 ```
 

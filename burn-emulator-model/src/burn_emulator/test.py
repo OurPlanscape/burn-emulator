@@ -182,7 +182,7 @@ def _run_single_test(
     else:
         ds_kwargs = dataset
 
-    dataset = dynamic_import(ds_kwargs, {"stats_path": experiment_path / "stat.yaml"})
+    dataset = dynamic_import(ds_kwargs, {"stats_path": experiment_path / "stats.yaml"})
     test_loader = dynamic_import(dataloader, {"dataset": dataset})
     activation = dynamic_import(activation)
 

@@ -137,7 +137,7 @@ def train(
         if meta is not None:
             start_epoch, start_step = meta[0] + 1, meta[1]
 
-    dataset = dynamic_import(dataset, {"stats_path": experiment_path / "stat.yaml"})
+    dataset = dynamic_import(dataset, {"stats_path": experiment_path / "stats.yaml"})
     optimizer = dynamic_import(optimizer, {"params": model.parameters()})
     if ckpt_path is not None:
         optim_ckpt_path = optimizer_checkpoint_path(ckpt_path)
