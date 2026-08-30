@@ -95,7 +95,7 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientIP := clientIP(r)
+	clientAddr := clientIP(r)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
@@ -124,7 +124,14 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		JobName:       body.JobName,
 	})
 	if err != nil {
-		slog.Error("run failed", "error", err, "job_name", body.JobName, "varloc", body.VarLoc, "client_ip", clientIP)
+		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
+			// client hung up (or the server is shutting down); the runner keeps
+			// going and the result lands in the cache for the retry.
+			slog.Info("request cancelled, run continues server-side",
+				"job_name", body.JobName, "varloc", body.VarLoc, "client_ip", clientAddr)
+			return
+		}
+		slog.Error("run failed", "error", err, "job_name", body.JobName, "varloc", body.VarLoc, "client_ip", clientAddr)
 		http.Error(w, "failed to run burn emulation", http.StatusInternalServerError)
 		return
 	}
@@ -137,7 +144,7 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	slog.Info("run handled",
 		"job_name", result.JobName, "varloc", body.VarLoc, "hash", result.Hash,
 		"model_version", result.ModelVersion, "status", result.Status, "attempts", result.Attempts,
-		"output_path", result.OutputPath, "client_ip", clientIP)
+		"output_path", result.OutputPath, "client_ip", clientAddr)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
