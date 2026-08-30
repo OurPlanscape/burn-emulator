@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # training-data generation only (scripts/create_training_data.py, scripts/pyretechnics.py)
-data = ["pyretechnics"]
+data = ["pyretechnics", "ray"]
 
 [project.scripts]
 burn_emulator = "burn_emulator.main:main"
