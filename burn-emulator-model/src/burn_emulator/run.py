@@ -74,7 +74,7 @@ def run(
     out_path = experiment_dir(model_name, out_path) / f"{model_name}_run.tif"
 
     with timed(timings, "model load"):
-        ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE)
+        ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)
         if next(iter(ckpt.keys())).startswith("_orig_mod"):
             ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
         model.load_state_dict(ckpt)
@@ -151,7 +151,7 @@ def run(
             n_kept += change.shape[0]
         agg /= max(n_kept, 1)
 
-    if keep_mask is not None:
+    if debug:
         print(f"[run] kept {n_kept}/{n_ignitions} fires touching the region", flush=True)
 
     with timed(timings, "write"):

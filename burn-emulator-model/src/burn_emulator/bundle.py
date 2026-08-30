@@ -64,7 +64,6 @@ def _resolve_stats(dataset: dict, training_dir: Path) -> Path:
     cfg = (dataset.get("init_args") or {}).get("stats_path")
     if cfg and Path(cfg).is_file():
         return Path(cfg)
-    for name in ("stats.yaml", "stats.yaml"):
-        if (training_dir / name).is_file():
-            return training_dir / name
+    if (training_dir / "stats.yaml").is_file():
+        return training_dir / "stats.yaml"
     raise ValueError(f"no stats file: expected {training_dir / 'stats.yaml'}")

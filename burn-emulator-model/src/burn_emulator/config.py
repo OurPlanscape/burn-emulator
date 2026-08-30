@@ -8,12 +8,13 @@ from shapely.geometry.base import BaseGeometry
 
 def dynamic_import(loader: dict, kwargs: dict | None = None) -> Any:
     class_path = loader.get("class_path")
-    init_args = loader.get("init_args", {})
-    if kwargs is not None:
-        init_args |= kwargs
+    if not class_path or "." not in class_path:
+        raise ValueError(f"loader needs a dotted 'class_path', got {class_path!r}")
 
-    loader_path = class_path.rsplit(".", 1)
-    module_path, class_name = loader_path
+    # build a fresh dict so the caller's loader config is never mutated
+    init_args = {**(loader.get("init_args") or {}), **(kwargs or {})}
+
+    module_path, class_name = class_path.rsplit(".", 1)
     loader_cls = getattr(importlib.import_module(module_path), class_name)
 
     return loader_cls(**init_args)
@@ -30,7 +31,7 @@ def load_treatment_area(value: str | dict | BaseGeometry | None) -> BaseGeometry
         return value
 
     obj = value if isinstance(value, dict) else None
-    if obj is None and isinstance(value, str) and value.lstrip()[:1] in "{[":
+    if obj is None and isinstance(value, str) and value.lstrip().startswith(("{", "[")):
         obj = json.loads(value)
 
     if obj is not None:
