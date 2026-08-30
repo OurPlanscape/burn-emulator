@@ -1,10 +1,10 @@
-# Build context: this directory.
+# Build context: the repo root (see Makefile build-api).
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY burn-emulator-api/go.mod burn-emulator-api/go.sum ./
 RUN go mod download
-COPY . .
+COPY burn-emulator-api/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/burn-emulator-api ./cmd/server
 
 FROM gcr.io/distroless/static-debian12:nonroot

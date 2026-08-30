@@ -13,7 +13,7 @@ RUNNER_IMAGE := $(REGISTRY)/burn-emulator-runner:$(VERSION)
 .PHONY: build-api push-api build-runner push-runner publish-model
 
 build-api:
-	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) $(API_DIR)
+	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) .
 
 push-api: build-api
 	docker push $(API_IMAGE)
