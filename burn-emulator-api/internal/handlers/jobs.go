@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -17,7 +18,8 @@ import (
 )
 
 const (
-	maxBodyBytes = 1 << 12
+	// treatment_area is inline GeoJSON which might be big
+	maxBodyBytes = 1 << 20
 	// a request blocks on the synchronous GPU run (cold model load + inference,
 	// plus a possible runner cold start under scale-out).
 	requestTimeout = 120 * time.Second
@@ -99,6 +101,11 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var body jobRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, fmt.Sprintf("request body exceeds %d bytes", maxBodyBytes), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
@@ -154,6 +161,9 @@ func validate(body jobRequestBody, allowed VarLocSet) error {
 	}
 	if !validJobName.MatchString(body.JobName) {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")
+	}
+	if strings.TrimSpace(body.TreatmentArea) == "" {
+		return errors.New("missing 'treatment_area'")
 	}
 	return nil
 }
