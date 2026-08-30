@@ -20,6 +20,9 @@ const runStaleAfter = 3 * time.Minute
 const maxClaimAttempts = 3
 
 // hash varloc + treatment area into the cache key.
+// NOTE: if treatment area is a gs path, content can change
+// without name change so will serve a stale output. Handle this
+// upstream in caller
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%s", req.VarLoc, req.TreatmentArea)
@@ -43,7 +46,7 @@ func ledgerObjectName(key string) string {
 // compare-and-swap: create it if absent, overwrite it if the claim is
 // stale or not "running", and retry a lost race (412) up to
 // maxClaimAttempts times.
-func (c *Client) claimRun(ctx context.Context, key, jobName string) (claimed bool, existing runRecord, err error) {
+func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRecord, error) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
 		return false, runRecord{}, err
