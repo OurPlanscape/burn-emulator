@@ -1,4 +1,0 @@
-# Allow-list of valid `variation` values accepted by the /v1/jobs API.
-# this will be build with the -model section of the repo
-variations:
-  - WC711
