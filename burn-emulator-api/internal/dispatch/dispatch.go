@@ -47,13 +47,13 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 		return result, nil
 	}
 
-	claimed, existing, err := c.claimRun(ctx, runID, req.JobName)
+	claimed, rec, err := c.claimRun(ctx, runID, req.JobName)
 	if err != nil {
 		return CreateJobResult{}, fmt.Errorf("claiming run: %w", err)
 	}
 	if !claimed {
-		result.JobName = existing.JobName
-		result.Attempts = existing.Attempts
+		result.JobName = rec.JobName
+		result.Attempts = rec.Attempts
 		result.Status = "pending"
 		return result, nil
 	}
@@ -74,7 +74,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 	c.releaseRun(ctx, runID)
 
 	result.JobName = req.JobName
-	result.Attempts = existing.Attempts
+	result.Attempts = rec.Attempts
 	result.Status = "completed"
 	return result, nil
 }
