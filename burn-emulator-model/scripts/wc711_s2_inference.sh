@@ -1,8 +1,9 @@
 #!/bin/bash
 
 ARRAY_START=0
-ARRAY_END=19
-MAX_CONCURRENT=4
+# ARRAY_END=19
+ARRAY_END=1
+MAX_CONCURRENT=1
 
 run_task () {
     local TASK_ID=$1
@@ -19,7 +20,7 @@ run_task () {
     IGN=$((TASK_ID / 2))
 
     burn_emulator -m test \
-        -mn "wc711_480_single_df64" \
+        -mn "wc711" \
         -c "$CONFIG_DIR/dataloader.yaml" \
         -c "$CONFIG_DIR/circle.yaml" \
         -c "$CONFIG_DIR/test_${TEST_CFG}.yaml" \

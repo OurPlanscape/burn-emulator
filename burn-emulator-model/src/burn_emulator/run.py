@@ -27,7 +27,10 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
     _, h, w = mask.shape
     seed = torch.zeros_like(mask)
     seed[:, h // 2, w // 2] = True
-    seed &= mask  # center not burned -> empty component
+    seed = seed & mask  # center not burned -> empty component
+    if seed.sum() == 0:
+        return seed
+    
     kernel = torch.ones(1, 1, 3, 3, device=mask.device)
     # capped at the window diameter*3 as buffer
     # but very likely won't reach that kind of shape
@@ -117,7 +120,7 @@ def run(
             # (baseline + treatment central fire, unioned) collapse to "no change"
             with timed(timings, "center component"):
                 burned = _center_component(pred != 0)
-                burned = burned[:n] | burned[n:]
+                burned = burned[:n] & burned[n:]
 
             # fire_type classes: 0 unburned | 1 surface | 2 passive crown | 3 active crown
             # crowned (passive or active) is class >= 2
@@ -125,8 +128,8 @@ def run(
             treatment_crowned = pred[n:] >= 2
 
             # 0 (no change) | 1 (non-crown to crown) | 2 (crown to non-crown)
-            to_crown = (~baseline_crowned & treatment_crowned) & burned
-            from_crown = (baseline_crowned & ~treatment_crowned) & burned
+            to_crown = (~baseline_crowned & treatment_crowned)
+            from_crown = (baseline_crowned & ~treatment_crowned)
             no_change = ~(to_crown | from_crown)
 
             change = torch.stack([no_change, to_crown, from_crown], dim=1).float()
@@ -165,6 +168,7 @@ def run(
 
     if debug:
         total = time.perf_counter() - t_start
+        timings["other"] = max(total - sum(timings.values()), 0.0)
         # ru_maxrss is this process's peak resident set size (Linux reports KiB)
         peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
         peak_gpu = peak_gpu_gb()

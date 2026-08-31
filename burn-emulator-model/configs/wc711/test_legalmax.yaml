@@ -4,7 +4,6 @@ dataset:
         ignitions_path: data/training_data_14Aug2026/ignition_locations.csv
         burn_paths: null
         topo_path: data/topo
-        stats_path: data/stats.yaml
         burn_times: [480]
         window_size: 129
         jitter: null

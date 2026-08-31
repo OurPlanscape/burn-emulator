@@ -2,6 +2,6 @@ dataset:
     init_args:
         ignitions_path: data/outputs_12Aug2026/10_baseline/10_ignitions_locations.csv
         wind_ang_paths:
-            -  data/outputs_12Aug2026/10_baseline/10_outputs_table.csv
+            baseline:  data/outputs_12Aug2026/10_baseline/10_outputs_table.csv
 
 test_name: 10_baseline

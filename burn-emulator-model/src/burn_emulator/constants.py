@@ -23,6 +23,7 @@ NO_DATA = -1                                # no data value for NN inputs
 RAW_NO_DATA = -9999
 
 # input fuel specific constants
+# TODO: update constants to fill all fuel classes
 FBFM_OH_MAP = {
     -999: 0,  # no data
     0: 1,  # should be 91 but is in the same spot one-hot encoded anyway
@@ -51,7 +52,12 @@ INF_PROFILE = {
     "compress": "lzw",
     "interleave": "band",
 }
+NONBURNABLE_FBFM = (91, 99)
+# one-hot fbfm channel carrying the non-burnable class (FBFM 91 / NB), after
+# _encode_fbfm drops the leading no-data channel
+NONBURN_FBFM_CH = FBFM_OH_MAP[91] - 1
 INPUT_KEYS = ["cbd", "cbh", "cc", "fbfm", "th"]
+ROLE_KEYS = ['baseline', 'treatment']
 
 # cli path constants
 METHODS = ["train", "test", "test_iterations", "run", "bundle"]

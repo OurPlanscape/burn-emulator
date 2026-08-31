@@ -1,4 +1,5 @@
 import copy
+import resource
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import Any
@@ -10,9 +11,9 @@ import torch
 from torch.utils.data import DataLoader
 
 from burn_emulator.config import dynamic_import
-from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, INF_PROFILE, Path
+from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, INF_PROFILE, RUN_DEVICE, Path
 from burn_emulator.datasets.utils import crop_region
-from burn_emulator.utils import experiment_dir, resolve_checkpoint
+from burn_emulator.utils import experiment_dir, peak_gpu_gb, resolve_checkpoint, timed
 
 
 def _drain(pending: list[Future], limit: int) -> None:
@@ -70,39 +71,34 @@ def test_model(
     num_sims: int,
     outdir: Path,
     max_write_workers: int,
-) -> None:
+    timings: dict[str, float] | None = None,
+) -> int:
     # how fragile things can be...
     profile = test_loader.dataset.profile | INF_PROFILE
     shape = (out_channels, profile["height"], profile["width"])
     profile.update({"count": out_channels})
 
     pending: list[Future] = []
-    sim_perf_times = []
-    sam_perf_times = []  # does not account for partial batches
-    drn_perf_times = []
+    n_batches = 0
 
     test_start_time = time.perf_counter()
     with torch.no_grad(), ThreadPoolExecutor(max_workers=max_write_workers) as pool:
         for _ in range(num_sims):
-            sim_start_time = time.perf_counter()
             for sample in test_loader:
-                X = sample["x"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
-                W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
-                M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+                with timed(timings, "data_movement"):
+                    X = sample["x"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+                    W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+                    M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+                    Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
                 pdiffs = sample["pdiffs"]
                 bounds = sample["bounds"]
                 indxes = sample["indxes"]
 
-                sam_start_time = time.perf_counter()
-                Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
-                pred = (activation(model(X * Mx, W)) * M).to(torch.float32)
-                sam_end_time = time.perf_counter()
-                sam_perf_times.append(sam_end_time - sam_start_time)
+                with timed(timings, "model forward"):
+                    pred = (activation(model(X * Mx, W)) * M).to(torch.float32)
 
-                drn_start_time = time.perf_counter()
-                _drain(pending, limit=max_write_workers)
-                drn_end_time = time.perf_counter()
-                drn_perf_times.append(drn_end_time - drn_start_time)
+                with timed(timings, "write drain"):
+                    _drain(pending, limit=max_write_workers)
 
                 pending.append(
                     pool.submit(
@@ -118,26 +114,23 @@ def test_model(
                         outdir,
                     )
                 )
-            sim_end_time = time.perf_counter()
-            sim_perf_times.append(sim_end_time - sim_start_time)
-        _drain(pending, limit=1)
-    test_end_time = time.perf_counter()
-    test_perf_time = test_end_time - test_start_time
+                n_batches += 1
+        with timed(timings, "write drain"):
+            _drain(pending, limit=1)
+    test_perf_time = time.perf_counter() - test_start_time
+
+    peak_gpu = peak_gpu_gb()
     tp = {
         "model": test_name,
         "num_batches": len(test_loader),
         "batch_size": test_loader.batch_size,
-        "max_memory_alloc": np.round(
-            torch.cuda.max_memory_allocated(DEFAULT_DEVICE) / 1024**3, decimals=2
-        ),
-        "test_perf_time": np.round(test_perf_time, decimals=2),
-        "sim_perf_time_mu": np.round(np.mean(sim_perf_times), decimals=2).item(),
-        "sam_perf_time_mu": np.round(np.mean(sam_perf_times), decimals=2).item(),
-        "drn_perf_time_mu": np.round(np.mean(drn_perf_times), decimals=2).item(),
+        "max_memory_alloc": None if peak_gpu is None else round(peak_gpu, 2),
+        "test_perf_time": round(test_perf_time, 2),
     }
     df = pd.DataFrame([tp])
     header = not (outdir / "throughput.csv").exists()
     df.to_csv(outdir / "throughput.csv", mode="a", index=False, header=header)
+    return n_batches
 
 
 def _run_single_test(
@@ -153,19 +146,24 @@ def _run_single_test(
     scenarios_path: Path | None = None,
     num_sims: int = 1,
     max_write_workers: int = 4,
+    debug: bool = False,
     **kwargs: Any,
 ) -> tuple[int | None, int | None]:
-    model = dynamic_import(model)
-    ckpt_path = resolve_checkpoint(model_name, kwargs.get("ckpt_path"))
+    timings = {} if debug else None
+    t_start = time.perf_counter() if debug else None
 
-    ckpt = torch.load(ckpt_path, map_location=DEFAULT_DEVICE)
-    if next(iter(ckpt.keys())).startswith("_orig_mod"):
-        ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
+    with timed(timings, "model load"):
+        model = dynamic_import(model)
+        ckpt_path = resolve_checkpoint(model_name, kwargs.get("ckpt_path"))
 
-    model.load_state_dict(ckpt)
-    model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
-    model.eval()
-    model = torch.compile(model)
+        ckpt = torch.load(ckpt_path, map_location=DEFAULT_DEVICE)
+        if next(iter(ckpt.keys())).startswith("_orig_mod"):
+            ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
+
+        model.load_state_dict(ckpt)
+        model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
+        model.eval()
+        model = torch.compile(model)
 
     experiment_path = experiment_dir(model_name)
     outdir = experiment_path / "inference"
@@ -182,13 +180,17 @@ def _run_single_test(
     else:
         ds_kwargs = dataset
 
-    dataset = dynamic_import(ds_kwargs, {"stats_path": experiment_path / "stats.yaml"})
-    test_loader = dynamic_import(dataloader, {"dataset": dataset})
+    ds_kwargs.setdefault("init_args", {}).setdefault(
+        "stats_path", experiment_path / "stats.yaml"
+    )
+    with timed(timings, "dataset caching"):
+        dataset = dynamic_import(ds_kwargs)
+        test_loader = dynamic_import(dataloader, {"dataset": dataset})
     activation = dynamic_import(activation)
 
     run_test_name = f"{model_name}_{test_name}"
     with torch.no_grad():
-        test_model(
+        n_batches = test_model(
             test_name=run_test_name,
             model=model,
             test_loader=test_loader,
@@ -197,7 +199,25 @@ def _run_single_test(
             num_sims=num_sims,
             outdir=outdir,
             max_write_workers=max_write_workers,
+            timings=timings,
         )
+
+    if debug:
+        total = time.perf_counter() - t_start
+        timings["other"] = max(total - sum(timings.values()), 0.0)
+        peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
+        peak_gpu = peak_gpu_gb()
+        rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
+        gpu_row = "" if peak_gpu is None else f"\n  {'peak gpu mem':<18}: {peak_gpu:7.2f}GB"
+        print(
+            f"[test] timing  device={RUN_DEVICE}  {run_test_name}  ({n_batches} batches)\n"
+            f"{rows}\n"
+            f"  {'total':<18}: {total:7.2f}s\n"
+            f"  {'peak cpu mem':<18}: {peak_rss_gb:7.2f}GB"
+            f"{gpu_row}",
+            flush=True,
+        )
+
     return iteration, scenario
 
 
@@ -210,6 +230,7 @@ def test(
     activation: dict,
     max_write_workers: int,
     out_channels: int,
+    debug: bool = False,
     **kwargs: Any,
 ) -> None:
     _run_single_test(
@@ -221,6 +242,7 @@ def test(
         activation=activation,
         max_write_workers=max_write_workers,
         out_channels=out_channels,
+        debug=debug,
     )
 
 
@@ -238,6 +260,7 @@ def test_iterations(
     max_workers: int = 4,
     num_sims: int = 1,
     max_write_workers: int = 4,
+    debug: bool = False,
     **kwargs: Any,
 ) -> None:
     tasks = [(i, s) for i in range(num_iterations) for s in range(1, num_scenarios + 1)]
@@ -258,6 +281,7 @@ def test_iterations(
                 scenarios_path,
                 num_sims,
                 max_write_workers,
+                debug,
             ): (i, s)
             for i, s in tasks
         }
