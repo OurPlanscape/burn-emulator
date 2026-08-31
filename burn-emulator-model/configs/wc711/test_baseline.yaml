@@ -7,7 +7,6 @@ dataset:
         burn_paths: null
         topo_path: data/topo
         window_size: 129
-        jitter: null
 activation:
     class_path: torch.nn.Sigmoid
 test_name: baseline

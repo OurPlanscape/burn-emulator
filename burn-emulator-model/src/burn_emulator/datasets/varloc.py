@@ -182,7 +182,7 @@ class VarLoc(Dataset):
         wind_ang_paths: dict[str, str | Path] | None,
         topo_path: str | Path,
         stats_path: str | Path,
-        burn_times: list[int] | None = None,
+        burn_times: list[int] | None = None, # NOTE(burn_times): unused for v1
         window_size: int = 129,
         jitter: int | None = None,
         treatment_area: Polygon | None = None,
@@ -219,8 +219,8 @@ class VarLoc(Dataset):
         self.topo_path = Path(topo_path)
         self.stats_path = Path(stats_path)
 
-        # NOTE: unused for v1 but leaving for future development
-        self.burn_times = [str(bt) for bt in burn_times] if burn_times else [480]
+        # NOTE(burn_times): unused for v1 but leaving for future development
+        self.burn_times = [str(bt) for bt in burn_times] if burn_times else burn_times
         self.window_size = window_size
         self.jitter = jitter
 
@@ -403,6 +403,7 @@ class VarLoc(Dataset):
         # raw fire_type class per pixel: 0 unburned | 1 surface | 2 passive crown | 3 active crown
         arrY = []
         igd = burn_path / str(int(ignition["ignition_number"].item()))
+        # NOTE(burn_times): unused for v1
         if self.burn_times:
             bps = [igd / bt / "fire_type.tif" for bt in self.burn_times]
         else:

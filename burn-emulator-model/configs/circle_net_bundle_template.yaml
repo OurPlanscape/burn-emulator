@@ -16,10 +16,9 @@ dataset:
         ignition_density: 5e-05
         ignition_method: uniform
         treatment_seed: 42
-        wind_range: [225, 269]
-        burn_times: [480]
+        # wind_range: [<low_deg>, <high_deg>]   # required; uniform draw per ignition
+        wind_seed: 42
         window_size: 129
-        jitter: null
         num_classes: 4
 
 dataloader:

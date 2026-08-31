@@ -26,7 +26,6 @@ dataset:
         wind_range: [225, 269]
         topo_path: data/topo
         window_size: 129
-        jitter: null
         num_classes: 4
         
 dataloader:

@@ -12,9 +12,7 @@ dataset:
             baseline:   data/training_data_14Aug2026/baseline/outputs_table.csv
             treatment:  data/training_data_14Aug2026/legalmax/outputs_table.csv
         topo_path: data/topo
-        burn_times: [480]
         window_size: 129
-        jitter: null
         num_classes: 4
 dataloader:
     class_path: torch.utils.data.DataLoader
