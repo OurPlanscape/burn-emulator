@@ -29,9 +29,11 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
     seed[:, h // 2, w // 2] = True
     seed &= mask  # center not burned -> empty component
     kernel = torch.ones(1, 1, 3, 3, device=mask.device)
-    for _ in range(max(h, w)):  # capped at the window diameter
+    # capped at the window diameter*3 as buffer
+    # but very likely won't reach that kind of shape
+    for _ in range(max(h, w)*3):
         grown = (torch.conv2d(seed.float().unsqueeze(1), kernel, padding=1).squeeze(1) > 0) & mask
-        if torch.equal(grown, seed):
+        if grown.sum() == seed.sum():
             break
         seed = grown
     return seed
@@ -100,11 +102,13 @@ def run(
             ydiff, xdiff = sample["pdiffs"]
             ymin, ymax, xmin, xmax = sample["bounds"]
 
-            x = sample["x"]  # (B, 2, C, H, W): layer 0 baseline, layer 1 collated treatment
-            X = torch.cat([x[:, 0], x[:, 1]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
-            W = torch.cat([sample["wind"], sample["wind"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
-            M = torch.cat([sample["mask"], sample["mask"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
-            Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
+            with timed(timings, "data_movement"):
+                x = sample["x"]  # (B, 2, C, H, W): layer 0 baseline, layer 1 collated treatment
+                X = torch.cat([x[:, 0], x[:, 1]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
+                W = torch.cat([sample["wind"], sample["wind"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
+                M = torch.cat([sample["mask"], sample["mask"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
+                Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
+            
             with timed(timings, "model forward"):
                 pred = activation(model(X * Mx, W)) * M
                 pred = pred.argmax(dim=1)
