@@ -9,5 +9,5 @@ wheels/
 .venv/
 
 # model project scratch
-burn-emulator-model/data
-burn-emulator-model/logs
+**/data
+**/logs

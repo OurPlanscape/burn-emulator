@@ -116,11 +116,12 @@ def run(
                 pred = activation(model(X * Mx, W)) * M
                 pred = pred.argmax(dim=1)
 
-            # restrict to the fire spreading from the window center; disconnected blobs
-            # (baseline + treatment central fire, unioned) collapse to "no change"
+            # restrict to the fire spreading from the window center;
+            # removing i.e disconnected blobs from NN outputs
             with timed(timings, "center component"):
                 burned = _center_component(pred != 0)
-                burned = burned[:n] & burned[n:]
+                # or operator since extention is still a signal to be captured
+                burned = burned[:n] | burned[n:]
 
             # fire_type classes: 0 unburned | 1 surface | 2 passive crown | 3 active crown
             # crowned (passive or active) is class >= 2

@@ -133,6 +133,8 @@ def _load_topos(topo_path: str, flow: bool, window_bounds: tuple | None) -> dict
     with rasterio.open(topo_path / "slope_degrees.tif") as src:
         slope = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
 
+    # NOTE/TODO: for the CNN, it turns out to_flow extends
+    # output boundaries bit. figure out why
     if flow:
         flow_x, flow_y = to_flow(aspect, slope)
         topos["flow_x"] = flow_x
@@ -149,7 +151,7 @@ def cache_fuels_inputs(
     stats_path: Path,
     sample_region: Polygon | None = None,
     window_size: int = 129,
-    flow: bool = True,
+    flow: bool = False,
 ) -> tuple[dict, dict, dict, dict]:
     inputs, masks, profile, bounds = {}, {}, None, None
     ref_fkey, ref_shape, ref_bounds = None, None, None
@@ -194,6 +196,7 @@ class VarLoc(Dataset):
         wind_range: list[float] | None = None,
         circle_mask: bool = True,
         one_hot: bool = True,
+        flow: bool = False,
         num_classes: int = 4,  # unburned, surface, passive crown, active crown
     ) -> None:
         # fuels_paths / burn_paths / wind_ang_paths are role-keyed: baseline / treatment
@@ -234,6 +237,7 @@ class VarLoc(Dataset):
         self.wind_range = wind_range
         self.circle_mask = circle_mask
         self.one_hot = one_hot
+        self.flow = flow
         self.num_classes = num_classes
 
         self._sample_gs = self._sampling_region(ignitions_path, treatment_area, treatment_buff)
@@ -246,6 +250,7 @@ class VarLoc(Dataset):
             self.stats_path,
             sample_region=self.sample_region,
             window_size=self.window_size,
+            flow=self.flow
         )
 
         self._set_ignitions(
@@ -500,6 +505,8 @@ class VarLoc(Dataset):
                 self.wind_angles[fkey] = pd.Series(wind_angle, name="upwind_direction")
 
     def _set_circle_mask(self) -> None:
+        # NOTE: partial window masking to avoid edge effects
+        # marginal in benefit but cheap to apply
         self.cmask = circle_mask(self.window_size)
 
     def _burnable_mask(self, points: gpd.GeoSeries) -> np.ndarray:
@@ -523,9 +530,7 @@ class VarLoc(Dataset):
         method: IgnitionMethod = "uniform",
     ) -> None:
         n_points = round(gs.area.sum() * ignition_density)
-        # using evelope since ignitions aren't going to be defined by PA
-        env = gs.envelope
-        sampled = env.sample_points(size=n_points, method=method, rng=treatment_seed)
+        sampled = gs.sample_points(size=n_points, method=method, rng=treatment_seed)
         sampled = sampled.explode(index_parts=False).reset_index(drop=True)
 
         # TODO: for method="uniform" this could be a single vectorized draw over the
@@ -536,7 +541,7 @@ class VarLoc(Dataset):
         seed = treatment_seed
         while len(sampled) < target and seed - treatment_seed < MAX_IGNITION_RESAMPLE:
             seed += 1
-            extra = env.sample_points(size=n_points, method=method, rng=seed)
+            extra = gs.sample_points(size=n_points, method=method, rng=seed)
             extra = extra.explode(index_parts=False).reset_index(drop=True)
             extra = extra[self._burnable_mask(extra)]
             sampled = pd.concat([sampled, extra], ignore_index=True)
