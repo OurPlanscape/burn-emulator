@@ -15,7 +15,7 @@ dataset:
     init_args:
         treatment_area: configs/wc711/pa1_area.geojson
         treatment_buff: 960
-        ignition_density: 5e-05
+        ignition_density: 2e-05
         ignition_method: uniform
         treatment_seed: 42
         fuels_paths:

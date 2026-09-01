@@ -32,5 +32,5 @@ criterion:
         dice_weight: .5
         focal_weight: .5
         label_smoothing: .125
-num_epochs: 64
+num_epochs: 1024
 model_name: wc711
