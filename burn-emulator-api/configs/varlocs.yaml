@@ -1,4 +1,0 @@
-# Allow-list of valid `varloc` values accepted by the /v1/jobs API.
-# this will be built with the -model section of the repo
-varlocs:
-  - wc711
