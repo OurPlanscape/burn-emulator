@@ -2,10 +2,7 @@ module burn-emulator-api
 
 go 1.26.5
 
-require (
-	google.golang.org/api v0.170.0
-	gopkg.in/yaml.v3 v3.0.1
-)
+require google.golang.org/api v0.170.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
