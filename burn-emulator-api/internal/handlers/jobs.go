@@ -18,9 +18,12 @@ import (
 const (
 	// treatment_area is inline GeoJSON which might be big
 	maxBodyBytes = 1 << 20
-	// a request blocks on the synchronous GPU run (cold model load + inference,
-	// plus a possible runner cold start under scale-out).
-	requestTimeout = 120 * time.Second
+	// a request blocks on the synchronous GPU run: first a possible runner cold
+	// start (Cloud Run scale-from-zero), then the model load + inference. This
+	// outer cap covers both dispatch phases (dispatch.warmupBudget +
+	// dispatch.inferBudget) plus the GCS version/cache/claim calls; keep it
+	// under the server WriteTimeout.
+	requestTimeout = 9*time.Minute + 30*time.Second
 )
 
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)

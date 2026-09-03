@@ -4,6 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+)
+
+const (
+	warmupBudget = 5 * time.Minute // how long to wait for the runner's /healthz before giving up
+	inferBudget  = 4 * time.Minute // how long an /infer call gets once the runner is up
 )
 
 // a validated run request from the /v1/jobs body.
@@ -58,13 +64,25 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 		return result, nil
 	}
 
-	err = c.runner.Infer(ctx, inferRequest{
+	// wait out any runner cold start on its own budget, so the /infer call
+	// below is timed against inference alone.
+	warmCtx, cancel := context.WithTimeout(ctx, warmupBudget)
+	err = c.runner.Ready(warmCtx)
+	cancel()
+	if err != nil {
+		c.releaseRun(ctx, runID)
+		return CreateJobResult{}, fmt.Errorf("waiting for runner: %w", err)
+	}
+
+	inferCtx, cancel := context.WithTimeout(ctx, inferBudget)
+	err = c.runner.Infer(inferCtx, inferRequest{
 		VarLoc:        req.VarLoc,
 		Version:       version,
 		TreatmentArea: req.TreatmentArea,
 		Hash:          key,
 		OutputPath:    outPath,
 	})
+	cancel()
 	if err != nil {
 		c.releaseRun(ctx, runID)
 		return CreateJobResult{}, fmt.Errorf("running inference: %w", err)

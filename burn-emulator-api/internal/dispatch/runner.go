@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"google.golang.org/api/idtoken"
 )
@@ -36,6 +37,37 @@ type inferRequest struct {
 	TreatmentArea string `json:"treatment_area"`
 	Hash          string `json:"hash"`
 	OutputPath    string `json:"output_path"`
+}
+
+// how often Ready re-polls /healthz while waiting for the runner to come up.
+const readyPollInterval = 3 * time.Second
+
+// block until the runner's /healthz returns 200, or ctx is done.
+func (r *runnerClient) Ready(ctx context.Context) error {
+	var last string
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url+"/healthz", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := r.http.Do(req)
+		if err != nil {
+			last = err.Error()
+		} else {
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<10))
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+			last = resp.Status
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("runner not ready (last: %s): %w", last, ctx.Err())
+		case <-time.After(readyPollInterval):
+		}
+	}
 }
 
 // POST /infer and block until the run completes.
