@@ -19,32 +19,13 @@ RUN_DEVICE = os.environ.get("RUN_DEVICE", "cuda")
 RUN_DTYPE = getattr(torch, os.environ.get("RUN_DTYPE", "bfloat16"))
 DEFAULT_DEVICE = torch.device(RUN_DEVICE)   # default device for training
 DEFAULT_DTYPE = torch.bfloat16              # default trainining dtype for memory saving
-NO_DATA = -1                                # no data value for NN inputs
+NO_DATA = -3                                # no data value for NN inputs (-3σ of normalized data)
 RAW_NO_DATA = -9999
 
-# input fuel specific constants
-# TODO: update constants to fill all fuel classes
-FBFM_OH_MAP = {
-    -999: 0,  # no data
-    0: 1,  # should be 91 but is in the same spot one-hot encoded anyway
-    91: 1,
-    101: 2,
-    105: 3,
-    106: 4,
-    141: 5,
-    144: 6,
-    148: 7,
-    161: 8,
-    163: 9,
-    186: 10,
-    189: 11,
-    202: 12,
-    203: 13,
-}
 INF_PROFILE = {
     "driver": "GTiff",
     "dtype": "float32",
-    "nodata": -999,
+    "nodata": RAW_NO_DATA,
     "crs": "EPSG:5070",
     "blockxsize": 256,
     "blockysize": 256,
@@ -52,14 +33,17 @@ INF_PROFILE = {
     "compress": "lzw",
     "interleave": "band",
 }
-NONBURNABLE_FBFM = (91, 99)
-# one-hot fbfm channel carrying the non-burnable class (FBFM 91 / NB), after
-# _encode_fbfm drops the leading no-data channel
-NONBURN_FBFM_CH = FBFM_OH_MAP[91] - 1
+ROS_FL_CLASSES = ["N", "VL", "L", "M", "H", "VH", "X"]
 INPUT_KEYS = ["cbd", "cbh", "cc", "fbfm", "th"]
+# inputs that are mean-std normalized
+NORM_KEYS = ["cbd", "cbh", "cc", "th", "gtr_ros", "gtr_fl", "slope"]
+# inputs that are log1p transformed
+LOG1P_KEYS = ["cbd", "cbh", "th", "gtr_ros", "gtr_fl"]
 ROLE_KEYS = ['baseline', 'treatment']
 
 # cli path constants
-METHODS = ["train", "test", "test_iterations", "run", "bundle"]
+METHODS = ["train", "evaluate", "evaluate_iterations", "run", "bundle"]
 OUTDIR = Path("data/outputs")
 BUNDLE_DIR = Path("data/bundles")
+CONFIG_DIR = Path("configs")
+WIND_DIRECTIONS = Path("data/training_data/wind_directions.csv")

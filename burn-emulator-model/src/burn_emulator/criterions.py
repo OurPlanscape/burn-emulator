@@ -12,7 +12,7 @@ class Reducer(nn.Module):
         self.reduction = reduction
         match reduction:
             case "none":
-                self.reduce = lambda inputs: inputs
+                self.reduce = lambda inpts: inpts
             case "mean":
                 self.reduce = torch.mean
             case "sum":
@@ -20,8 +20,8 @@ class Reducer(nn.Module):
             case _:
                 raise ValueError(f"unknown reduction option: {reduction}")
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.reduce(inputs)
+    def forward(self, inpts: torch.Tensor) -> torch.Tensor:
+        return self.reduce(inpts)
 
 
 class DiceLoss(nn.Module):
@@ -225,7 +225,7 @@ class DiceFocalLoss(CompositeLoss):
         self,
         dice_weight: float = 0.50,
         focal_weight: float = 0.50,
-        gamma: float = 1.0,
+        gamma: float = 2.0,
         alpha: float | None = None,
         reduction: str = "mean",
         multiclass: bool = True,

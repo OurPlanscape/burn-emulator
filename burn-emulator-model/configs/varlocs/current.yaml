@@ -1,10 +1,5 @@
-model:
-    class_path: burn_emulator.models.circlenet.CircleNet
-    init_args:
-        n_channels: 19
-        n_outputs: 4
-        image_size: 129
-        bilinear: true
+architecture: circlepp
+data_version: 28Aug2026
 
 activation:
     class_path: torch.nn.Sigmoid
@@ -12,14 +7,14 @@ activation:
 dataset:
     class_path: burn_emulator.datasets.varloc.VarLoc
     init_args:
+        fbfm_map_path: configs/fbfm_behavior_adjectives.csv
         treatment_buff: 960
-        ignition_density: 5e-05
+        ignition_density: 2e-05
         ignition_method: uniform
         treatment_seed: 42
-        # wind_range: [<low_deg>, <high_deg>]   # required; uniform draw per ignition
+        wind_range: ${wind_range}
         wind_seed: 42
         window_size: 129
-        num_classes: 4
 
 dataloader:
     class_path: torch.utils.data.DataLoader

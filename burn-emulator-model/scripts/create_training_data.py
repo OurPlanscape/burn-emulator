@@ -1,18 +1,17 @@
 # [[file:../../../../../data/Nextcloud-SIG/dschmidt_working_projects/PC612_PS_RRM/PC612_emulator_v2.org::*Definitions and Setup][Definitions and Setup:1]]
-import os, random
-from time import time, perf_counter
+import os
+import random
+from time import perf_counter
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-import rasterio as rio
-from rasterio.windows import from_bounds
-import ray
-
-import pyretechnics.fuel_models as fm
-from pyretechnics.space_time_cube import SpaceTimeCube
 import pyretechnics.eulerian_level_set as els
-
+import pyretechnics.fuel_models as fm
+import rasterio as rio
+import ray
+from pyretechnics.space_time_cube import SpaceTimeCube
+from rasterio.windows import from_bounds
 
 NUM_IGNITIONS = 5000
 BASE = "/mnt/share/rem"

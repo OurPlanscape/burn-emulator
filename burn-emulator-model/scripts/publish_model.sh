@@ -58,13 +58,13 @@ version="${timestamp}-${git_sha}"
 base="${models_uri%/}/${varloc}"
 
 echo "varloc   ${varloc}"
-echo "version  ${version}"
+echo "version  $${version}"
 echo "from     ${bundle_dir}"
-echo "to       ${base}/${version}/"
+echo "to       ${base}/$${version}/"
 echo
 
-gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/${version}/"
+gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/$${version}/"
 printf '%s' "$version" | gcloud storage cp - "${base}/current"
 
 echo
-echo "done — ${varloc}/current now points to ${version}"
+echo "done — ${varloc}/current now points to $${version}"

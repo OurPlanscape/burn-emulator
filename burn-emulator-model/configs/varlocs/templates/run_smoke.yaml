@@ -1,0 +1,20 @@
+dataset:
+    class_path: burn_emulator.datasets.varloc.VarLoc
+    init_args:
+        treatment_area: configs/varlocs/${varloc}/sample.geojson
+        fuels_paths:
+            baseline: data/training_data/${varloc}/${data_version}/baseline_FF
+            treatment: data/training_data/${varloc}/${data_version}/legalmax_FF
+        wind_range: ${wind_range}
+        topo_path: data/training_data/${varloc}/${data_version}/topo
+
+        # default configs for PA smoke test
+        fbfm_map_path: configs/fbfm_behavior_adjectives.csv
+        treatment_buff: 960
+        ignition_density: 2e-05
+        ignition_method: uniform
+        treatment_seed: 42
+        wind_seed: 42
+        window_size: 129
+
+varloc: ${varloc}

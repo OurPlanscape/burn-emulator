@@ -8,8 +8,8 @@ from rasterio.features import geometry_mask
 
 from burn_emulator.config import dynamic_import
 from burn_emulator.constants import INF_PROFILE, RUN_DEVICE, RUN_DTYPE, Path
-from burn_emulator.datasets.utils import crop_region
-from burn_emulator.utils import batched_agg, experiment_dir, peak_gpu_gb, resolve_checkpoint, timed
+from burn_emulator.datasets.utils import compute_crop_region
+from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
 
 
 def _fire_touches(
@@ -18,7 +18,7 @@ def _fire_touches(
     bounds_b: tuple[int, int, int, int],
     diffs_b: tuple[int, int],
 ) -> bool:
-    y0, y1, x0, x1, ys, xs = crop_region(bounds_b, diffs_b)
+    y0, y1, x0, x1, ys, xs = compute_crop_region(bounds_b, diffs_b)
     fire = fire[ys : ys + (y1 - y0), xs : xs + (x1 - x0)]
     return bool((fire & region_mask[y0:y1, x0:x1]).any())
 
@@ -48,7 +48,7 @@ def run(
     dataset: dict,
     dataloader: dict,
     activation: dict,
-    out_path: str | Path | None = None,
+    experiment_dir: str | Path,
     ckpt_path: str | None = None,
     debug: bool = False,
     **kwargs: Any,
@@ -56,14 +56,15 @@ def run(
     timings = {} if debug else None
     t_start = time.perf_counter() if debug else None
 
-    ckpt_path = resolve_checkpoint(model_name, ckpt_path)
+    experiment_dir = Path(experiment_dir)
+    ckpt_path = resolve_model_checkpoint(experiment_dir, ckpt_path)
 
     model = dynamic_import(model)
     activation = dynamic_import(activation)
 
     base_init = dataset.setdefault("init_args", {})
     base_init.setdefault("ignitions_path", None)  # sampled from treatment_area
-    base_init.setdefault("stats_path", experiment_dir(model_name) / "stats.yaml")
+    base_init.setdefault("stats_path", experiment_dir / "stats.yaml")
     region = base_init.get("treatment_area")
     assert region is not None, "run needs dataset.init_args.treatment_area"
     assert len(base_init.get("fuels_paths", [])) == 2, "run needs 2 fuels_paths"
@@ -74,9 +75,10 @@ def run(
 
     n_ignitions = len(loader.dataset)
     if debug:
+        print(f"[run] loading ckpt_path: {ckpt_path}", flush=True)
         print(f"[run] {model_name}: {n_ignitions} ignitions", flush=True)
 
-    out_path = experiment_dir(model_name, out_path) / f"{model_name}_run.tif"
+    out_path = experiment_dir / f"{model_name}_run.tif"
 
     with timed(timings, "model load"):
         ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)

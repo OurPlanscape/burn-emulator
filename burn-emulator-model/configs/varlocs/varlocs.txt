@@ -1,0 +1,14 @@
+# Varlocs to train/test, one per line. Blank lines and # comments are ignored.
+# Each name maps to data/training_data/<varloc>/<data_version>/.
+WC711
+WS501
+WS502
+WS503
+WS504
+WS507
+WS511
+WS512
+WS513
+WS515
+WS516
+WS517

@@ -1,9 +1,0 @@
-dataset:
-    init_args:
-        ignitions_path: data/outputs_12Aug2026/8_legalmax/8_ignitions_locations.csv
-        fuels_paths:
-            baseline:  data/outputs_12Aug2026_re/8_legalmax
-        wind_ang_paths:
-            baseline:  data/outputs_12Aug2026/8_baseline/8_outputs_table.csv
-
-test_name: 8_legalmax

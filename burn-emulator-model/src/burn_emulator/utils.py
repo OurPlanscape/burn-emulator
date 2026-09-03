@@ -1,20 +1,19 @@
 import heapq
 import re
 import time
+from functools import lru_cache
 
 import torch
 from torch.optim import Optimizer
 
-from burn_emulator.constants import OUTDIR, RUN_DEVICE, Path
-from burn_emulator.datasets.utils import crop_region
+from burn_emulator.constants import RUN_DEVICE, Path
+from burn_emulator.datasets.utils import compute_crop_region
 
 _CKPT_META_RE = re.compile(r"epoch-(\d+)_step-(\d+)")
 _CKPT_LOSS_RE = re.compile(r"loss-([\d.]+)")
 
 
 class timed:
-    """Accumulate wall time into timings[label]. No-op (and no cuda sync) when timings is None."""
-
     def __init__(self, timings: dict[str, float] | None, label: str) -> None:
         self.timings = timings
         self.label = label
@@ -52,22 +51,6 @@ def peak_gpu_gb() -> float | None:
     return None
 
 
-def to_flow(aspect_raw: torch.Tensor, slope_deg: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    missing_mask = (aspect_raw < 0) | (slope_deg < 0)
-    flat_mask = slope_deg <= 0
-    zero_mask = missing_mask | flat_mask
-
-    aspect_deg = aspect_raw.clamp(0, 255) * (360.0 / 256.0)
-    slope_rad = torch.deg2rad(slope_deg.clamp(0.0, 47.0))
-    aspect_rad = torch.deg2rad(aspect_deg)
-    magnitude = torch.sin(slope_rad)
-    flow_x = magnitude * torch.sin(aspect_rad)
-    flow_y = -magnitude * torch.cos(aspect_rad)
-    flow_x = flow_x.masked_fill(zero_mask, 0.0)
-    flow_y = flow_y.masked_fill(zero_mask, 0.0)
-    return flow_x, flow_y
-
-
 def batched_agg(
     pred: torch.Tensor,
     diffs: tuple[torch.Tensor, torch.Tensor],
@@ -88,7 +71,7 @@ def batched_agg(
         out[bg_channel] += B
 
     for b in range(B):
-        y0, y1, x0, x1, ys, xs = crop_region(
+        y0, y1, x0, x1, ys, xs = compute_crop_region(
             (ymin[b], ymax[b], xmin[b], xmax[b]), (ydiff[b], xdiff[b])
         )
         h, w = y1 - y0, x1 - x0
@@ -101,6 +84,7 @@ def batched_agg(
     return out
 
 
+@lru_cache(maxsize=8)
 def circle_mask(window_size: int) -> torch.Tensor:
     h = w = window_size
     # assume an odd window size for
@@ -177,24 +161,19 @@ def find_best_checkpoint(ckpt_dir: Path) -> Path | None:
     return find_latest_checkpoint(ckpt_dir)
 
 
-def optimizer_checkpoint_path(ckpt_path: str | Path) -> Path:
+def resolve_optimizer_checkpoint(ckpt_path: str | Path) -> Path:
     ckpt_path = Path(ckpt_path)
     return ckpt_path.parent / "optim" / ckpt_path.name
 
 
-def experiment_dir(model_name: str, override: str | Path | None = None) -> Path:
-    return Path(override) if override else OUTDIR / model_name
-
-
-def resolve_checkpoint(
-    model_name: str,
-    ckpt_path: str | Path | None = None,
-    training_dir: str | Path | None = None,
+@lru_cache(maxsize=8)
+def resolve_model_checkpoint(
+    experiment_dir: str | Path, ckpt_path: str | Path | None = None
 ) -> Path:
     if ckpt_path:
         return Path(ckpt_path)
-    ckpt_dir = experiment_dir(model_name, training_dir) / "checkpoints"
+    ckpt_dir = Path(experiment_dir) / "checkpoints"
     best = find_best_checkpoint(ckpt_dir)
     if best is None:
-        raise FileNotFoundError(f"no checkpoint for {model_name} in {ckpt_dir}")
+        raise FileNotFoundError(f"no checkpoint in {ckpt_dir}")
     return best

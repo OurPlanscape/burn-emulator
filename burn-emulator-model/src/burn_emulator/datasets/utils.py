@@ -20,7 +20,7 @@ def compute_padding(
     return ydiff, xdiff, ypad, xpad
 
 
-def crop_region(
+def compute_crop_region(
     bounds: tuple[int, int, int, int], diffs: tuple[int, int]
 ) -> tuple[int, int, int, int, int, int]:
     """Inverse of compute_bounds/compute_padding: raster box + the source offset within a

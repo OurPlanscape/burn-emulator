@@ -1,0 +1,29 @@
+dataset:
+    class_path: burn_emulator.datasets.varloc.VarLoc
+    init_args:
+        ignitions_path: ${ignitions_path}
+        fbfm_map_path: configs/fbfm_behavior_adjectives.csv
+        fuels_paths:
+            baseline:   ${baseline_fuels_path}
+            treatment:  ${treatment_fuels_path}
+        wind_ang_paths:
+            baseline:   ${baseline_wind_ang_path}
+            treatment:  ${treatment_wind_ang_path}
+        topo_path: ${topo_path}
+        burn_paths: null
+        window_size: 129
+
+dataloader:
+    class_path: torch.utils.data.DataLoader
+    init_args:
+        batch_size: 32
+        shuffle: false
+        pin_memory: true
+        drop_last: false
+
+activation:
+    class_path: torch.nn.Sigmoid
+
+eval_name: ${scenario}
+max_write_workers: 4
+out_channels: 4

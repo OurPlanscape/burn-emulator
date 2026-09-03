@@ -1,0 +1,18 @@
+dataset:
+    class_path: burn_emulator.datasets.varloc.VarLoc
+    init_args:
+        ignitions_path: data/training_data/${varloc}/${data_version}/ignition_locations.csv
+        fbfm_map_path: configs/fbfm_behavior_adjectives.csv 
+        fuels_paths:
+            baseline:   data/training_data/${varloc}/${data_version}/baseline_FF
+            treatment:  data/training_data/${varloc}/${data_version}/legalmax_FF
+        burn_paths:
+            baseline:   data/training_data/${varloc}/${data_version}/baseline
+            treatment:  data/training_data/${varloc}/${data_version}/legalmax
+        wind_ang_paths:
+            baseline:   data/training_data/${varloc}/${data_version}/baseline/outputs_table.csv
+            treatment:  data/training_data/${varloc}/${data_version}/legalmax/outputs_table.csv
+        topo_path: data/training_data/${varloc}/${data_version}/topo
+        window_size: 129
+
+varloc: ${varloc}
