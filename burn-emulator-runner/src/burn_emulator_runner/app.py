@@ -9,9 +9,8 @@ from burn_emulator.run import run
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from burn_emulator_runner.artifacts import bundle_dir, load_spec
+from burn_emulator_runner.artifacts import bundle_dir, load_spec, read_provenance
 from burn_emulator_runner.utils import env_flag, warm_gpu
-
 
 BASELINE_FUELS = os.environ["BURN_EMULATOR_BASELINE_FUELS"]
 LEGALMAX_FUELS = os.environ["BURN_EMULATOR_LEGALMAX_FUELS"]
@@ -64,6 +63,35 @@ async def infer(req: InferRequest) -> InferResponse:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"loading model bundle: {e}") from e
+
+    try:
+        meta, runner_code_sha = await asyncio.to_thread(read_provenance, bundle)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"reading bundle provenance: {e}") from e
+
+    if meta is None:
+        log.warning(
+            "bundle %s/%s has no bundle_meta.json; cannot check model architecture code",
+            req.varloc,
+            req.version,
+        )
+    elif runner_code_sha is None:
+        log.warning(
+            "bundle %s/%s names architecture %s, absent from this image; cannot check code",
+            req.varloc,
+            req.version,
+            meta.get("model_class_path"),
+        )
+    elif meta.get("model_code_sha256") != runner_code_sha:
+        log.warning(
+            "model architecture code mismatch varloc=%s version=%s: "
+            "bundle repo_sha=%s code_sha=%s, runner code_sha=%s",
+            req.varloc,
+            req.version,
+            meta.get("model_repo_sha"),
+            meta.get("model_code_sha256"),
+            runner_code_sha,
+        )
 
     try:
         cfg = await asyncio.to_thread(_run_config, spec, req)

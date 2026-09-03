@@ -1,6 +1,8 @@
+import json
 import os
 import re
 
+from burn_emulator import provenance
 from burn_emulator.constants import Path
 from omegaconf import OmegaConf
 
@@ -32,6 +34,8 @@ def load_spec(bundle: Path) -> dict:
     init = spec.setdefault("dataset", {}).setdefault("init_args", {})
     if isinstance(init.get("stats_path"), str):
         init["stats_path"] = _localize(init["stats_path"], bundle)
+    if isinstance(init.get("fbfm_map_path"), str):
+        init["fbfm_map_path"] = _localize(init["fbfm_map_path"], bundle)
 
     return spec
 
@@ -40,3 +44,15 @@ def _localize(p: str, root: Path) -> str:
     if p.startswith(_CLOUD_SCHEMES) or os.path.isabs(p):
         return p
     return os.fspath(root / p)
+
+
+def read_provenance(bundle: Path) -> tuple[dict | None, str | None]:
+    p = bundle / "bundle_meta.json"
+    if not p.is_file():
+        return None, None
+    meta = json.loads(p.read_text())
+    try:
+        current = provenance.model_code_sha(meta["model_class_path"])
+    except (KeyError, OSError):
+        current = None
+    return meta, current
