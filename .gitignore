@@ -11,3 +11,10 @@ wheels/
 # model project scratch
 **/data
 **/logs
+
+# explicitly tracked data files (re-include the path down to each file)
+!burn-emulator-model/data
+burn-emulator-model/data/*
+!burn-emulator-model/data/training_data
+burn-emulator-model/data/training_data/*
+!burn-emulator-model/data/training_data/wind_directions.csv
