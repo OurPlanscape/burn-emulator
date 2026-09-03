@@ -6,7 +6,7 @@ A deep-learning emulator of a burn spread model to generate thousands of burns i
 
 | Directory | What it is |
 | --- | --- |
-| [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: train, test, and `run()` inference. |
+| [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: train, evaluate, and `run()` inference. |
 | [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service: validate -> resolve model version -> GCS cache/dedupe -> call the runner. |
 | [`burn-emulator-runner/`](burn-emulator-runner/README.md) | GPU service: runs `burn_emulator.run.run()` with bounded concurrency. |
 

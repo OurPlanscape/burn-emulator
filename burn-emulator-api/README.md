@@ -9,15 +9,15 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 | `BURN_EMULATOR_MODELS_URI` | `gs://` root of the model registry (reads `<varloc>/current`) |
 | `BURN_EMULATOR_OUTPUT_BUCKET` | `gs://` bucket for outputs + the claim ledger |
 | `BURN_EMULATOR_RUNNER_URL` | runner base URL (and ID-token audience) |
-| `VARLOCS_FILE` | varloc allow-list (default `configs/varlocs.yaml`) |
+| `VARLOCS_FILE` | varloc allow-list (default `configs/varlocs.txt`) |
 
 ## `POST /v1/jobs`
 
 ```json
-{ "varloc": "wc711", "treatment_area": "<geojson>", "job_name": "my-run-01" }
+{ "varloc": "WC711", "treatment_area": "<geojson>", "job_name": "my-run-01" }
 ```
 
-`varloc` must be in `varlocs.yaml`; `job_name` is 1–63 chars `[a-z0-9-]`.
+`varloc` must be in `varlocs.txt` (one varloc name per line, nothing else — baked into the image from the model repo's `configs/varlocs/varlocs.txt`); `job_name` is 1–63 chars `[a-z0-9-]`.
 
 ```json
 {
@@ -25,9 +25,9 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
   "hash": "1a2b3c4d…",
   "model_version": "20260829T1430Z-a1b2c3d",
   "status": "completed",
-  "varloc": "wc711",
+  "varloc": "WC711",
   "cached": false,
-  "output_path": "gs://<bucket>/wc711/<version>/<hash>"
+  "output_path": "gs://<bucket>/WC711/<version>/<hash>"
 }
 ```
 

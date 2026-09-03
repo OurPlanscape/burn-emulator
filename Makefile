@@ -24,7 +24,7 @@ build-runner:
 push-runner: build-runner
 	docker push $(RUNNER_IMAGE)
 
-# make publish-model VARLOC=wc711 [BUNDLE_DIR=...] [MODELS_URI=gs://...]
+# make publish-model VARLOC=WC711 [BUNDLE_DIR=...] [MODELS_URI=gs://...]
 # BUNDLE_DIR defaults to where `burn_emulator -m bundle` writes it.
 BUNDLE_DIR ?= $(MODEL_DIR)/data/bundles/$(VARLOC)
 publish-model:

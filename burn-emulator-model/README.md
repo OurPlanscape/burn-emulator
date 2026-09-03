@@ -4,7 +4,7 @@ Model library + CLI. `burn_emulator.run.run()` is the inference entry point that
 
 ## Modelling
 
-The default model is an archetypal CNN with one major adjustment: [circular kernels](https://arxiv.org/pdf/2107.02451). Very few objects in nature are 'square-shaped', so a square kernel either wastes learning capacity or forces the model to learn a mapping from that arbitrary shape to the expected shape of the burn. Burns also spread in a quasi-circular pattern that doesn't align with grid anisotropy. The ignition point is fixed at the center pixel of the CNN context window, so the model only has to learn the mapping from local input connectivities (fuels, etc.) to a spread shape from that point — it doesn't need to know *where* a burn will occur, just a fuzzy approximation of what it will look like. That approximation is then stamped across the landscape in parallel to compute conditional burn probability.
+The default model is an archetypal CNN with one major adjustment: [circular kernels](https://arxiv.org/pdf/2107.02451). The ignition point is fixed at the center pixel of the CNN context window, so the model only has to learn the mapping from local input connectivities (fuels, etc.) to a spread shape from that point (i.e it doesn't need to know *where* a burn will occur, just a fuzzy approximation of what it will look like). That approximation is then stamped across the landscape in parallel to compute conditional burn probability.
 
 ## Install
 
@@ -15,13 +15,22 @@ uv sync --extra data     # for scripts/ (training-data generation from Pyretechn
 
 ## Train
 
-All configs are composable any with priority going to cli flags then the latest config entered. 
+All configs are composable, with priority going to CLI flags then the latest config entered.
 ```bash
 burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
-burn_emulator -m test  -c <model.yaml> -c <test.yaml> -c <data.yaml>
 ```
 
 Output: `data/outputs/<model_name>/` — `checkpoints/`, `stats.yaml`, `train_log.csv`.
+
+To train every varloc in a batch, use `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm`). It reads `configs/varlocs/varlocs.txt` — one varloc name per line, nothing else — where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
+
+## Evaluate
+
+```bash
+burn_emulator -m evaluate -c <model.yaml> -c <eval_data.yaml>
+```
+
+Output: `data/outputs/<model_name>/inference/` — per-ignition prediction GeoTIFFs, `throughput.csv`.
 
 ## Run
 
@@ -58,6 +67,21 @@ legalmax_fuels_path/   # tifs: treatment fuels ("cbd", "cbh", "cc", "fbfm", "th"
 burn_paths/{ignition_number}/fire_type.tif # only for training
 ```
 
+## Datasets
+
+`VarLoc` (`burn_emulator.datasets.varloc`) is the only dataset. It reads the fuel layers listed above (`"cbd", "cbh", "cc", "fbfm", "th"`), windows one context per ignition, and yields a dict keyed by the model contract:
+
+| key | meaning |
+| --- | --- |
+| `x` | stacked input channels (topo + fuels + FBFM one-hots) |
+| `y` | per-pixel `fire_type` target — train only |
+| `wind` | ignition wind direction (degrees) |
+| `mask` | burnable / circular-window mask |
+
+Inference samples additionally carry `pdiffs` / `bounds` / `indxes` for stamping predictions back onto the full raster.
+
+If a new fuel product ships different layers (renamed, added/dropped, or different semantics/resolution), add a new `Dataset` rather than messing with `VarLoc`. Keep the same output contract — `x`, `y`, `wind`, `mask` — so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
+
 ## Publish a model
 
 ```bash
@@ -66,12 +90,16 @@ burn_emulator -m bundle -c configs/circle_net_bundle_template.yaml -mn <model_na
 make publish-model VARLOC=<varloc>
 ```
 
-`-m bundle` writes `data/bundles/<varloc>/`:
+`-m bundle` writes `data/bundles/<model_name>/`:
 
 | file | from |
 | --- | --- |
 | `model.pt` | `-p`, else the lowest-loss checkpoint under `data/outputs/<model_name>/checkpoints` |
 | `stats.yaml` | the same training dir |
+| `fbfm_behavior_adjectives.csv` | `dataset.init_args.fbfm_map_path` |
 | `config.yaml` | the `-c` config with runtime-injected fields removed |
+| `bundle_meta.json` | `model_repo_sha` (+ dirty flag), `model_class_path`, and `model_code_sha256` (sha256 of that architecture module `.py`) |
+
+`bundle_meta.json` lets the runner warn when its architecture code no longer matches what this checkpoint was trained on but currently doesn't do anything YET! See [`burn-emulator-runner`](../burn-emulator-runner). `publish_model.sh` refuses a bundle that lacks it.
 
 `make publish-model` uploads it to `gs://<models>/<varloc>/<version>/` and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.

@@ -19,25 +19,30 @@ GPU service. Loads a model bundle per request and runs `burn_emulator.run.run()`
 ```
 <MODELS_DIR>/<varloc>/current       # text file: the active version
 <MODELS_DIR>/<varloc>/<version>/
-├── model.pt      # checkpoint
-├── stats.yaml     # normalization stats
-└── config.yaml   # model + activation + dataset + dataloader + model_name
+├── model.pt                     # checkpoint
+├── stats.yaml                   # normalization stats
+├── fbfm_behavior_adjectives.csv # FBFM code -> behaviour lookup
+├── config.yaml                  # model + activation + dataset + dataloader + model_name
+└── bundle_meta.json             # model-repo git sha + model_class_path + model_code_sha256
 ```
+
+On `/infer` the runner compares `bundle_meta.json`'s `model_code_sha256` against its own sha256 of the architecture module file named by `model_class_path` (e.g. `burn_emulator/models/circlepp.py`) and **logs a warning** on a mismatch.
 
 ## `POST /infer`
 
 ```json
-{ "varloc": "wc711", "version": "<version>", "treatment_area": "<geojson>",
-  "hash": "1a2b3c4d…", "output_path": "gs://<bucket>/wc711/<version>/<hash>" }
+{ "varloc": "WC711", "version": "<version>", "treatment_area": "<geojson>",
+  "hash": "1a2b3c4d…", "output_path": "gs://<bucket>/WC711/<version>/<hash>" }
 ```
 
 -> `200 { "status": "completed", "output_path": "…", "timing": {…}|null }`
 
 ```
 1. read <MODELS_DIR>/<varloc>/<version>/, merge its *.yaml
-2. inject treatment_area, fuels_paths, topo_path, out_path into the dataset config
-3. acquire a GPU slot (Semaphore(GPU_SLOTS))
-4. run(**config) -> writes <output_path>/<model_name>_run.tif
+2. warn if bundle_meta.json model_code_sha256 != this image's architecture module hash
+3. inject treatment_area, fuels_paths, topo_path, out_path into the dataset config
+4. acquire a GPU slot (Semaphore(GPU_SLOTS))
+5. run(**config) -> writes <output_path>/<model_name>_run.tif
 ```
 
 ## `GET /healthz` — `200`
