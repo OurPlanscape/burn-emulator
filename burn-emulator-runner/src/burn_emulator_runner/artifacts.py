@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from functools import cache
 
 from burn_emulator import provenance
 from burn_emulator.constants import Path
@@ -46,13 +47,18 @@ def _localize(p: str, root: Path) -> str:
     return os.fspath(root / p)
 
 
+@cache
+def image_model_code_sha(class_path: str) -> str:
+    return provenance.model_code_sha(class_path)
+
+
 def read_provenance(bundle: Path) -> tuple[dict | None, str | None]:
     p = bundle / "bundle_meta.json"
     if not p.is_file():
         return None, None
     meta = json.loads(p.read_text())
     try:
-        current = provenance.model_code_sha(meta["model_class_path"])
+        current = image_model_code_sha(meta["model_class_path"])
     except (KeyError, OSError):
         current = None
     return meta, current
