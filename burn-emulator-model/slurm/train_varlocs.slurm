@@ -1,4 +1,5 @@
 #!/bin/bash -l
+
 #SBATCH --job-name=train_varlocs
 #SBATCH --output=data/logs/train_varlocs_%A_%a.out
 #SBATCH --error=data/logs/train_varlocs_%A_%a.err
@@ -7,9 +8,7 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=10000
 #SBATCH --nodelist=dragon02,dragon04,dragon05
-#SBATCH --array=0-11%6
-
-
+#SBATCH --array=0-11%6 # update this to match the number of varlocs in varlocs.txt
 
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
@@ -31,6 +30,30 @@ current_key () { grep -oP "^$1:[[:space:]]*\K\S+" "$CURRENT_FILE"; }
 ARCHITECTURE=$(current_key architecture)
 DATA_VERSION=$(current_key data_version)
 
+SLOTS=6
+LOCKDIR=/tmp/train_varlocs_gpu_slots
+mkdir -p "$LOCKDIR"
+
+SLOT=""
+while [ -z "$SLOT" ]; do
+    for i in $(seq 0 $((SLOTS - 1))); do
+        exec {slot_fd}>"$LOCKDIR/${SLURMD_NODENAME}.slot${i}"
+        if flock -n "$slot_fd"; then
+            SLOT=$i
+            break
+        fi
+        exec {slot_fd}>&-
+    done
+    [ -z "$SLOT" ] && { echo "all $SLOTS slots busy on $SLURMD_NODENAME, waiting..."; sleep 15; }
+done
+
+if [ "$SLURMD_NODENAME" = "dragon02" ]; then
+    export CUDA_VISIBLE_DEVICES=$SLOT
+else
+    export CUDA_VISIBLE_DEVICES=0
+fi
+
+echo "[gpu] $SLURMD_NODENAME slot $SLOT -> CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "[train] $VARLOC -> ${VARLOC}_${ARCHITECTURE}_${DATA_VERSION}"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then

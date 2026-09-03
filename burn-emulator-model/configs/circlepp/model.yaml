@@ -1,5 +1,5 @@
 model:
-    class_path: burn_emulator.models.circlenet.CircleNet
+    class_path: burn_emulator.models.circlepp.CirclePP
     init_args:
         n_channels: 23
         n_outputs: 4

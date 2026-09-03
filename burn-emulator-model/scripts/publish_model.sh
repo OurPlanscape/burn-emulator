@@ -9,7 +9,8 @@
 #
 #   model.pt                 the checkpoint
 #   config.yaml              merged model + activation + dataset + dataloader
-#   topo/  stats.yaml  ...    static inputs the config references
+#   bundle_meta.json         model-repo git sha + model_code_sha256
+#   stats.yaml  ...           static inputs the config references
 #
 # It gets uploaded to:
 #
@@ -45,6 +46,10 @@ if ! compgen -G "$bundle_dir/*.yaml" >/dev/null; then
     echo "error: $bundle_dir has no *.yaml config" >&2
     exit 1
 fi
+if [[ ! -f "$bundle_dir/bundle_meta.json" ]]; then
+    echo "error: $bundle_dir is missing bundle_meta.json — re-run 'burn_emulator -m bundle'" >&2
+    exit 1
+fi
 
 # version = when the checkpoint was written + the model code it came from
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -58,13 +63,13 @@ version="${timestamp}-${git_sha}"
 base="${models_uri%/}/${varloc}"
 
 echo "varloc   ${varloc}"
-echo "version  $${version}"
+echo "version  ${version}"
 echo "from     ${bundle_dir}"
-echo "to       ${base}/$${version}/"
+echo "to       ${base}/${version}/"
 echo
 
-gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/$${version}/"
+gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/${version}/"
 printf '%s' "$version" | gcloud storage cp - "${base}/current"
 
 echo
-echo "done — ${varloc}/current now points to $${version}"
+echo "done — ${varloc}/current now points to ${version}"
