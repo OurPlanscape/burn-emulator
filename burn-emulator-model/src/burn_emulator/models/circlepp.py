@@ -307,7 +307,7 @@ class AngleEncoder(nn.Module):
         return torch.stack([sin, cos], dim=-1)
 
 
-class CircleNet(nn.Module):
+class CirclePP(nn.Module):
     def __init__(
         self,
         n_channels: int,

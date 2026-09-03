@@ -1,3 +1,4 @@
+import json
 import shutil
 from typing import Any
 
@@ -5,6 +6,7 @@ import pandas as pd
 import yaml
 from omegaconf import DictConfig, OmegaConf
 
+from burn_emulator import provenance
 from burn_emulator.constants import BUNDLE_DIR, CONFIG_DIR, WIND_DIRECTIONS, Path
 from burn_emulator.utils import resolve_model_checkpoint
 
@@ -58,6 +60,18 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
         "dataloader": config["dataloader"],
     }
     (dst / "config.yaml").write_text(yaml.safe_dump(out_config, sort_keys=False))
+
+    # provenance: which model architecture code this checkpoint was trained
+    # against, so the runner can warn when its own code no longer matches.
+    repo_sha, dirty = provenance.git_head()
+    class_path = config["model"]["class_path"]
+    meta = {
+        "model_repo_sha": repo_sha,
+        "model_repo_dirty": dirty,
+        "model_class_path": class_path,
+        "model_code_sha256": provenance.model_code_sha(class_path),
+    }
+    (dst / "bundle_meta.json").write_text(json.dumps(meta, indent=2) + "\n")
 
     print(f"[bundle] {model_name} ({ckpt.name}) -> {dst}")
     for p in sorted(dst.rglob("*")):
