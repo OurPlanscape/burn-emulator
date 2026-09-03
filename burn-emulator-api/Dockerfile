@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/burn-em
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=builder /out/burn-emulator-api /app/burn-emulator-api
-COPY --from=builder /src/configs /app/configs
+COPY burn-emulator-model/configs/varlocs/varlocs.txt /app/configs/varlocs.txt
 
 EXPOSE 8080
 ENTRYPOINT ["/app/burn-emulator-api"]
