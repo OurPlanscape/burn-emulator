@@ -47,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	varLocsPath := envDefault("VARLOCS_FILE", "configs/varlocs.yaml")
+	varLocsPath := envDefault("VARLOCS_FILE", "configs/varlocs.txt")
 	validVarLocs, err := handlers.LoadVarLocs(varLocsPath)
 	if err != nil {
 		slog.Error("failed to load varlocs allow-list", "path", varLocsPath, "error", err)

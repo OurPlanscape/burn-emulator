@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"burn-emulator-api/internal/dispatch"
 )
 
@@ -35,29 +33,23 @@ func (s VarLocSet) Contains(name string) bool {
 	return s[name]
 }
 
-// the on-disk shape of varlocs.yaml.
-type varLocsConfig struct {
-	VarLocs []string `yaml:"varlocs"`
-}
-
-// read and parse the varlocs.yaml allow-list at path.
+// read and parse the varlocs.txt allow-list at path: one varloc per line.
 func LoadVarLocs(path string) (VarLocSet, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading varlocs file %s: %w", path, err)
 	}
 
-	var cfg varLocsConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing varlocs file %s: %w", path, err)
+	set := make(VarLocSet)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		set[line] = true
 	}
-	if len(cfg.VarLocs) == 0 {
+	if len(set) == 0 {
 		return nil, fmt.Errorf("varlocs file %s lists no varlocs", path)
-	}
-
-	set := make(VarLocSet, len(cfg.VarLocs))
-	for _, v := range cfg.VarLocs {
-		set[v] = true
 	}
 	return set, nil
 }
