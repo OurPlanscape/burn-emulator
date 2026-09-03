@@ -178,18 +178,16 @@ def _load_fbfm_map(map_path: str | Path) -> pd.DataFrame:
 def _load_topos(topo_path: Path, window_bounds: tuple | None) -> dict:
     with rasterio.open(topo_path / "aspect.tif") as src:
         aspect = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
-        aspect_nodata = src.nodata
-        
-    missing = torch.zeros_like(aspect, dtype=torch.bool)
-    if aspect_nodata is not None:
-        missing = aspect == aspect_nodata
-    aspect_rad = torch.deg2rad(aspect * (360.0 / 256.0))
+        missing_aspect = aspect == src.nodata
         
     with rasterio.open(topo_path / "slope_degrees.tif") as src:
         slope = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
-        slope_nodata = src.nodata
+        missing_slope = slope == src.nodata
 
-    slope[slope_nodata] = torch.nan
+    missing = torch.zeros_like(aspect, dtype=torch.bool)
+    missing = missing | missing_aspect | missing_slope
+    aspect_rad = torch.deg2rad(aspect * (360.0 / 256.0))
+    slope[missing] = torch.nan
 
     # sin/cos are already bounded and not standardized, so the sentinel goes in directly;
     # slope is raw here and standardized (+ NaN->sentinel) via NORM_KEYS in _normalize_inputs
