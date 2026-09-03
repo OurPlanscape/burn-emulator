@@ -1,5 +1,3 @@
-# Varlocs to train/test, one per line. Blank lines and # comments are ignored.
-# Each name maps to data/training_data/<varloc>/<data_version>/.
 WC711
 WS501
 WS502

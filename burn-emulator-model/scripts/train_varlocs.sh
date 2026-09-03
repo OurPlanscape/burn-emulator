@@ -18,7 +18,7 @@ DATA_VERSION=$(current_key data_version)
 MODEL_YAML="$CONFIG_DIR/$ARCHITECTURE/model.yaml"
 TRAIN_YAML="$CONFIG_DIR/$ARCHITECTURE/train.yaml"
 
-mapfile -t VARLOCS < <(grep -vE '^[[:space:]]*(#|$)' "$VARLOCS_FILE")
+mapfile -t VARLOCS < <(grep -vE '^[[:space:]]*$' "$VARLOCS_FILE")
 
 echo "architecture=$ARCHITECTURE  data_version=$DATA_VERSION  varlocs=${#VARLOCS[@]}"
 
