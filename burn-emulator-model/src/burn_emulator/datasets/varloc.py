@@ -189,7 +189,7 @@ def _load_topos(topo_path: Path, window_bounds: tuple | None) -> dict:
         slope = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
         slope_nodata = src.nodata
 
-    slope[missing] = torch.nan
+    slope[slope_nodata] = torch.nan
 
     # sin/cos are already bounded and not standardized, so the sentinel goes in directly;
     # slope is raw here and standardized (+ NaN->sentinel) via NORM_KEYS in _normalize_inputs
