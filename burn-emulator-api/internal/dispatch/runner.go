@@ -32,11 +32,13 @@ func newRunnerClient(ctx context.Context, url string) (*runnerClient, error) {
 
 // the JSON body POSTed to the runner's /infer.
 type inferRequest struct {
-	VarLoc        string `json:"varloc"`
-	Version       string `json:"version"`
-	TreatmentArea string `json:"treatment_area"`
-	Hash          string `json:"hash"`
-	OutputPath    string `json:"output_path"`
+	VarLoc           string   `json:"varloc"`
+	Version          string   `json:"version"`
+	TreatmentArea    string   `json:"treatment_area"`
+	TreatmentAreaCRS string   `json:"treatment_area_crs"`
+	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
+	Hash             string   `json:"hash"`
+	OutputPath       string   `json:"output_path"`
 }
 
 // how often Ready re-polls /healthz while waiting for the runner to come up.

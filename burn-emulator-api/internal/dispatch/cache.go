@@ -14,18 +14,18 @@ import (
 )
 
 // how long a "running" claim blocks a retry.
-const runStaleAfter = 3 * time.Minute
+const runStaleAfter = 8 * time.Minute
 
 // max retries when losing a claim race.
 const maxClaimAttempts = 3
 
-// hash varloc + treatment area into the cache key.
-// NOTE: if treatment area is a gs path, content can change
-// without name change so will serve a stale output. Handle this
-// upstream in caller
+// hash varloc + treatment area + its CRS into the cache key.
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s", req.VarLoc, req.TreatmentArea)
+	fmt.Fprintf(h, "%s|%s|%s", req.VarLoc, req.TreatmentArea, req.TreatmentAreaCRS)
+	if req.IgnitionDensity != nil {
+		fmt.Fprintf(h, "|%g", *req.IgnitionDensity)
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 

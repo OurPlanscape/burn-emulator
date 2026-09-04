@@ -8,15 +8,17 @@ import (
 )
 
 const (
-	warmupBudget = 5 * time.Minute // how long to wait for the runner's /healthz before giving up
-	inferBudget  = 4 * time.Minute // how long an /infer call gets once the runner is up
+	warmupBudget = 12 * time.Minute // how long to wait for the runner's /healthz before giving up
+	inferBudget  = 16 * time.Minute // how long an /infer call gets once the runner is up
 )
 
 // a validated run request from the /v1/jobs body.
 type JobRequest struct {
-	TreatmentArea string
-	VarLoc        string
-	JobName       string
+	TreatmentArea    string
+	TreatmentAreaCRS string
+	VarLoc           string
+	JobName          string
+	IgnitionDensity  *float64
 }
 
 // the outcome of CreateJob, echoed back to the caller.
@@ -76,11 +78,13 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 
 	inferCtx, cancel := context.WithTimeout(ctx, inferBudget)
 	err = c.runner.Infer(inferCtx, inferRequest{
-		VarLoc:        req.VarLoc,
-		Version:       version,
-		TreatmentArea: req.TreatmentArea,
-		Hash:          key,
-		OutputPath:    outPath,
+		VarLoc:           req.VarLoc,
+		Version:          version,
+		TreatmentArea:    req.TreatmentArea,
+		TreatmentAreaCRS: req.TreatmentAreaCRS,
+		IgnitionDensity:  req.IgnitionDensity,
+		Hash:             key,
+		OutputPath:       outPath,
 	})
 	cancel()
 	if err != nil {

@@ -14,10 +14,16 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 ## `POST /v1/jobs`
 
 ```json
-{ "varloc": "WC711", "treatment_area": "<geojson>", "job_name": "my-run-01" }
+{
+  "varloc": "WC711",
+  "treatment_area": "<geojson>",
+  "treatment_area_crs": "EPSG:4326",
+  "job_name": "my-run-01",
+  "ignition_density": 20
+}
 ```
 
-`varloc` must be in `varlocs.txt` (one varloc name per line, nothing else; baked into the image from the model repo's `configs/varlocs/varlocs.txt`); `job_name` is 1-63 chars `[a-z0-9-]`.
+`varloc` must be in `varlocs.txt` (one varloc name per line, nothing else; baked into the image from the model repo's `configs/varlocs/varlocs.txt`); `job_name` is 1-63 chars `[a-z0-9-]`; `ignition_density` is optional (ignitions per km², same unit as `dataset.init_args.ignition_density` in a model config - `VarLoc` converts internally); omit it to use the value baked into the model bundle's `config.yaml`. Worth noting here that the max number of ignitions is 2**16. Verify this by using area/density upstreat somewhere.
 
 ```json
 {
@@ -44,7 +50,7 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 ```
 1. validate varloc + job_name
 2. version  = gs://<models>/<varloc>/current            (60s cache)
-   hash     = sha256(varloc + "|" + treatment_area)
+   hash     = sha256(varloc + "|" + treatment_area + "|" + treatment_area_crs [+ "|" + ignition_density])
    out_path = gs://<out>/<varloc>/<version>/<hash>
 3. out_path exists?                -> 200 cached
    _runs/<version>/<hash> claimed? -> 202 pending
@@ -52,6 +58,19 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 ```
 
 The claim ledger is a zero-byte GCS object written with a generation precondition; it stops two identical concurrent requests both hitting the GPU. A stale claim is reclaimed after ~3 min.
+
+## Timeouts
+
+Each layer must budget at least as long as the one it wraps, outermost last. Preliminary tests show smaller varlocs (1000 hectares) run in a few seconds and fits well within window. Larger treatments may be an issue.
+
+| Layer | Value | Description |
+| --- | --- | --- |
+| `dispatch.warmupBudget` | 12 min | runner cold start |
+| `dispatch.inferBudget` | 16 min | the `/infer` call |
+| `handlers.requestTimeout` | 30 min | warmup + infer + GCS calls |
+| `main.go` `http.Server.WriteTimeout` | 31 min |
+| `burn_emulator_api_timeout` (Cloud Run) | 35 min | bounds on api |
+| `burn_emulator_runner_timeout` (Cloud Run) | 20 min | bounds on runner (including /infer) |
 
 ## Build
 

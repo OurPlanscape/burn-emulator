@@ -71,11 +71,8 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// a request blocks on the synchronous runner call: a possible runner cold
-		// start (image pull + CUDA init, minutes under scale-from-zero) followed by
-		// the model load + inference. Keep this above the handler's own request
-		// timeout, which budgets both phases.
-		WriteTimeout: 10 * time.Minute,
+		// keep above handlers.requestTimeout
+		WriteTimeout: 31 * time.Minute,
 	}
 
 	slog.Info("burn-emulator-api listening", "addr", srv.Addr)

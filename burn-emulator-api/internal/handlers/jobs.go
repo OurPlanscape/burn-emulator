@@ -18,12 +18,8 @@ import (
 const (
 	// treatment_area is inline GeoJSON which might be big
 	maxBodyBytes = 1 << 20
-	// a request blocks on the synchronous GPU run: first a possible runner cold
-	// start (Cloud Run scale-from-zero), then the model load + inference. This
-	// outer cap covers both dispatch phases (dispatch.warmupBudget +
-	// dispatch.inferBudget) plus the GCS version/cache/claim calls; keep it
-	// under the server WriteTimeout.
-	requestTimeout = 9*time.Minute + 30*time.Second
+	// covers dispatch.warmupBudget (12m) + dispatch.inferBudget (16m) + GCS calls
+	requestTimeout = 30 * time.Minute
 )
 
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
@@ -59,9 +55,11 @@ func LoadVarLocs(path string) (VarLocSet, error) {
 
 // the JSON body accepted by POST /v1/jobs.
 type jobRequestBody struct {
-	TreatmentArea string `json:"treatment_area"`
-	VarLoc        string `json:"varloc"`
-	JobName       string `json:"job_name"`
+	TreatmentArea    string   `json:"treatment_area"`
+	TreatmentAreaCRS string   `json:"treatment_area_crs"`
+	VarLoc           string   `json:"varloc"`
+	JobName          string   `json:"job_name"`
+	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
 }
 
 // the JSON body returned by POST /v1/jobs.
@@ -114,15 +112,16 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	result, err := h.Dispatch.CreateJob(ctx, dispatch.JobRequest{
-		TreatmentArea: body.TreatmentArea,
-		VarLoc:        body.VarLoc,
-		JobName:       body.JobName,
+		TreatmentArea:    body.TreatmentArea,
+		TreatmentAreaCRS: body.TreatmentAreaCRS,
+		VarLoc:           body.VarLoc,
+		JobName:          body.JobName,
+		IgnitionDensity:  body.IgnitionDensity,
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-			// client hung up (or the server is shutting down); the runner keeps
-			// going and the result lands in the cache for the retry.
-			slog.Info("request cancelled, run continues server-side",
+			// client hung up; the runner aborts the in-flight run.
+			slog.Info("request cancelled, run aborted server-side",
 				"job_name", body.JobName, "varloc", body.VarLoc, "client_ip", clientAddr)
 			return
 		}
@@ -165,7 +164,17 @@ func validate(body jobRequestBody, allowed VarLocSet) error {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")
 	}
 	if strings.TrimSpace(body.TreatmentArea) == "" {
-		return errors.New("missing 'treatment_area'")
+		return errors.New(
+			"missing 'treatment_area'",
+		)
+	}
+	if strings.TrimSpace(body.TreatmentAreaCRS) == "" {
+		return errors.New(
+			"missing 'treatment_area_crs'",
+		)
+	}
+	if body.IgnitionDensity != nil && *body.IgnitionDensity <= 0 {
+		return errors.New("invalid 'ignition_density': must be > 0")
 	}
 	return nil
 }
