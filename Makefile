@@ -10,7 +10,7 @@ VERSION    ?= $(shell git rev-parse --short HEAD)
 API_IMAGE    := $(REGISTRY)/burn-emulator-api:$(VERSION)
 RUNNER_IMAGE := $(REGISTRY)/burn-emulator-runner:$(VERSION)
 
-.PHONY: build-api push-api build-runner push-runner publish-model
+.PHONY: build-api push-api build-runner push-runner publish-model publish-fuels
 
 build-api:
 	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) .
@@ -24,8 +24,9 @@ build-runner:
 push-runner: build-runner
 	docker push $(RUNNER_IMAGE)
 
-# make publish-model VARLOC=WC711 [BUNDLE_DIR=...] [MODELS_URI=gs://...]
-# BUNDLE_DIR defaults to where `burn_emulator -m bundle` writes it.
 BUNDLE_DIR ?= $(MODEL_DIR)/data/bundles/$(VARLOC)
 publish-model:
 	$(MODEL_DIR)/scripts/publish_model.sh $(VARLOC) $(BUNDLE_DIR) $(MODELS_URI)
+
+publish-fuels:
+	$(MODEL_DIR)/scripts/publish_fuels.sh $(FUELS_DIR) $(LAYER) $(FUELS_URI)

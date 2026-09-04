@@ -3,6 +3,7 @@ import importlib
 import json
 import os
 import re
+from datetime import datetime
 from typing import Any
 
 import geopandas as gpd
@@ -45,6 +46,19 @@ def load_configs(config_dir: str | None, config_paths: list[str] | None) -> Dict
     return merged
 
 
+def _iso_data_version(value: str) -> str:
+    value = value.strip()
+    for fmt in ("%d%b%Y", "%Y%m%d", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y%m%d")
+        except ValueError:
+            continue
+    raise ValueError(
+        f"data_version {value!r} is not a recognised date "
+        "(expected DDMonYYYY like 28Aug2026, YYYYMMDD, or YYYY-MM-DD)"
+    )
+
+
 def resolve_model_name(
     configs: DictConfig,
     varloc: str | None = None,
@@ -66,6 +80,7 @@ def resolve_model_name(
             f"{', '.join(missing)} required: pass the flag or set it in a config file"
         )
 
+    parts["data_version"] = _iso_data_version(str(parts["data_version"]))
     model_name = "{varloc}_{architecture}_{data_version}".format(**parts)
     OmegaConf.update(configs, "model_name", model_name, merge=True)
     OmegaConf.update(configs, "experiment_dir", str(OUTDIR / model_name), merge=True)

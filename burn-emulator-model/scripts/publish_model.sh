@@ -1,26 +1,4 @@
 #!/usr/bin/env bash
-#
-# publish_model.sh — publish a trained model bundle to the GCS model registry.
-#
-#   scripts/publish_model.sh <varloc> <bundle_dir> [models_uri]
-#
-# <bundle_dir> is a local directory holding one model version, as produced by
-# `burn_emulator -m bundle`:
-#
-#   model.pt                 the checkpoint
-#   config.yaml              merged model + activation + dataset + dataloader
-#   bundle_meta.json         model-repo git sha + model_code_sha256
-#   stats.yaml  ...           static inputs the config references
-#
-# It gets uploaded to:
-#
-#   <models_uri>/<varloc>/<version>/     the bundle
-#   <models_uri>/<varloc>/current        one-line pointer, repointed to <version>
-#
-# <version> is "<checkpoint-mtime>-<short-git-sha>", e.g. 20260829T143005Z-a1b2c3d.
-# Keying off the checkpoint's mtime makes re-publishing the same file idempotent.
-#
-# Needs: gcloud, and GNU coreutils (stat, date).
 
 set -euo pipefail
 
