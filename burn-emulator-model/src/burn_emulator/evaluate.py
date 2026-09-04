@@ -89,13 +89,12 @@ def evaluate_model(
                     X = sample["x"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
                     W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
                     M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
-                    Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
                 pdiffs = sample["pdiffs"]
                 bounds = sample["bounds"]
                 indxes = sample["indxes"]
 
                 with timed(timings, "model forward"):
-                    pred = (activation(model(X * Mx, W)) * M).to(torch.float32)
+                    pred = (activation(model(X, W)) * M).to(torch.float32)
 
                 with timed(timings, "write drain"):
                     _drain(pending, limit=max_write_workers)

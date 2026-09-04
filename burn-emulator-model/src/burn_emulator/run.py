@@ -115,10 +115,9 @@ def run(
                 X = torch.cat([x[:, 0], x[:, 1]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
                 W = torch.cat([sample["wind"], sample["wind"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
                 M = torch.cat([sample["mask"], sample["mask"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
-                Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
             
             with timed(timings, "model forward"):
-                pred = activation(model(X * Mx, W)) * M
+                pred = activation(model(X, W)) * M
                 pred = pred.argmax(dim=1)
 
             # restrict to the fire spreading from the window center;

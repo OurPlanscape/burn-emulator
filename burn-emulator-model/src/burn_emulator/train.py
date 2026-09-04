@@ -49,8 +49,7 @@ def train_model(
             # TODO: no OOD validation loop in favor of post-training
             #       evaluation of approximation accuracy in eval script
             optimizer.zero_grad()
-            Mx = M.unsqueeze(1) if X.dim() != M.dim() else M
-            Y_hat = model(X * Mx, W)
+            Y_hat = model(X, W)
             train_loss = criterion(Y_hat * M, Y * M)
             train_loss.backward()
             optimizer.step()
