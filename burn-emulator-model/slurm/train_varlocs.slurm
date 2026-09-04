@@ -7,15 +7,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=10000
-#SBATCH --nodelist=dragon02,dragon04,dragon05
+#SBATCH --nodelist=dragon02
 #SBATCH --array=0-11%6 # update this to match the number of varlocs in varlocs.txt
 
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 source $HOME/.bashrc
-cd data
-source data/.venv/bin/activate
+source .venv/bin/activate
 
 CONFIG_DIR=data/configs
 VARLOC_DIR=$CONFIG_DIR/varlocs
@@ -47,11 +46,7 @@ while [ -z "$SLOT" ]; do
     [ -z "$SLOT" ] && { echo "all $SLOTS slots busy on $SLURMD_NODENAME, waiting..."; sleep 15; }
 done
 
-if [ "$SLURMD_NODENAME" = "dragon02" ]; then
-    export CUDA_VISIBLE_DEVICES=$SLOT
-else
-    export CUDA_VISIBLE_DEVICES=0
-fi
+export CUDA_VISIBLE_DEVICES=$SLOT
 
 echo "[gpu] $SLURMD_NODENAME slot $SLOT -> CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "[train] $VARLOC -> ${VARLOC}_${ARCHITECTURE}_${DATA_VERSION}"
