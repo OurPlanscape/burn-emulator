@@ -1,4 +1,5 @@
 import resource
+import threading
 import time
 from typing import Any
 
@@ -10,6 +11,10 @@ from burn_emulator.config import dynamic_import
 from burn_emulator.constants import INF_PROFILE, RUN_DEVICE, RUN_DTYPE, Path
 from burn_emulator.datasets.utils import compute_crop_region
 from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
+
+
+class RunCancelled(Exception):
+    pass
 
 
 def _fire_touches(
@@ -52,6 +57,7 @@ def run(
     ckpt_path: str | None = None,
     out_path: str | Path | None = None,
     debug: bool = False,
+    cancel: threading.Event | None = None,
     **kwargs: Any,
 ) -> dict | None:
     timings = {} if debug else None
@@ -106,6 +112,11 @@ def run(
     n_kept = 0
     with torch.no_grad():
         for sample in loader:
+            # for use in the runner when the api disconnects from the job
+            # NOTE: probably a good idea to not run 'cancelled' jobs
+            if cancel is not None and cancel.is_set():
+                raise RunCancelled(f"cancelled after {n_kept}/{n_ignitions} ignitions")
+
             n = sample["x"].shape[0]
             ydiff, xdiff = sample["pdiffs"]
             ymin, ymax, xmin, xmax = sample["bounds"]

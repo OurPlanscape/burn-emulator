@@ -18,6 +18,7 @@ def main():
     parser.add_argument("-lf", "--legalmax_fuels", action="store")
     parser.add_argument("-tp", "--topo_path", action="store")
     parser.add_argument("-ta", "--treatment_area", action="store")
+    parser.add_argument("-tc", "--treatment_area_crs", action="store")
     parser.add_argument("-tb", "--treatment_buff", action="store", type=float)
     parser.add_argument("-ts", "--treatment_seed", action="store", type=float)
     parser.add_argument("-id", "--ignition_density", action="store", type=float)

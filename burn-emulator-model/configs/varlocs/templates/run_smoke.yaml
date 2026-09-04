@@ -11,7 +11,7 @@ dataset:
         # default configs for PA smoke test
         fbfm_map_path: configs/fbfm_behavior_adjectives.csv
         treatment_buff: 960
-        ignition_density: 2e-05
+        ignition_density: 20
         ignition_method: uniform
         treatment_seed: 42
         wind_seed: 42
