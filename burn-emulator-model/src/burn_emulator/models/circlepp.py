@@ -415,7 +415,7 @@ class CirclePP(nn.Module):
         return logits
 
 
-class CircleNetSiamese(CircleNet):
+class CirclePPSiamese(CirclePP):
     def _encode(
         self, x: Tensor, cond: Tensor | None
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:

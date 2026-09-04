@@ -1,5 +1,5 @@
 architecture: circlepp
-data_version: 28Aug2026
+data_version: 28Aug2026 # this is the training data version which gets parsed later
 
 activation:
     class_path: torch.nn.Sigmoid
