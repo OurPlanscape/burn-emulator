@@ -38,14 +38,14 @@ On `/infer` the runner compares `bundle_meta.json`'s `model_code_sha256` against
 -> `200 { "status": "completed", "output_path": "…", "timing": {…}|null }`
 
 ```
-1. read <MODELS_DIR>/<varloc>/<version>/, merge its *.yaml
+1. read <MODELS_DIR>/<varloc>/<version>/config.yaml (bundle dir = experiment_dir)
 2. warn if bundle_meta.json model_code_sha256 != this image's architecture module hash
-3. inject treatment_area, fuels_paths, topo_path, out_path into the dataset config
+3. inject treatment_area, fuels_paths, topo_path, out_path into config
 4. acquire a GPU slot (Semaphore(GPU_SLOTS))
 5. run(**config) -> writes <output_path>/<model_name>_run.tif
 ```
 
-## `GET /healthz` — `200`
+## `GET /healthz` -> `200`
 
 ## Build
 

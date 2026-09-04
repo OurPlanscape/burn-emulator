@@ -25,7 +25,7 @@ if ! compgen -G "$bundle_dir/*.yaml" >/dev/null; then
     exit 1
 fi
 if [[ ! -f "$bundle_dir/bundle_meta.json" ]]; then
-    echo "error: $bundle_dir is missing bundle_meta.json — re-run 'burn_emulator -m bundle'" >&2
+    echo "error: $bundle_dir is missing bundle_meta.json, re-run 'burn_emulator -m bundle'" >&2
     exit 1
 fi
 
@@ -50,4 +50,4 @@ gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/${version}/"
 printf '%s' "$version" | gcloud storage cp - "${base}/current"
 
 echo
-echo "done — ${varloc}/current now points to ${version}"
+echo "done: ${varloc}/current now points to ${version}"

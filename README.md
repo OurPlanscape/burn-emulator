@@ -4,6 +4,8 @@ A deep-learning emulator of a burn spread model to generate thousands of burns i
 
 ## Components
 
+3 components to the microservices in order to separate resource requirements and limit costs. API requires no GPU resources but can still check cache to serve identical requests and only requests from GPU service if necessary. Minimum instances for both services should probably be set to 0 in Cloud run settings somewhere but if many users requests the GPU will stay warm and queue them up. See individual sub-repos for details.
+
 | Directory | What it is |
 | --- | --- |
 | [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: train, evaluate, and `run()` inference. |

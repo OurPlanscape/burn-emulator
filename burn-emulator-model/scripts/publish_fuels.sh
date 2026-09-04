@@ -53,11 +53,11 @@ cp_flags=(--recursive --no-clobber)
 if [[ "${FORCE:-0}" == "1" ]]; then
     cp_flags=(--recursive)
 elif gcloud storage ls "${base}/" >/dev/null 2>&1; then
-    echo "already published — ${base}/ exists (FORCE=1 to re-upload)"
+    echo "already published: ${base}/ exists (FORCE=1 to re-upload)"
     exit 0
 fi
 
 gcloud storage cp "${cp_flags[@]}" "${layer_dir%/}/"* "${base}/"
 
 echo
-echo "done — ${layer} layer published to ${base}/"
+echo "done: ${layer} layer published to ${base}/"

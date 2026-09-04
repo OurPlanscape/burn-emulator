@@ -17,13 +17,13 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 { "varloc": "WC711", "treatment_area": "<geojson>", "job_name": "my-run-01" }
 ```
 
-`varloc` must be in `varlocs.txt` (one varloc name per line, nothing else — baked into the image from the model repo's `configs/varlocs/varlocs.txt`); `job_name` is 1–63 chars `[a-z0-9-]`.
+`varloc` must be in `varlocs.txt` (one varloc name per line, nothing else; baked into the image from the model repo's `configs/varlocs/varlocs.txt`); `job_name` is 1-63 chars `[a-z0-9-]`.
 
 ```json
 {
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
-  "model_version": "20260829T1430Z-a1b2c3d",
+  "model_version": "20260829T1430Z-a1b2c3d", # this is from publish-model.sh in the model repo
   "status": "completed",
   "varloc": "WC711",
   "cached": false,
@@ -35,9 +35,9 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 | --- | --- | --- |
 | `completed` | 200 | run finished; `<output_path>/<model_name>_run.tif` written |
 | `cached` | 200 | output already existed |
-| `pending` | 202 | identical run in flight — retry |
+| `pending` | 202 | identical run in flight, retry |
 
-## `GET /healthz` — `200 ok`
+## `GET /healthz` -> `200 ok`
 
 ## Flow
 
@@ -51,7 +51,7 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
    else: claim it, POST /infer to the runner, wait, drop the claim -> 200 completed
 ```
 
-The claim ledger is a zero-byte GCS object written with a generation precondition — it stops two identical concurrent requests both hitting the GPU. A stale claim is reclaimed after ~3 min.
+The claim ledger is a zero-byte GCS object written with a generation precondition; it stops two identical concurrent requests both hitting the GPU. A stale claim is reclaimed after ~3 min.
 
 ## Build
 

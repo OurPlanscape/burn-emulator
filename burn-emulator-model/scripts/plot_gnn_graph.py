@@ -108,7 +108,7 @@ def plot_radial_graph(
     n_same = data.same_edge_index.shape[1]
     n_out = data.out_edge_index.shape[1]
     ax.set_title(
-        f"Radial graph — {n_nodes} nodes, {n_same} same-ring edges, {n_out} outward edges",
+        f"Radial graph: {n_nodes} nodes, {n_same} same-ring edges, {n_out} outward edges",
         fontsize=14,
     )
 
@@ -125,7 +125,7 @@ def plot_radial_graph(
 
 
 if __name__ == "__main__":
-    # Example usage — swap grid_size/num_rings down if this is too slow/dense.
+    # Example usage: swap grid_size/num_rings down if this is too slow/dense.
     data = build_radial_graph(
         grid_size=129,
     )

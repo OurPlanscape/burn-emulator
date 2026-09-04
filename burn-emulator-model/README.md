@@ -20,23 +20,36 @@ All configs are composable, with priority going to CLI flags then the latest con
 burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
 ```
 
-Output: `data/outputs/<model_name>/` — `checkpoints/`, `stats.yaml`, `train_log.csv`.
+Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
-To train every varloc in a batch, use `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm`). It reads `configs/varlocs/varlocs.txt` — one varloc name per line, nothing else — where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
+To train every varloc in a batch, use `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm`). It reads `configs/varlocs/varlocs.txt` ; one varloc name per line, where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
 
 ## Evaluate
 
 ```bash
-burn_emulator -m evaluate -c <model.yaml> -c <eval_data.yaml>
+# evaluate will only run inference on a set of ignitions
+# since evaluation evolves constantly in various scripts
+# those tasks are not implemented and left for the DS to do
+burn_emulator -m evaluate \
+              -a "$ARCHITECTURE" \
+              -vl "$VARLOC" \
+              -dv "$DATA_VERSION" \
+              -c <model.yaml> -c <eval_data.yaml>
 ```
 
-Output: `data/outputs/<model_name>/inference/` — per-ignition prediction GeoTIFFs, `throughput.csv`.
+Output: `data/outputs/<model_name>/inference/` ; per-ignition prediction GeoTIFFs, `throughput.csv`.
 
 ## Run
 
 ```bash
-burn_emulator -m run -c <model.yaml> -c <data.yaml> \
-  -bf <baseline_fuels> -lf <legalmax_fuels> -tp <topo> -ta <treatment_area>
+burn_emulator -m run \
+              -c <model.yaml> \
+              -c <data.yaml> \
+              -bf <baseline_fuels> \
+              -lf <legalmax_fuels> \
+              -tp <topo> \
+              -ta <treatment_area> \
+              -o <output_path>
 ```
 
 ```
@@ -74,13 +87,13 @@ burn_paths/{ignition_number}/fire_type.tif # only for training
 | key | meaning |
 | --- | --- |
 | `x` | stacked input channels (topo + fuels + FBFM one-hots) |
-| `y` | per-pixel `fire_type` target — train only |
+| `y` | per-pixel `fire_type` target ; train only |
 | `wind` | ignition wind direction (degrees) |
 | `mask` | burnable / circular-window mask |
 
 Inference samples additionally carry `pdiffs` / `bounds` / `indxes` for stamping predictions back onto the full raster.
 
-If a new fuel product ships different layers (renamed, added/dropped, or different semantics/resolution), add a new `Dataset` rather than messing with `VarLoc`. Keep the same output contract — `x`, `y`, `wind`, `mask` — so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
+If a new fuel product ships different layers (renamed, added/dropped, or different semantics/resolution), add a new `Dataset` rather than messing with `VarLoc`. Keep the same output contract [`x`, `y`, `wind`, `mask`] so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
 
 ## Publish a model
 
@@ -89,6 +102,22 @@ If a new fuel product ships different layers (renamed, added/dropped, or differe
 burn_emulator -m bundle -c configs/circle_net_bundle_template.yaml -mn <model_name> -vl <varloc>
 make publish-model VARLOC=<varloc>
 ```
+
+## Publish fuels
+
+```bash
+make publish-fuels
+```
+
+Both publish targets need a `gs://` destination root, taken from the environment
+(or an explicit make var):
+
+| var | used by | make override |
+| --- | --- | --- |
+| `BURN_EMULATOR_MODELS_URI` | `make publish-model` (model registry root) | `MODELS_URI=` |
+| `BURN_EMULATOR_FUELS_URI` | `make publish-fuels` (published fuel/topo layers root) | `FUELS_URI=` |
+
+The scripts abort if neither the env var nor the make var is set.
 
 `-m bundle` writes `data/bundles/<model_name>/`:
 
