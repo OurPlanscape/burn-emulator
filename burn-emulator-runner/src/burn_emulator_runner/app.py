@@ -120,6 +120,6 @@ def _run_config(spec: dict, req: InferRequest) -> dict:
     init["fuels_paths"] = {"baseline": BASELINE_FUELS, "treatment": LEGALMAX_FUELS}
     init["topo_path"] = TOPO_PATH
     init["ignitions_path"] = None
-    cfg["out_path"] = req.output_path
+    cfg["out_path"] = f"{req.output_path.rstrip('/')}/{cfg['model_name']}_run.tif"
     cfg["debug"] = DEBUG
     return cfg

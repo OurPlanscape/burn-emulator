@@ -23,13 +23,12 @@ def bundle_dir(varloc: str, version: str) -> Path:
 
 
 def load_spec(bundle: Path) -> dict:
-    yamls = sorted(bundle.glob("*.yaml"))
-    if not yamls:
-        raise FileNotFoundError(f"no *.yaml in model bundle {bundle}")
+    config = bundle / "config.yaml"
+    if not config.is_file():
+        raise FileNotFoundError(f"no config.yaml in model bundle {bundle}")
 
-    merged = OmegaConf.merge(*(OmegaConf.load(os.fspath(p)) for p in yamls))
-    spec = OmegaConf.to_container(merged, resolve=True)
-
+    spec = OmegaConf.to_container(OmegaConf.load(os.fspath(config)), resolve=True)
+    spec["experiment_dir"] = os.fspath(bundle)
     spec["ckpt_path"] = _localize(spec.get("ckpt_path", "model.pt"), bundle)
 
     init = spec.setdefault("dataset", {}).setdefault("init_args", {})

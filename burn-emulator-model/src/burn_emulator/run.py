@@ -50,6 +50,7 @@ def run(
     activation: dict,
     experiment_dir: str | Path,
     ckpt_path: str | None = None,
+    out_path: str | Path | None = None,
     debug: bool = False,
     **kwargs: Any,
 ) -> dict | None:
@@ -78,7 +79,9 @@ def run(
         print(f"[run] loading ckpt_path: {ckpt_path}", flush=True)
         print(f"[run] {model_name}: {n_ignitions} ignitions", flush=True)
 
-    out_path = experiment_dir / f"{model_name}_run.tif"
+    # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
+    if out_path is None:
+        out_path = experiment_dir / f"{model_name}_run.tif"
 
     with timed(timings, "model load"):
         ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)
