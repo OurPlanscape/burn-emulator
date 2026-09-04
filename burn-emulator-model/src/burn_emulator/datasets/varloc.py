@@ -29,6 +29,7 @@ from burn_emulator.types import IgnitionMethod
 from burn_emulator.utils import circle_mask
 
 MAX_IGNITION_RESAMPLE = 42 # likely will never reach this limit
+MAX_TARGET_IGNITIONS = 2**16
 
 
 def _window(src, window_bounds: tuple | None) -> Window | None:
@@ -248,7 +249,7 @@ class VarLoc(Dataset):
         treatment_area: Polygon | None = None,
         treatment_buff: float = 960,  # metres to buffer treatment_area by
         treatment_seed: int = 42,
-        ignition_density: float | None = 2e-5,
+        ignition_density: float | None = 20,  
         wind_seed: int = 42,
         window_size: int = 129,
         jitter: int | None = None,
@@ -587,11 +588,11 @@ class VarLoc(Dataset):
     def _sample_ignitions(
         self,
         gs: gpd.GeoSeries,
-        ignition_density: float = 5e-5,
+        ignition_density: float = 20,  
         treatment_seed: int = 42,
         method: IgnitionMethod = "uniform",
     ) -> None:
-        n_points = round(gs.area.sum() * ignition_density)
+        n_points = round(gs.area.sum() / 1e6 * ignition_density)  # gs.area is m^2 (EPSG:5070)
         sampled = gs.sample_points(size=n_points, method=method, rng=treatment_seed)
         sampled = sampled.explode(index_parts=False).reset_index(drop=True)
 
@@ -599,6 +600,9 @@ class VarLoc(Dataset):
         #       cached burnable pixel grid instead of a rejection loop; however, speed-up is
         #       probably marginal at best (i.e ~ 10ms difference per batch)...
         target = len(sampled)
+        if target > MAX_TARGET_IGNITIONS:
+            raise ValueError(f"{target} ignitions requested, exceeds MAX_TARGET_IGNITIONS={MAX_TARGET_IGNITIONS}")
+
         sampled = sampled[self._select_burnable(sampled)]
         seed = treatment_seed
         while len(sampled) < target and seed - treatment_seed < MAX_IGNITION_RESAMPLE:

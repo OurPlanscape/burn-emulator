@@ -13,6 +13,7 @@ from burn_emulator.utils import resolve_model_checkpoint
 # dataset.init_args keys the runner / deployment fills in - never bundle them.
 _RUNTIME_DATASET_KEYS = (
     "treatment_area",
+    "treatment_area_crs",
     "fuels_paths",
     "topo_path",
     "ignitions_path",
@@ -63,6 +64,7 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
 
     # provenance: which model architecture code this checkpoint was trained
     # against, so the runner can warn when its own code no longer matches.
+    # NOTE: preprocessing code isn't included...
     repo_sha, dirty = provenance.git_head()
     class_path = config["model"]["class_path"]
     meta = {
