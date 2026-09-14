@@ -10,9 +10,18 @@ from burn_emulator.train import train
 
 def main():
     parser = argparse.ArgumentParser(description="")
+
+    # all methods
     parser.add_argument("-m", "--method", default="train", choices=METHODS)
     parser.add_argument("-C", "--config_dir", action="store")
     parser.add_argument("-c", "--config", action="append")
+
+    # model identity: -vl/-dv used by every method, -a by all but ignite
+    parser.add_argument("-vl", "--varloc", action="store")
+    parser.add_argument("-a", "--architecture", action="store")
+    parser.add_argument("-dv", "--data_version", action="store")
+
+    # dataset overrides: train / evaluate / evaluate_iterations / run only
     parser.add_argument("-mp", "--fbfm_map_path", action="store")
     parser.add_argument("-bf", "--baseline_fuels", action="store")
     parser.add_argument("-lf", "--legalmax_fuels", action="store")
@@ -24,13 +33,18 @@ def main():
     parser.add_argument("-id", "--ignition_density", action="store", type=float)
     parser.add_argument("-wr", "--wind_range", action="store", nargs=2, type=float)
     parser.add_argument("-ws", "--wind_seed", action="store", type=int)
+    parser.add_argument("-d", "--debug", action="store_true")
+
+    # checkpoint: train / evaluate / evaluate_iterations / run / bundle
     parser.add_argument("-cp", "--ckpt_path", action="store")
-    parser.add_argument("-vl", "--varloc", action="store")
-    parser.add_argument("-a", "--architecture", action="store")
-    parser.add_argument("-dv", "--data_version", action="store")
+
+    # run only
+    parser.add_argument("-o", "--out_path", action="store")
+
+    # ignite only
     parser.add_argument("-ni", "--num_ignitions", action="store", type=int)
     parser.add_argument("-ci", "--collate_ignitions", action="store_true")
-    parser.add_argument("-d", "--debug", action="store_true")
+
     args = parser.parse_args()
 
     configs = load_configs(args.config_dir, args.config)

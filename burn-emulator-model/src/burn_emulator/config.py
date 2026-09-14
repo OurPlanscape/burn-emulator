@@ -90,6 +90,9 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
     if args.ckpt_path is not None:
         OmegaConf.update(configs, "ckpt_path", args.ckpt_path, merge=True)
 
+    if args.out_path is not None:
+        OmegaConf.update(configs, "out_path", args.out_path, merge=True)
+
     dataset_overrides = {
         key: value
         for key, value in (
