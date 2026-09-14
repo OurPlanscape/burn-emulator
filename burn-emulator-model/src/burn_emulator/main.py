@@ -22,19 +22,25 @@ def main():
     parser.add_argument("-tb", "--treatment_buff", action="store", type=float)
     parser.add_argument("-ts", "--treatment_seed", action="store", type=float)
     parser.add_argument("-id", "--ignition_density", action="store", type=float)
+    parser.add_argument("-wr", "--wind_range", action="store", nargs=2, type=float)
     parser.add_argument("-ws", "--wind_seed", action="store", type=int)
-    parser.add_argument("-p", "--ckpt_path", action="store")
+    parser.add_argument("-cp", "--ckpt_path", action="store")
     parser.add_argument("-vl", "--varloc", action="store")
     parser.add_argument("-a", "--architecture", action="store")
     parser.add_argument("-dv", "--data_version", action="store")
+    parser.add_argument("-ni", "--num_ignitions", action="store", type=int)
+    parser.add_argument("-ci", "--collate_ignitions", action="store_true")
     parser.add_argument("-d", "--debug", action="store_true")
     args = parser.parse_args()
 
     configs = load_configs(args.config_dir, args.config)
-    resolve_model_name(configs, args.varloc, args.architecture, args.data_version)
 
-    # bundle assembles its own config from the DictConfig; the rest run overrides
-    if args.method != "bundle":
+    # ignite generates training data from a varloc string, not a model/dataset config
+    if args.method != "ignite":
+        resolve_model_name(configs, args.varloc, args.architecture, args.data_version)
+
+    # bundle assembles its own config from the DictConfig; ignite has no config at all
+    if args.method not in ("bundle", "ignite"):
         configs = apply_overrides(configs, args)
         configs["debug"] = args.debug
 
@@ -49,6 +55,18 @@ def main():
             run(**configs)
         case "bundle":
             bundle(configs, ckpt_path=args.ckpt_path)
+        case "ignite":
+            # deferred: pyretechnics/ray are optional deps (pyproject.toml [data] extra)
+            from burn_emulator.ignite import ignite
+
+            ignite_kwargs = {
+                "varloc": args.varloc,
+                "data_version": args.data_version,
+                "collate_ignitions": args.collate_ignitions,
+            }
+            if args.num_ignitions is not None:
+                ignite_kwargs["num_ignitions"] = args.num_ignitions
+            ignite(**ignite_kwargs)
 
 
 if __name__ == "__main__":

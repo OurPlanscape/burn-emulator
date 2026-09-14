@@ -30,9 +30,11 @@ def _fire_touches(
 
 def _center_component(mask: torch.Tensor) -> torch.Tensor:
     _, h, w = mask.shape
+    cy, cx = h // 2, w // 2
     seed = torch.zeros_like(mask)
-    seed[:, h // 2, w // 2] = True
-    seed = seed & mask  # center not burned -> empty component
+    # seed from the 3x3 neighborhood, not just the single center pixel
+    seed[:, max(cy - 1, 0) : cy + 2, max(cx - 1, 0) : cx + 2] = True
+    seed = seed & mask  # nothing burned near center -> empty component
     if seed.sum() == 0:
         return seed
     

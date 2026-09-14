@@ -10,7 +10,7 @@ import geopandas as gpd
 from omegaconf import DictConfig, OmegaConf
 from shapely.geometry.base import BaseGeometry
 
-from burn_emulator.constants import INF_PROFILE, OUTDIR, Path
+from burn_emulator.constants import OUTDIR, TARGET_CRS, Path
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
 # bare ${name} interpolations that resolve nowhere fall back to the environment,
@@ -97,7 +97,8 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
             ("treatment_buff", args.treatment_buff),
             ("treatment_seed", args.treatment_seed),
             ("ignition_density", args.ignition_density),
-            ("wind_seed", args.wind_seed)
+            ("wind_seed", args.wind_seed),
+            ("wind_range", args.wind_range),
         )
         if value is not None
     }
@@ -155,10 +156,6 @@ def dynamic_import(loader: dict, kwargs: dict | None = None) -> Any:
     loader_cls = getattr(importlib.import_module(module_path), class_name)
 
     return loader_cls(**init_args)
-
-
-# raster CRS everything is reprojected into before use.
-TARGET_CRS = INF_PROFILE["crs"]
 
 
 def load_treatment_area(

@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# training-data generation only (scripts/create_training_data.py, scripts/pyretechnics.py)
+# training-data generation only (src/burn_emulator/ignite.py, scripts/create_training_data.py, scripts/pyretechnics.py)
 data = ["pyretechnics", "ray"]
 
 [project.scripts]
