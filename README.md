@@ -41,6 +41,10 @@ caller --POST /v1/jobs {varloc, treatment_area, job_name}--> burn-emulator-api
   4. <-- 200 {status: completed, hash, model_version, output_path}
 ```
 
+## Notes for the calling service
+
+Validation of the treatment area and ignition density is done in the -model scripts. This is fine for most cases but in the case that the calling service does not want to instantiate the run and incur GPU costs of the seconds for that check, validation of those values should be done upstream (e.g egregious # of ignitions, coverage area, etc.). The MAX number of ignitions is 2**16.
+
 ## Docker
 
 ```bash

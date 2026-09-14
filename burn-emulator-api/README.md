@@ -57,7 +57,7 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
    else: claim it, POST /infer to the runner, wait, drop the claim -> 200 completed
 ```
 
-The claim ledger is a zero-byte GCS object written with a generation precondition; it stops two identical concurrent requests both hitting the GPU. A stale claim is reclaimed after ~3 min.
+The claim ledger is a zero-byte GCS object written with a generation precondition; it stops two identical concurrent requests both hitting the GPU. A stale claim is reclaimed after ~8 min.
 
 ## Timeouts
 

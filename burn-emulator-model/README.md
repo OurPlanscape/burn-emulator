@@ -9,7 +9,7 @@ The default model is an archetypal CNN with one major adjustment: [circular kern
 ## Install
 
 ```bash
-uv sync && uv pip install -e .
+uv sync && uv pip install -e burn-emulator-model
 uv sync --extra data     # for scripts/ (training-data generation from Pyretechnics)
 ```
 
@@ -98,16 +98,20 @@ If a new fuel product ships different layers (renamed, added/dropped, or differe
 ## Publish a model
 
 ```bash
-# make sure here to match model name and varloc
-burn_emulator -m bundle -c configs/circle_net_bundle_template.yaml -mn <model_name> -vl <varloc>
+burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc>
 make publish-model VARLOC=<varloc>
 ```
+
+`make publish-model` resolves the bundle for `<varloc>` from the same `configs/varlocs/current.yaml` architecture/data_version (matching what the bundle command above just wrote); override with `BUNDLE_DIR=<path>` to publish a different one.
 
 ## Publish fuels
 
 ```bash
-make publish-fuels
+make publish-fuels FUELS_DIR=<dir>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
+make publish-topo TOPO_DIR=<dir>     # <dir> holds all topo tifs, uploaded as-is
 ```
+
+The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish-fuels` splits `FUELS_DIR` by filename into `baseline/` and `legalmax/` uploads; `publish-topo` uploads `TOPO_DIR` wholesale to `topo/`. Both land under `${fuels_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`.
 
 Both publish targets need a `gs://` destination root, taken from the environment
 (or an explicit make var):
@@ -115,7 +119,7 @@ Both publish targets need a `gs://` destination root, taken from the environment
 | var | used by | make override |
 | --- | --- | --- |
 | `BURN_EMULATOR_MODELS_URI` | `make publish-model` (model registry root) | `MODELS_URI=` |
-| `BURN_EMULATOR_FUELS_URI` | `make publish-fuels` (published fuel/topo layers root) | `FUELS_URI=` |
+| `BURN_EMULATOR_FUELS_URI` | `make publish-fuels` / `make publish-topo` (published fuel/topo layers root) | `FUELS_URI=` |
 
 The scripts abort if neither the env var nor the make var is set.
 
