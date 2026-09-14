@@ -5,6 +5,8 @@ dataset:
         fuels_paths:
             baseline: data/training_data/${varloc}/${data_version}/baseline_FF
             treatment: data/training_data/${varloc}/${data_version}/legalmax_FF
+        burn_paths: null
+        wind_ang_paths: null
         wind_range: ${wind_range}
         topo_path: data/training_data/${varloc}/${data_version}/topo
 
@@ -16,5 +18,16 @@ dataset:
         treatment_seed: 42
         wind_seed: 42
         window_size: 129
+
+dataloader:
+    class_path: torch.utils.data.DataLoader
+    init_args:
+        batch_size: 32
+        shuffle: false
+        pin_memory: true
+        drop_last: false
+
+activation:
+    class_path: torch.nn.Sigmoid
 
 varloc: ${varloc}
