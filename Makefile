@@ -6,7 +6,7 @@ MODEL_DIR  ?= burn-emulator-model
 RUNNER_DIR ?= burn-emulator-runner
 VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --porcelain)" ] || echo -dirty)
 
-# BURN_EMULATOR_ARTIFACT_STORE / BURN_EMULATOR_MODELS_URI / BURN_EMULATOR_FUELS_URI
+# BURN_EMULATOR_ARTIFACT_STORE / BURN_EMULATOR_MODELS_URI / BURN_EMULATOR_INPUTS_URI
 # must be exported by the caller (see burn-emulator-api/README.md / burn-emulator-model/README.md
 # for what each points at). VERSION gets a -dirty suffix on an uncommitted tree; build-api/
 # build-runner refuse to run with that suffix when BURN_EMULATOR_ENV is prod/production
@@ -70,12 +70,12 @@ publish-model-all:
 
 # FUELS_DIR should hold both baseline_*.tif and legalmax_*.tif;
 publish-fuels:
-	if [ -z "$(BURN_EMULATOR_FUELS_URI)" ]; then echo "error: BURN_EMULATOR_FUELS_URI is not set - export it (see README.md)" >&2; exit 2; fi
-	$(MODEL_DIR)/scripts/publish_fuels.sh $(FUELS_DIR) $(BURN_EMULATOR_FUELS_URI)
+	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
+	$(MODEL_DIR)/scripts/publish_fuels.sh $(FUELS_DIR) $(BURN_EMULATOR_INPUTS_URI)
 
 publish-topo:
-	if [ -z "$(BURN_EMULATOR_FUELS_URI)" ]; then echo "error: BURN_EMULATOR_FUELS_URI is not set - export it (see README.md)" >&2; exit 2; fi
-	$(MODEL_DIR)/scripts/publish_topo.sh $(TOPO_DIR) $(BURN_EMULATOR_FUELS_URI)
+	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
+	$(MODEL_DIR)/scripts/publish_topo.sh $(TOPO_DIR) $(BURN_EMULATOR_INPUTS_URI)
 
 train-all:
 	$(MODEL_DIR)/scripts/train_varlocs.sh
