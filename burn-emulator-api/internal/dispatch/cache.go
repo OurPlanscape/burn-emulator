@@ -32,6 +32,7 @@ type runRecord struct {
 	JobName   string
 	Attempts  int
 	UpdatedAt time.Time
+	Generation int64
 }
 
 func ledgerObjectName(key string) string {
@@ -56,12 +57,14 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRe
 				return false, runRecord{}, fmt.Errorf("reading run ledger %s: %w", key, getErr)
 			}
 			rec := runRecord{Status: "running", JobName: jobName, Attempts: 1, UpdatedAt: time.Now()}
-			if putErr := c.putLedger(ctx, bucket, name, rec, 0); putErr != nil {
+			gen, putErr := c.putLedger(ctx, bucket, name, rec, 0)
+			if putErr != nil {
 				if isStatusCode(putErr, 412) {
 					continue // lost the race; retry
 				}
 				return false, runRecord{}, fmt.Errorf("claiming run %s: %w", key, putErr)
 			}
+			rec.Generation = gen
 			return true, rec, nil
 		}
 
@@ -71,12 +74,14 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRe
 		}
 
 		next := runRecord{Status: "running", JobName: jobName, Attempts: rec.Attempts + 1, UpdatedAt: time.Now()}
-		if putErr := c.putLedger(ctx, bucket, name, next, obj.Generation); putErr != nil {
+		gen, putErr := c.putLedger(ctx, bucket, name, next, obj.Generation)
+		if putErr != nil {
 			if isStatusCode(putErr, 412) {
 				continue // someone else reclaimed it; retry
 			}
 			return false, runRecord{}, fmt.Errorf("reclaiming run %s: %w", key, putErr)
 		}
+		next.Generation = gen
 		return true, next, nil
 	}
 	return false, runRecord{}, fmt.Errorf("claiming run %s: exceeded %d attempts under contention", key, maxClaimAttempts)
@@ -84,9 +89,28 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRe
 
 const releaseTimeout = 10 * time.Second
 
-// delete the ledger object: called once a run finishes (output now exists) or
-// fails (so the next request can retry without waiting out runStaleAfter).
-func (c *Client) releaseRun(ctx context.Context, key string) {
+// report whether the ledger object is still the one we wrote (generation gen),
+// i.e. our claim has not gone stale and been reclaimed by another run.
+func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
+	bucket, err := c.outputBucketName()
+	if err != nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	_, err = c.storage.Objects.Get(bucket, ledgerObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
+	if err != nil {
+		if !isStatusCode(err, 404) && !isStatusCode(err, 412) {
+			slog.Warn("failed to verify run claim", "key", key, "error", err)
+		}
+		return false
+	}
+	return true
+}
+
+// delete the ledger object, only if it is still the claim we wrote once
+// a run finishes (output now exists) or fails (so the next run can claim it).
+func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
 		slog.Warn("failed to clear run claim: bad output bucket", "key", key, "error", err)
@@ -94,15 +118,20 @@ func (c *Client) releaseRun(ctx context.Context, key string) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	if err := c.storage.Objects.Delete(bucket, ledgerObjectName(key)).Context(ctx).Do(); err != nil {
+	err = c.storage.Objects.Delete(bucket, ledgerObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
+	if err != nil {
+		if isStatusCode(err, 404) || isStatusCode(err, 412) {
+			slog.Info("run claim no longer ours; leaving it", "key", key)
+			return
+		}
 		slog.Warn("failed to clear run claim", "key", key, "error", err)
 	}
 }
 
 // write rec as metadata on an empty object at bucket/name, conditioned on
 // ifGenerationMatch (0 = must not exist, else = unchanged since read).
-// Returns 412 if the check fails.
-func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runRecord, ifGenerationMatch int64) error {
+// Returns the new object generation, or a 412 error if the check fails.
+func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runRecord, ifGenerationMatch int64) (int64, error) {
 	obj := &storage.Object{
 		Name: name,
 		Metadata: map[string]string{
@@ -112,12 +141,15 @@ func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runReco
 			"updated_at": strconv.FormatInt(rec.UpdatedAt.Unix(), 10),
 		},
 	}
-	_, err := c.storage.Objects.Insert(bucket, obj).
+	written, err := c.storage.Objects.Insert(bucket, obj).
 		Media(strings.NewReader("")).
 		IfGenerationMatch(ifGenerationMatch).
 		Context(ctx).
 		Do()
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return written.Generation, nil
 }
 
 func parseLedger(obj *storage.Object) runRecord {

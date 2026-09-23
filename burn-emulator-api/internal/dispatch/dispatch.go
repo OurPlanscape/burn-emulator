@@ -91,13 +91,15 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 	})
 	cancel()
 	if err != nil {
-		c.deleteOutput(ctx, outPath)
-		c.releaseRun(ctx, runID)
+		if c.ownsClaim(ctx, runID, rec.Generation) {
+			c.deleteOutput(ctx, outPath)
+		}
+		c.releaseRun(ctx, runID, rec.Generation)
 		return CreateJobResult{}, fmt.Errorf("running inference: %w", err)
 	}
 
 	// output now exists; drop the claim so _runs/ doesn't accumulate.
-	c.releaseRun(ctx, runID)
+	c.releaseRun(ctx, runID, rec.Generation)
 
 	result.JobName = req.JobName
 	result.Attempts = rec.Attempts
