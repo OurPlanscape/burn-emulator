@@ -115,11 +115,11 @@ scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 ## Publish fuels
 
 ```bash
-scripts/publish_fuels.sh <dir> <fuels_uri>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
-scripts/publish_topo.sh <dir> <fuels_uri>    # <dir> holds all topo tifs, uploaded as-is
+scripts/publish_fuels.sh <dir> <inputs_uri>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
+scripts/publish_topo.sh <dir> <inputs_uri>    # <dir> holds all topo tifs, uploaded as-is
 ```
 
-The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish_fuels.sh` splits `<dir>` by filename into `baseline/` and `legalmax/` uploads and repoints `fuels/current`; `publish_topo.sh` uploads `<dir>` wholesale to `topo/` and repoints `topo/current`. Both land under `${fuels_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`. `<fuels_uri>` can also come from `BURN_EMULATOR_FUELS_URI` instead of the second argument; both scripts abort if neither is set.
+The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish_fuels.sh` splits `<dir>` by filename into `baseline/` and `legalmax/` uploads and repoints `fuels/current`; `publish_topo.sh` uploads `<dir>` wholesale to `topo/` and repoints `topo/current`. Both land under `${inputs_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the second argument; both scripts abort if neither is set.
 
 `-m bundle` writes `data/bundles/<model_name>/`:
 

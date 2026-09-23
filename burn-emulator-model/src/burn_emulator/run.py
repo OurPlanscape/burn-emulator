@@ -89,7 +89,7 @@ def run(
 
     # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
     if out_path is None:
-        out_path = experiment_dir / f"{model_name}_run.tif"
+        out_path = experiment_dir / f"{model_name}.tif"
 
     with timed(timings, "model load"):
         ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)

@@ -3,14 +3,14 @@
 set -euo pipefail
 
 layer_dir="${1:-}"
-fuels_uri="${2:-${BURN_EMULATOR_FUELS_URI:-}}"
+inputs_uri="${2:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
 if [[ -z "$layer_dir" ]]; then
-    echo "usage: $0 <layer_dir> [fuels_uri]" >&2
+    echo "usage: $0 <layer_dir> [inputs_uri]" >&2
     exit 2
 fi
-if [[ -z "$fuels_uri" ]]; then
-    echo "error: pass fuels_uri as arg 2, or set BURN_EMULATOR_FUELS_URI" >&2
+if [[ -z "$inputs_uri" ]]; then
+    echo "error: pass inputs_uri as arg 2, or set BURN_EMULATOR_INPUTS_URI" >&2
     exit 2
 fi
 
@@ -32,7 +32,7 @@ if [[ ! "$dir_name" =~ ([0-9]{1,2})([A-Za-z]{3})([0-9]{4}) ]]; then
 fi
 date_dir="$(date -u -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}" +%Y%m%d)"
 
-base="${fuels_uri%/}/${date_dir}"
+base="${inputs_uri%/}/${date_dir}"
 
 baseline_files=()
 legalmax_files=()
@@ -92,5 +92,5 @@ publish_treatment () {
 publish_treatment baseline "${baseline_files[@]}"
 publish_treatment legalmax "${legalmax_files[@]}"
 
-printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/fuels/current"
+printf '%s' "$date_dir" | gcloud storage cp - "${inputs_uri%/}/fuels/current"
 echo "fuels/current now points to ${date_dir}"

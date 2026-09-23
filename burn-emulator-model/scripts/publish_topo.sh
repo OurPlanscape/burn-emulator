@@ -3,14 +3,14 @@
 set -euo pipefail
 
 topo_dir="${1:-}"
-fuels_uri="${2:-${BURN_EMULATOR_FUELS_URI:-}}"
+inputs_uri="${2:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
 if [[ -z "$topo_dir" ]]; then
-    echo "usage: $0 <topo_dir> [fuels_uri]" >&2
+    echo "usage: $0 <topo_dir> [inputs_uri]" >&2
     exit 2
 fi
-if [[ -z "$fuels_uri" ]]; then
-    echo "error: pass fuels_uri as arg 2, or set BURN_EMULATOR_FUELS_URI" >&2
+if [[ -z "$inputs_uri" ]]; then
+    echo "error: pass inputs_uri as arg 2, or set BURN_EMULATOR_INPUTS_URI" >&2
     exit 2
 fi
 
@@ -32,7 +32,7 @@ if [[ ! "$dir_name" =~ ([0-9]{1,2})([A-Za-z]{3})([0-9]{4}) ]]; then
 fi
 date_dir="$(date -u -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}" +%Y%m%d)"
 
-base="${fuels_uri%/}/${date_dir}/topo"
+base="${inputs_uri%/}/${date_dir}/topo"
 
 echo "layer    topo"
 echo "date     ${date_dir}"
@@ -46,7 +46,7 @@ if [[ "${FORCE:-0}" == "1" ]]; then
     cp_flags=()
 elif gcloud storage ls "${base}/" >/dev/null 2>&1; then
     echo "already published: ${base}/ exists (FORCE=1 to re-upload)"
-    printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/topo/current"
+    printf '%s' "$date_dir" | gcloud storage cp - "${inputs_uri%/}/topo/current"
     echo "topo/current now points to ${date_dir}"
     exit 0
 fi
@@ -55,5 +55,5 @@ gcloud storage cp "${cp_flags[@]}" "$topo_dir"/*.tif "${base}/"
 
 echo
 echo "done: topo layer published to ${base}/"
-printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/topo/current"
+printf '%s' "$date_dir" | gcloud storage cp - "${inputs_uri%/}/topo/current"
 echo "topo/current now points to ${date_dir}"

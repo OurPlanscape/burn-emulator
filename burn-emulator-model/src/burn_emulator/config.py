@@ -80,6 +80,8 @@ def resolve_model_name(
             f"{', '.join(missing)} required: pass the flag or set it in a config file"
         )
 
+    parts["varloc"] = str(parts["varloc"]).upper()
+    OmegaConf.update(configs, "varloc", parts["varloc"], merge=True)
     parts["data_version"] = _iso_data_version(str(parts["data_version"]))
     model_name = "{varloc}_{architecture}_{data_version}".format(**parts)
     OmegaConf.update(configs, "model_name", model_name, merge=True)

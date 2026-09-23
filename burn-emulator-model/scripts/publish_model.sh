@@ -28,6 +28,16 @@ if [[ ! -f "$bundle_dir/bundle_meta.json" ]]; then
     echo "error: $bundle_dir is missing bundle_meta.json, re-run 'burn_emulator -m bundle'" >&2
     exit 1
 fi
+if [[ ! -f "$bundle_dir/config.yaml" ]]; then
+    echo "error: $bundle_dir is missing config.yaml" >&2
+    exit 1
+fi
+
+model_name="$(grep -oP '^model_name:[[:space:]]*\K\S+' "$bundle_dir/config.yaml" || true)"
+if [[ "$model_name" != "${varloc}_"* ]]; then
+    echo "error: $bundle_dir is a bundle for '${model_name:-unknown}', not varloc '$varloc'" >&2
+    exit 1
+fi
 
 # version = when the checkpoint was written + the model code it came from
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
