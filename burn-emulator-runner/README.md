@@ -46,7 +46,7 @@ On each execution the runner compares `bundle_meta.json`'s `model_code_sha256` a
 1. read <MODELS_DIR>/<varloc>/<version>/config.yaml (bundle dir = experiment_dir)
 2. warn if bundle_meta.json model_code_sha256 != this image's architecture module hash
 3. inject treatment_area, fuels_paths, topo_path, out_path into config
-4. run(**config) -> writes <output_path>/<model_name>_run.tif
+4. run(**config) -> writes <output_path>/<model_name>.tif
 5. exit 0 on success, exit 1 on any error (the execution/task is marked failed)
 ```
 

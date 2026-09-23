@@ -37,7 +37,7 @@ def _run_config(
         if ignition_density <= 0:
             raise ValueError("ignition_density must be > 0")
         init["ignition_density"] = ignition_density
-    cfg["out_path"] = f"{output_path.rstrip('/')}/{cfg['model_name']}_run.tif"
+    cfg["out_path"] = f"{output_path.rstrip('/')}/{cfg['model_name']}.tif"
     cfg["debug"] = DEBUG
     return cfg
 

@@ -42,7 +42,7 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `completed` | 200 | run finished; `<output_path>/<model_name>_run.tif` written |
+| `completed` | 200 | run finished; `<output_path>/<model_name>.tif` written |
 | `cached` | 200 | output already existed |
 | `pending` | 202 | identical run in flight, retry |
 

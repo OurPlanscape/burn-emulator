@@ -71,7 +71,7 @@ burn_emulator -m run \
     classify crown change, drop fires that
     miss the treatment region
 6. aggregate kept fires onto the full raster (fp32) -> per-pixel change probabilities
-7. write <dir>/<model_name>_run.tif   (3-band float32 GeoTIFF)
+7. write <dir>/<model_name>.tif   (3-band float32 GeoTIFF)
 ```
 
 `<dir>` is `-o` if given, else `data/outputs/<model_name>`.

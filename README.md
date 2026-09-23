@@ -56,7 +56,7 @@ caller --POST /v1/jobs {varloc, treatment_area, treatment_area_crs, job_name}-->
         --trigger a burn-emulator-runner job execution with {varloc, version, treatment_area, treatment_area_crs, hash, out_path, fuels/topo paths (from fuels_version/topo_version) [, ignition_density]} as env overrides, wait for it-->
           a. read the bundle from the FUSE-mounted registry, merge its *.yaml
           b. inject treatment_area + fuels/topo paths + out_path into the config
-          c. run burn_emulator.run.run(**config) -> writes <out_path>/<model_name>_run.tif
+          c. run burn_emulator.run.run(**config) -> writes <out_path>/<model_name>.tif
           d. exit 0, or exit 1 on failure
      drop the claim
   4. <-- 200 {status: completed, hash, model_version, output_path}
