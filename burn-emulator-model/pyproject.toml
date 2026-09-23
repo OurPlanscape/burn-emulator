@@ -1,5 +1,5 @@
 [project]
-name = "burn-emulator"
+name = "burn-emulator-model"
 version = "0.1.0"
 description = ""
 requires-python = ">=3.12"
@@ -39,13 +39,6 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py312"
+extend = "../ruff.toml"
 extend-exclude = ["scripts"]
 force-exclude = true
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
-
-[tool.ruff.format]
-quote-style = "double"

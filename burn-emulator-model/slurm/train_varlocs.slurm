@@ -1,8 +1,8 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=train_varlocs
-#SBATCH --output=data/logs/train_varlocs_%A_%a.out
-#SBATCH --error=data/logs/train_varlocs_%A_%a.err
+#SBATCH --output=burn-emulator-model/data/logs/train_varlocs_%A_%a.out
+#SBATCH --error=burn-emulator-model/data/logs/train_varlocs_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
@@ -15,7 +15,8 @@ echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 source $HOME/.bashrc
-source .venv/bin/activate
+source burn-emulator-model/.venv/bin/activate
+cd burn-emulator-model
 
 CONFIG_DIR=configs
 VARLOC_DIR=$CONFIG_DIR/varlocs

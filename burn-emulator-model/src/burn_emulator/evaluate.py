@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from burn_emulator.config import dynamic_import
 from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, INF_PROFILE, RUN_DEVICE, Path
 from burn_emulator.datasets.utils import compute_crop_region
+from burn_emulator.run import _center_component
 from burn_emulator.utils import peak_gpu_gb, resolve_model_checkpoint, timed
 
 
@@ -95,6 +96,9 @@ def evaluate_model(
 
                 with timed(timings, "model forward"):
                     pred = (activation(model(X, W)) * M).to(torch.float32)
+                    burned = _center_component(pred.argmax(dim=1) != 0)
+                    pred = pred * burned.unsqueeze(1).to(torch.float32)
+                    pred[:, 0] += (~burned).to(torch.float32)
 
                 with timed(timings, "write drain"):
                     _drain(pending, limit=max_write_workers)

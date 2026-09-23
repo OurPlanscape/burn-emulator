@@ -91,3 +91,6 @@ publish_treatment () {
 
 publish_treatment baseline "${baseline_files[@]}"
 publish_treatment legalmax "${legalmax_files[@]}"
+
+printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/fuels/current"
+echo "fuels/current now points to ${date_dir}"

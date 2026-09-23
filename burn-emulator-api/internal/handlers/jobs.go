@@ -18,16 +18,14 @@ import (
 const (
 	// treatment_area is inline GeoJSON which might be big
 	maxBodyBytes = 1 << 20
-	// covers dispatch.warmupBudget (12m) + dispatch.inferBudget (16m) + GCS calls
+	// covers dispatch.runBudget (25m) + GCS calls
 	requestTimeout = 30 * time.Minute
 )
 
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
-// the allow-list of accepted varloc values.
 type VarLocSet map[string]bool
 
-// report whether name is in the allow-list.
 func (s VarLocSet) Contains(name string) bool {
 	return s[name]
 }
@@ -53,7 +51,6 @@ func LoadVarLocs(path string) (VarLocSet, error) {
 	return set, nil
 }
 
-// the JSON body accepted by POST /v1/jobs.
 type jobRequestBody struct {
 	TreatmentArea    string   `json:"treatment_area"`
 	TreatmentAreaCRS string   `json:"treatment_area_crs"`
@@ -62,11 +59,12 @@ type jobRequestBody struct {
 	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
 }
 
-// the JSON body returned by POST /v1/jobs.
 type jobResponseBody struct {
 	JobName      string `json:"job_name,omitempty"`
 	Hash         string `json:"hash"`
 	ModelVersion string `json:"model_version"`
+	FuelsVersion string `json:"fuels_version"`
+	TopoVersion  string `json:"topo_version"`
 	Status       string `json:"status"`
 	VarLoc       string `json:"varloc"`
 	Cached       bool   `json:"cached"`
@@ -80,8 +78,6 @@ type JobsHandler struct {
 	VarLocs  VarLocSet
 }
 
-// validate the request, run it, and return the status, parameter hash, model
-// version, and output path.
 func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -137,7 +133,8 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("run handled",
 		"job_name", result.JobName, "varloc", body.VarLoc, "hash", result.Hash,
-		"model_version", result.ModelVersion, "status", result.Status, "attempts", result.Attempts,
+		"model_version", result.ModelVersion, "fuels_version", result.FuelsVersion,
+		"topo_version", result.TopoVersion, "status", result.Status, "attempts", result.Attempts,
 		"output_path", result.OutputPath, "client_ip", clientAddr)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -146,6 +143,8 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		JobName:      result.JobName,
 		Hash:         result.Hash,
 		ModelVersion: result.ModelVersion,
+		FuelsVersion: result.FuelsVersion,
+		TopoVersion:  result.TopoVersion,
 		Status:       result.Status,
 		VarLoc:       body.VarLoc,
 		Cached:       result.Status == "cached",
@@ -154,8 +153,7 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// check the varloc against the allow-list and job_name against the label rules
-// (job_name is stored in the claim ledger and echoed back).
+// job_name is stored in the claim ledger, so it must be label-safe.
 func validate(body jobRequestBody, allowed VarLocSet) error {
 	if !allowed.Contains(body.VarLoc) {
 		return errors.New("invalid 'varloc': not in the configured allow-list")
@@ -179,8 +177,7 @@ func validate(body jobRequestBody, allowed VarLocSet) error {
 	return nil
 }
 
-// extract the caller's address for logging. X-Forwarded-For is trusted
-// because only internal callers reach this API.
+// extract the caller's address for logging.
 func clientIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
 		return ip

@@ -1,99 +1,114 @@
 package dispatch
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
+	"log/slog"
+	"strconv"
 	"time"
 
-	"google.golang.org/api/idtoken"
+	run "google.golang.org/api/run/v2"
 )
 
-// calls the burn-emulator-runner GPU service.
 type runnerClient struct {
-	http *http.Client
-	url  string // base URL
+	svc *run.Service
+	job string // fully-qualified job name: projects/*/locations/*/jobs/*
 }
 
-// build a runner client whose requests carry an OIDC ID token for the
-// runner's audience.
-func newRunnerClient(ctx context.Context, url string) (*runnerClient, error) {
-	url = strings.TrimSuffix(url, "/")
-	hc, err := idtoken.NewClient(ctx, url)
+func newRunnerClient(ctx context.Context, job string) (*runnerClient, error) {
+	svc, err := run.NewService(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("creating runner id-token client: %w", err)
+		return nil, fmt.Errorf("creating run client: %w", err)
 	}
-	return &runnerClient{http: hc, url: url}, nil
+	return &runnerClient{svc: svc, job: job}, nil
 }
 
-// the JSON body POSTed to the runner's /infer.
+// a single inference request, passed to the job execution as env var overrides.
 type inferRequest struct {
-	VarLoc           string   `json:"varloc"`
-	Version          string   `json:"version"`
-	TreatmentArea    string   `json:"treatment_area"`
-	TreatmentAreaCRS string   `json:"treatment_area_crs"`
-	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
-	Hash             string   `json:"hash"`
-	OutputPath       string   `json:"output_path"`
+	VarLoc           string
+	Version          string
+	FuelsVersion     string
+	TopoVersion      string
+	TreatmentArea    string
+	TreatmentAreaCRS string
+	IgnitionDensity  *float64
+	Hash             string
+	OutputPath       string
 }
 
-// how often Ready re-polls /healthz while waiting for the runner to come up.
-const readyPollInterval = 3 * time.Second
+// must match the runner job's "inputs" GCS volume mount_path in Terraform.
+const inputsMountPath = "/inputs"
 
-// block until the runner's /healthz returns 200, or ctx is done.
-func (r *runnerClient) Ready(ctx context.Context) error {
-	var last string
-	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url+"/healthz", nil)
-		if err != nil {
-			return err
-		}
-		resp, err := r.http.Do(req)
-		if err != nil {
-			last = err.Error()
-		} else {
-			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<10))
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-			last = resp.Status
-		}
+const runPollInterval = 3 * time.Second
 
+// how long a best-effort execution cancel gets once the caller's ctx is done.
+const cancelTimeout = 10 * time.Second
+
+func (r *runnerClient) Run(ctx context.Context, req inferRequest) error {
+	env := []*run.GoogleCloudRunV2EnvVar{
+		{Name: "BURN_EMULATOR_VARLOC", Value: req.VarLoc},
+		{Name: "BURN_EMULATOR_VERSION", Value: req.Version},
+		{Name: "BURN_EMULATOR_TREATMENT_AREA", Value: req.TreatmentArea},
+		{Name: "BURN_EMULATOR_TREATMENT_AREA_CRS", Value: req.TreatmentAreaCRS},
+		{Name: "BURN_EMULATOR_HASH", Value: req.Hash},
+		{Name: "BURN_EMULATOR_OUTPUT_PATH", Value: req.OutputPath},
+		{Name: "BURN_EMULATOR_BASELINE_FUELS", Value: fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.FuelsVersion)},
+		{Name: "BURN_EMULATOR_LEGALMAX_FUELS", Value: fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.FuelsVersion)},
+		{Name: "BURN_EMULATOR_TOPO_PATH", Value: fmt.Sprintf("%s/%s/topo", inputsMountPath, req.TopoVersion)},
+	}
+	if req.IgnitionDensity != nil {
+		env = append(env, &run.GoogleCloudRunV2EnvVar{
+			Name:  "BURN_EMULATOR_IGNITION_DENSITY",
+			Value: strconv.FormatFloat(*req.IgnitionDensity, 'g', -1, 64),
+		})
+	}
+
+	body := &run.GoogleCloudRunV2RunJobRequest{
+		Overrides: &run.GoogleCloudRunV2Overrides{
+			TaskCount: 1,
+			ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
+				{Name: "runner", Env: env},
+			},
+		},
+	}
+
+	op, err := r.svc.Projects.Locations.Jobs.Run(r.job, body).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("triggering runner job: %w", err)
+	}
+
+	for !op.Done {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("runner not ready (last: %s): %w", last, ctx.Err())
-		case <-time.After(readyPollInterval):
+			r.cancelExecution(op)
+			return fmt.Errorf("waiting for runner job execution: %w", ctx.Err())
+		case <-time.After(runPollInterval):
+		}
+		op, err = r.svc.Projects.Locations.Operations.Get(op.Name).Context(ctx).Do()
+		if err != nil {
+			return fmt.Errorf("polling runner job execution: %w", err)
 		}
 	}
-}
 
-// POST /infer and block until the run completes.
-func (r *runnerClient) Infer(ctx context.Context, req inferRequest) error {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url+"/infer", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := r.http.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("calling runner: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<12))
-		return fmt.Errorf("runner returned %s: %s", resp.Status, bytes.TrimSpace(msg))
+	if op.Error != nil {
+		return fmt.Errorf("runner job execution failed: %s", op.Error.Message)
 	}
 	return nil
+}
+
+// best-effort cancel of the execution behind a still-running operation, once
+// the caller has given up waiting on it (e.g. the HTTP client disconnected).
+func (r *runnerClient) cancelExecution(op *run.GoogleLongrunningOperation) {
+	var exec run.GoogleCloudRunV2Execution
+	if err := json.Unmarshal(op.Metadata, &exec); err != nil || exec.Name == "" {
+		slog.Warn("could not determine runner execution to cancel", "operation", op.Name, "error", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cancelTimeout)
+	defer cancel()
+	req := &run.GoogleCloudRunV2CancelExecutionRequest{}
+	if _, err := r.svc.Projects.Locations.Jobs.Executions.Cancel(exec.Name, req).Context(ctx).Do(); err != nil {
+		slog.Warn("failed to cancel runner job execution", "execution", exec.Name, "error", err)
+	}
 }

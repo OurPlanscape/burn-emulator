@@ -1,12 +1,10 @@
 [project]
 name = "burn-emulator-runner"
 version = "0.1.0"
-description = "Long-lived GPU inference service for burn-emulator"
+description = "GPU inference job for burn-emulator"
 requires-python = ">=3.12"
 dependencies = [
-    "burn-emulator",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
+    "burn-emulator-model",
 ]
 
 [project.scripts]
@@ -20,7 +18,7 @@ build-backend = "hatchling.build"
 packages = ["src/burn_emulator_runner"]
 
 [tool.uv.sources]
-burn-emulator = { path = "../burn-emulator-model", editable = true }
+burn-emulator-model = { path = "../burn-emulator-model", editable = true }
 
 [dependency-groups]
 dev = [
@@ -28,11 +26,4 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
-
-[tool.ruff.format]
-quote-style = "double"
+extend = "../ruff.toml"

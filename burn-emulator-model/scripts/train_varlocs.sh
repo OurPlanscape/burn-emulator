@@ -1,15 +1,19 @@
-#!/bin/bash
+#!/bin/bash -l
+
+set -euo pipefail
 
 MAX_CONCURRENT=1
+
+MODEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "$MODEL_DIR/.venv/bin/activate"
+cd "$MODEL_DIR"
 
 CONFIG_DIR=configs
 VARLOC_DIR="$CONFIG_DIR/varlocs"
 VARLOCS_FILE="$VARLOC_DIR/varlocs.txt"
 CURRENT_FILE="$VARLOC_DIR/current.yaml"
 TRAIN_TEMPLATE="$VARLOC_DIR/templates/train.yaml"
-
-source "$HOME/.bashrc"
-source .venv/bin/activate
 
 current_key () { grep -oP "^$1:[[:space:]]*\K\S+" "$CURRENT_FILE"; }
 iso8601_date () { [[ "$1" =~ ^[0-9]{8}$ ]] && echo "$1" || date -u -d "$1" +%Y%m%d; }

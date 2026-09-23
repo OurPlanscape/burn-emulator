@@ -7,12 +7,10 @@ import (
 	"time"
 )
 
-const (
-	warmupBudget = 12 * time.Minute // how long to wait for the runner's /healthz before giving up
-	inferBudget  = 16 * time.Minute // how long an /infer call gets once the runner is up
-)
+// how long a runner job execution (trigger + wait) gets, comfortably above the
+// job's own template timeout so the job's timeout fires and reports cleanly first.
+const runBudget = 25 * time.Minute
 
-// a validated run request from the /v1/jobs body.
 type JobRequest struct {
 	TreatmentArea    string
 	TreatmentAreaCRS string
@@ -21,30 +19,43 @@ type JobRequest struct {
 	IgnitionDensity  *float64
 }
 
-// the outcome of CreateJob, echoed back to the caller.
 type CreateJobResult struct {
 	JobName      string
 	Hash         string // cache key for the request parameters
-	ModelVersion string // model version the run resolved to
+	ModelVersion string
+	FuelsVersion string
+	TopoVersion  string
 	Status       string // "cached" | "pending" | "completed"
 	Attempts     int
 	OutputPath   string
 }
 
-// resolve the model version, check the output cache, claim the run, then run
-// the burn emulation synchronously on the GPU runner.
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult, error) {
 	version, err := c.versions.resolve(ctx, req.VarLoc)
 	if err != nil {
 		return CreateJobResult{}, fmt.Errorf("resolving model version for %s: %w", req.VarLoc, err)
 	}
+	fuelsVersion, err := c.inputVersions.resolve(ctx, "fuels")
+	if err != nil {
+		return CreateJobResult{}, fmt.Errorf("resolving fuels version: %w", err)
+	}
+	topoVersion, err := c.inputVersions.resolve(ctx, "topo")
+	if err != nil {
+		return CreateJobResult{}, fmt.Errorf("resolving topo version: %w", err)
+	}
 
 	key := CacheKey(req)
 	bucket := strings.TrimSuffix(c.cfg.OutputBucket, "/")
-	outPath := fmt.Sprintf("%s/%s/%s/%s", bucket, req.VarLoc, version, key)
-	runID := version + "/" + key // ledger object leaf: per (version, params)
+	outPath := fmt.Sprintf("%s/%s/%s/%s-%s/%s", bucket, req.VarLoc, version, fuelsVersion, topoVersion, key)
+	runID := version + "/" + fuelsVersion + "-" + topoVersion + "/" + key // ledger object leaf: per (version, inputs, params)
 
-	result := CreateJobResult{Hash: key, ModelVersion: version, OutputPath: outPath}
+	result := CreateJobResult{
+		Hash:         key,
+		ModelVersion: version,
+		FuelsVersion: fuelsVersion,
+		TopoVersion:  topoVersion,
+		OutputPath:   outPath,
+	}
 
 	cached, err := c.outputExists(ctx, outPath)
 	if err != nil {
@@ -66,20 +77,12 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 		return result, nil
 	}
 
-	// wait out any runner cold start on its own budget, so the /infer call
-	// below is timed against inference alone.
-	warmCtx, cancel := context.WithTimeout(ctx, warmupBudget)
-	err = c.runner.Ready(warmCtx)
-	cancel()
-	if err != nil {
-		c.releaseRun(ctx, runID)
-		return CreateJobResult{}, fmt.Errorf("waiting for runner: %w", err)
-	}
-
-	inferCtx, cancel := context.WithTimeout(ctx, inferBudget)
-	err = c.runner.Infer(inferCtx, inferRequest{
+	runCtx, cancel := context.WithTimeout(ctx, runBudget)
+	err = c.runner.Run(runCtx, inferRequest{
 		VarLoc:           req.VarLoc,
 		Version:          version,
+		FuelsVersion:     fuelsVersion,
+		TopoVersion:      topoVersion,
 		TreatmentArea:    req.TreatmentArea,
 		TreatmentAreaCRS: req.TreatmentAreaCRS,
 		IgnitionDensity:  req.IgnitionDensity,
@@ -88,6 +91,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (CreateJobResult
 	})
 	cancel()
 	if err != nil {
+		c.deleteOutput(ctx, outPath)
 		c.releaseRun(ctx, runID)
 		return CreateJobResult{}, fmt.Errorf("running inference: %w", err)
 	}

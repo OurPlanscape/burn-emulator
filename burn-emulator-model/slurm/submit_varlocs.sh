@@ -28,4 +28,4 @@ sbatch \
     --cpus-per-task="$CPUS_PER_TASK" \
     --mem="$MEM_PER_TASK" \
     --export=ALL,SLOTS="$SLOTS" \
-    "$(dirname "$0")/slurm/train_varlocs.slurm"
+    "$(dirname "$0")/train_varlocs.slurm"

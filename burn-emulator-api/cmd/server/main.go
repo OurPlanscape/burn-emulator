@@ -11,7 +11,6 @@ import (
 	"burn-emulator-api/internal/handlers"
 )
 
-// read a required env var, or exit.
 func env(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -21,7 +20,6 @@ func env(key string) string {
 	return v
 }
 
-// read an optional env var, or return fallback.
 func envDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -29,7 +27,6 @@ func envDefault(key, fallback string) string {
 	return fallback
 }
 
-// wire up the dispatch client and serve POST /v1/jobs and GET /healthz on :8080.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -37,8 +34,9 @@ func main() {
 
 	cfg := dispatch.Config{
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
+		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
 		OutputBucket: env("BURN_EMULATOR_OUTPUT_BUCKET"),
-		RunnerURL:    env("BURN_EMULATOR_RUNNER_URL"),
+		RunnerJob:    env("BURN_EMULATOR_RUNNER_JOB"),
 	}
 
 	client, err := dispatch.NewClient(ctx, cfg)

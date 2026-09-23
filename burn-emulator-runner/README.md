@@ -1,18 +1,30 @@
 # burn-emulator-runner
 
-GPU service. Loads a model bundle per request and runs `burn_emulator.run.run()`, capping concurrent GPU work. Called only by [`burn-emulator-api`](../burn-emulator-api).
+GPU batch job. Loads a model bundle and runs `burn_emulator.run.run()` once per execution, then exits. Triggered only by [`burn-emulator-api`](../burn-emulator-api) as a Cloud Run Job execution.
 
 ## Config
+
+Static, baked into the job template:
 
 | Variable | Purpose |
 | --- | --- |
 | `BURN_EMULATOR_MODELS_DIR` | model registry mount point (default `/models`, GCS-FUSE) |
-| `BURN_EMULATOR_BASELINE_FUELS` | `gs://` baseline fuels |
-| `BURN_EMULATOR_LEGALMAX_FUELS` | `gs://` treatment fuels |
-| `BURN_EMULATOR_TOPO_PATH` | `gs://` topo (aspect/slope) |
-| `BURN_EMULATOR_GPU_SLOTS` | concurrent `run()` calls (default `1`) |
 | `BURN_EMULATOR_DEBUG` | log + return per-run timings |
-| `PORT` | listen port (default `8080`) |
+
+Per-execution, set by `burn-emulator-api` as job execution overrides:
+
+| Variable | Purpose |
+| --- | --- |
+| `BURN_EMULATOR_VARLOC` | varloc name |
+| `BURN_EMULATOR_VERSION` | model version |
+| `BURN_EMULATOR_TREATMENT_AREA` | geojson treatment area |
+| `BURN_EMULATOR_TREATMENT_AREA_CRS` | treatment area CRS |
+| `BURN_EMULATOR_HASH` | cache key for this request |
+| `BURN_EMULATOR_OUTPUT_PATH` | `gs://` output prefix |
+| `BURN_EMULATOR_BASELINE_FUELS` | baseline fuels, under the GCS-FUSE-mounted inputs bucket (`/inputs`) |
+| `BURN_EMULATOR_LEGALMAX_FUELS` | treatment fuels, under `/inputs` |
+| `BURN_EMULATOR_TOPO_PATH` | topo (aspect/slope), under `/inputs` |
+| `BURN_EMULATOR_IGNITION_DENSITY` | optional; omit to use the value baked into the model bundle's `config.yaml` |
 
 ## Model bundle
 
@@ -26,26 +38,17 @@ GPU service. Loads a model bundle per request and runs `burn_emulator.run.run()`
 └── bundle_meta.json             # model-repo git sha + model_class_path + model_code_sha256
 ```
 
-On `/infer` the runner compares `bundle_meta.json`'s `model_code_sha256` against its own sha256 of the architecture module file named by `model_class_path` (e.g. `burn_emulator/models/circlepp.py`) and **logs a warning** on a mismatch.
+On each execution the runner compares `bundle_meta.json`'s `model_code_sha256` against its own sha256 of the architecture module file named by `model_class_path` (e.g. `burn_emulator/models/circlepp.py`) and **logs a warning** on a mismatch.
 
-## `POST /infer`
-
-```json
-{ "varloc": "WC711", "version": "<version>", "treatment_area": "<geojson>",
-  "hash": "1a2b3c4d…", "output_path": "gs://<bucket>/WC711/<version>/<hash>" }
-```
-
--> `200 { "status": "completed", "output_path": "…", "timing": {…}|null }`
+## Flow
 
 ```
 1. read <MODELS_DIR>/<varloc>/<version>/config.yaml (bundle dir = experiment_dir)
 2. warn if bundle_meta.json model_code_sha256 != this image's architecture module hash
 3. inject treatment_area, fuels_paths, topo_path, out_path into config
-4. acquire a GPU slot (Semaphore(GPU_SLOTS))
-5. run(**config) -> writes <output_path>/<model_name>_run.tif
+4. run(**config) -> writes <output_path>/<model_name>_run.tif
+5. exit 0 on success, exit 1 on any error (the execution/task is marked failed)
 ```
-
-## `GET /healthz` -> `200`
 
 ## Build
 

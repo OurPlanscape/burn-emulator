@@ -24,8 +24,9 @@ type cachedVersion struct {
 	at      time.Time
 }
 
-// resolve and cache the current model version for a varloc, read from the
-// gs://<models>/<varloc>/current pointer object (a one-line text file).
+// resolve and cache a version from a `<key>/current` pointer object (a
+// one-line text file) under a gs:// root. Used for model versions
+// (key = varloc) and burn-emulator-inputs versions (key = "fuels" or "topo").
 type versionResolver struct {
 	storage *storage.Service
 	bucket  string
@@ -35,10 +36,10 @@ type versionResolver struct {
 	cache map[string]cachedVersion
 }
 
-func newVersionResolver(storageSvc *storage.Service, modelsURI string) (*versionResolver, error) {
-	bucket, prefix, err := parseGSRoot(modelsURI)
+func newVersionResolver(storageSvc *storage.Service, uri string) (*versionResolver, error) {
+	bucket, prefix, err := parseGSRoot(uri)
 	if err != nil {
-		return nil, fmt.Errorf("models URI: %w", err)
+		return nil, fmt.Errorf("version resolver root: %w", err)
 	}
 	return &versionResolver{
 		storage: storageSvc,
@@ -48,15 +49,15 @@ func newVersionResolver(storageSvc *storage.Service, modelsURI string) (*version
 	}, nil
 }
 
-func (r *versionResolver) resolve(ctx context.Context, varloc string) (string, error) {
+func (r *versionResolver) resolve(ctx context.Context, key string) (string, error) {
 	r.mu.Lock()
-	if c, ok := r.cache[varloc]; ok && time.Since(c.at) < versionCacheTTL {
+	if c, ok := r.cache[key]; ok && time.Since(c.at) < versionCacheTTL {
 		r.mu.Unlock()
 		return c.version, nil
 	}
 	r.mu.Unlock()
 
-	name := joinPath(r.prefix, varloc, "current")
+	name := joinPath(r.prefix, key, "current")
 	resp, err := r.storage.Objects.Get(r.bucket, name).Context(ctx).Download()
 	if err != nil {
 		return "", fmt.Errorf("reading version pointer gs://%s/%s: %w", r.bucket, name, err)
@@ -73,7 +74,7 @@ func (r *versionResolver) resolve(ctx context.Context, varloc string) (string, e
 	}
 
 	r.mu.Lock()
-	r.cache[varloc] = cachedVersion{version: version, at: time.Now()}
+	r.cache[key] = cachedVersion{version: version, at: time.Now()}
 	r.mu.Unlock()
 	return version, nil
 }

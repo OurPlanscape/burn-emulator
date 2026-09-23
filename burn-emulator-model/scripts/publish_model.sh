@@ -32,7 +32,7 @@ fi
 # version = when the checkpoint was written + the model code it came from
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git_sha="$(git -C "$repo_root" rev-parse --short HEAD)"
-git -C "$repo_root" diff --quiet || git_sha="${git_sha}-dirty"
+[ -z "$(git -C "$repo_root" status --porcelain)" ] || git_sha="${git_sha}-dirty"
 
 checkpoint_mtime="$(stat -c %Y "$bundle_dir/model.pt")"
 timestamp="$(date -u -d "@${checkpoint_mtime}" +%Y%m%dT%H%M%SZ)"

@@ -46,6 +46,8 @@ if [[ "${FORCE:-0}" == "1" ]]; then
     cp_flags=()
 elif gcloud storage ls "${base}/" >/dev/null 2>&1; then
     echo "already published: ${base}/ exists (FORCE=1 to re-upload)"
+    printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/topo/current"
+    echo "topo/current now points to ${date_dir}"
     exit 0
 fi
 
@@ -53,3 +55,5 @@ gcloud storage cp "${cp_flags[@]}" "$topo_dir"/*.tif "${base}/"
 
 echo
 echo "done: topo layer published to ${base}/"
+printf '%s' "$date_dir" | gcloud storage cp - "${fuels_uri%/}/topo/current"
+echo "topo/current now points to ${date_dir}"

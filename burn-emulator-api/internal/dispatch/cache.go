@@ -13,13 +13,10 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// how long a "running" claim blocks a retry.
-const runStaleAfter = 8 * time.Minute
+const runStaleAfter = 35 * time.Minute
 
-// max retries when losing a claim race.
 const maxClaimAttempts = 3
 
-// hash varloc + treatment area + its CRS into the cache key.
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s|%s|%s", req.VarLoc, req.TreatmentArea, req.TreatmentAreaCRS)
@@ -37,7 +34,6 @@ type runRecord struct {
 	UpdatedAt time.Time
 }
 
-// build the ledger object name for a key.
 func ledgerObjectName(key string) string {
 	return "_runs/" + key
 }
@@ -86,7 +82,6 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRe
 	return false, runRecord{}, fmt.Errorf("claiming run %s: exceeded %d attempts under contention", key, maxClaimAttempts)
 }
 
-// how long the fire-and-forget ledger delete in releaseRun gets to run.
 const releaseTimeout = 10 * time.Second
 
 // delete the ledger object: called once a run finishes (output now exists) or
@@ -125,7 +120,6 @@ func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runReco
 	return err
 }
 
-// decode a runRecord from a ledger object's metadata.
 func parseLedger(obj *storage.Object) runRecord {
 	attempts, _ := strconv.Atoi(obj.Metadata["attempts"])
 	updatedUnix, _ := strconv.ParseInt(obj.Metadata["updated_at"], 10, 64)
@@ -137,7 +131,6 @@ func parseLedger(obj *storage.Object) runRecord {
 	}
 }
 
-// report whether a prior run already wrote output under gcsPath.
 func (c *Client) outputExists(ctx context.Context, gcsPath string) (bool, error) {
 	bucket, prefix, err := parseGCSPath(gcsPath)
 	if err != nil {
@@ -150,7 +143,34 @@ func (c *Client) outputExists(ctx context.Context, gcsPath string) (bool, error)
 	return len(resp.Items) > 0, nil
 }
 
-// extract the bare bucket name from the gs://<bucket> config.
+func (c *Client) deleteOutput(ctx context.Context, gcsPath string) {
+	bucket, prefix, err := parseGCSPath(gcsPath)
+	if err != nil {
+		slog.Warn("failed to clean up output: bad output path", "path", gcsPath, "error", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+
+	pageToken := ""
+	for {
+		resp, err := c.storage.Objects.List(bucket).Prefix(prefix + "/").PageToken(pageToken).Context(ctx).Do()
+		if err != nil {
+			slog.Warn("failed to list output for cleanup", "path", gcsPath, "error", err)
+			return
+		}
+		for _, obj := range resp.Items {
+			if err := c.storage.Objects.Delete(bucket, obj.Name).Context(ctx).Do(); err != nil {
+				slog.Warn("failed to delete output object", "object", obj.Name, "error", err)
+			}
+		}
+		if resp.NextPageToken == "" {
+			return
+		}
+		pageToken = resp.NextPageToken
+	}
+}
+
 func (c *Client) outputBucketName() (string, error) {
 	const prefix = "gs://"
 	if !strings.HasPrefix(c.cfg.OutputBucket, prefix) {
@@ -163,7 +183,6 @@ func (c *Client) outputBucketName() (string, error) {
 	return bucket, nil
 }
 
-// split a gs://<bucket>/<object> URI into bucket and object.
 func parseGCSPath(uri string) (bucket, object string, err error) {
 	const prefix = "gs://"
 	if !strings.HasPrefix(uri, prefix) {

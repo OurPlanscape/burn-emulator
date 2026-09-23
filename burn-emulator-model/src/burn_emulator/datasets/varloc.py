@@ -28,7 +28,8 @@ from burn_emulator.datasets.utils import compute_bounds, compute_padding
 from burn_emulator.types import IgnitionMethod
 from burn_emulator.utils import circle_mask
 
-MAX_IGNITION_RESAMPLE = 42 # likely will never reach this limit
+# likely will never reach either limits
+MAX_IGNITION_RESAMPLE = 42
 MAX_TARGET_IGNITIONS = 2**16
 
 
@@ -601,7 +602,9 @@ class VarLoc(Dataset):
         #       probably marginal at best (i.e ~ 10ms difference per batch)...
         target = len(sampled)
         if target > MAX_TARGET_IGNITIONS:
-            raise ValueError(f"{target} ignitions requested, exceeds MAX_TARGET_IGNITIONS={MAX_TARGET_IGNITIONS}")
+            raise ValueError(
+                f"{target} ignitions requested, exceeds MAX_TARGET_IGNITIONS={MAX_TARGET_IGNITIONS}"
+                )
 
         sampled = sampled[self._select_burnable(sampled)]
         seed = treatment_seed

@@ -9,22 +9,21 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// runtime config, set from env vars in main.go.
 type Config struct {
 	ModelsURI    string // gs://<bucket>[/<prefix>] root of the model registry
+	InputsURI    string // gs://<bucket> root of the fuels/topo inputs (reads fuels/current, topo/current)
 	OutputBucket string // gs://<bucket> for outputs + the claim ledger
-	RunnerURL    string // base URL of the burn-emulator-runner service
+	RunnerJob    string // fully-qualified burn-emulator-runner job name: projects/*/locations/*/jobs/*
 }
 
-// runs burn emulations via the GPU runner and tracks their cache state in GCS.
 type Client struct {
-	storage  *storage.Service
-	versions *versionResolver
-	runner   *runnerClient
-	cfg      Config
+	storage       *storage.Service
+	versions      *versionResolver
+	inputVersions *versionResolver
+	runner        *runnerClient
+	cfg           Config
 }
 
-// build the GCS and runner clients.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	storageSvc, err := storage.NewService(ctx)
 	if err != nil {
@@ -34,9 +33,13 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := newRunnerClient(ctx, cfg.RunnerURL)
+	inputVersions, err := newVersionResolver(storageSvc, cfg.InputsURI)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{storage: storageSvc, versions: versions, runner: runner, cfg: cfg}, nil
+	runner, err := newRunnerClient(ctx, cfg.RunnerJob)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{storage: storageSvc, versions: versions, inputVersions: inputVersions, runner: runner, cfg: cfg}, nil
 }

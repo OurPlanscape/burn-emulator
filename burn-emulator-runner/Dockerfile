@@ -4,8 +4,7 @@ ENV PYTHONUNBUFFERED=1 \
     USE_CLOUD_PATHS=1 \
     RUN_DEVICE=cuda \
     RUN_DTYPE=bfloat16 \
-    BURN_EMULATOR_MODELS_DIR=/models \
-    PORT=8080
+    BURN_EMULATOR_MODELS_DIR=/models
 
 RUN mkdir -p /models
 
@@ -22,5 +21,4 @@ COPY burn-emulator-runner/ ./burn-emulator-runner/
 WORKDIR /app/burn-emulator-runner
 RUN uv sync --no-cache
 
-EXPOSE 8080
 ENTRYPOINT ["uv", "run", "--no-sync", "burn-emulator-runner"]

@@ -13,6 +13,8 @@ uv sync && uv pip install -e burn-emulator-model
 uv sync --extra data     # for scripts/ (training-data generation from Pyretechnics)
 ```
 
+`burn-emulator-model/`  scripts are intended to be run within the repo.
+
 ## Train
 
 All configs are composable, with priority going to CLI flags then the latest config entered.
@@ -22,7 +24,7 @@ burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
 
 Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
-To train every varloc in a batch, use `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm`). It reads `configs/varlocs/varlocs.txt` ; one varloc name per line, where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
+To train every varloc in a batch, run `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm` on the cluster). It reads `configs/varlocs/varlocs.txt` ; one varloc name per line, where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
 
 ## Evaluate
 
@@ -38,6 +40,12 @@ burn_emulator -m evaluate \
 ```
 
 Output: `data/outputs/<model_name>/inference/` ; per-ignition prediction GeoTIFFs, `throughput.csv`.
+
+To evaluate every ignition scenario (baseline + legalmax) under a directory:
+```bash
+scripts/ignite_inference.sh <varloc> <outputs_root>
+```
+`<outputs_root>` holds one subdirectory per scenario, each with `<N>_baseline` / `<N>_legalmax` ignition sets. Resolves `$ARCHITECTURE` / `$DATA_VERSION` from `configs/varlocs/current.yaml`.
 
 ## Run
 
@@ -99,29 +107,19 @@ If a new fuel product ships different layers (renamed, added/dropped, or differe
 
 ```bash
 burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc>
-make publish-model VARLOC=<varloc>
+scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 ```
 
-`make publish-model` resolves the bundle for `<varloc>` from the same `configs/varlocs/current.yaml` architecture/data_version (matching what the bundle command above just wrote); override with `BUNDLE_DIR=<path>` to publish a different one.
+`-m bundle` resolves `<varloc>` against `configs/varlocs/current.yaml`'s architecture/data_version and writes the bundle to `data/bundles/<model_name>/`. `publish_model.sh` uploads that bundle to `<models_uri>` and repoints `current`; `<models_uri>` can also come from `BURN_EMULATOR_MODELS_URI` instead of the third argument.
 
 ## Publish fuels
 
 ```bash
-make publish-fuels FUELS_DIR=<dir>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
-make publish-topo TOPO_DIR=<dir>     # <dir> holds all topo tifs, uploaded as-is
+scripts/publish_fuels.sh <dir> <fuels_uri>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
+scripts/publish_topo.sh <dir> <fuels_uri>    # <dir> holds all topo tifs, uploaded as-is
 ```
 
-The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish-fuels` splits `FUELS_DIR` by filename into `baseline/` and `legalmax/` uploads; `publish-topo` uploads `TOPO_DIR` wholesale to `topo/`. Both land under `${fuels_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`.
-
-Both publish targets need a `gs://` destination root, taken from the environment
-(or an explicit make var):
-
-| var | used by | make override |
-| --- | --- | --- |
-| `BURN_EMULATOR_MODELS_URI` | `make publish-model` (model registry root) | `MODELS_URI=` |
-| `BURN_EMULATOR_FUELS_URI` | `make publish-fuels` / `make publish-topo` (published fuel/topo layers root) | `FUELS_URI=` |
-
-The scripts abort if neither the env var nor the make var is set.
+The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish_fuels.sh` splits `<dir>` by filename into `baseline/` and `legalmax/` uploads and repoints `fuels/current`; `publish_topo.sh` uploads `<dir>` wholesale to `topo/` and repoints `topo/current`. Both land under `${fuels_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`. `<fuels_uri>` can also come from `BURN_EMULATOR_FUELS_URI` instead of the second argument; both scripts abort if neither is set.
 
 `-m bundle` writes `data/bundles/<model_name>/`:
 
@@ -135,4 +133,4 @@ The scripts abort if neither the env var nor the make var is set.
 
 `bundle_meta.json` lets the runner warn when its architecture code no longer matches what this checkpoint was trained on but currently doesn't do anything YET! See [`burn-emulator-runner`](../burn-emulator-runner). `publish_model.sh` refuses a bundle that lacks it.
 
-`make publish-model` uploads it to `gs://<models>/<varloc>/<version>/` and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.
+`publish_model.sh` uploads it to `gs://<models>/<varloc>/<version>/` and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.
