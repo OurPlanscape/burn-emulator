@@ -1,0 +1,293 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="API Runner + Model Run" id="0">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="1300" pageHeight="2200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-2" parent="1" style="whiteSpace=wrap;html=1;strokeWidth=3;" value="" vertex="1">
+          <mxGeometry height="360" width="380" x="1130" y="1280" as="geometry" />
+        </mxCell>
+        <mxCell id="hA" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF, #512d2b);fontColor=light-dark(#000000,#FFFFFF);strokeColor=default;strokeWidth=3;" value="Client (Planscape)" vertex="1">
+          <mxGeometry height="40" width="240" x="-60" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="hB" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF, #1d293b);fontColor=light-dark(#000000,#FFFFFF);strokeColor=default;strokeWidth=3;" value="burn-emulator-api (Cloud Run Service)" vertex="1">
+          <mxGeometry height="40" width="434" x="263" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="hC" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF, #281d00);fontColor=light-dark(#000000,#FFFFFF);strokeColor=light-dark(#000000,#FFFFFF);strokeWidth=2;" value="GCS (state &amp;amp; storage)" vertex="1">
+          <mxGeometry height="40" width="240" x="777" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="hD" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF,#1A3300);fontColor=light-dark(#000000,#FFFFFF);strokeColor=default;strokeWidth=2;" value="burn-emulator-runner (Cloud Run Job)" vertex="1">
+          <mxGeometry height="40" width="434" x="1103" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client&lt;br&gt;POST /v1/jobs&lt;br&gt;{treatment_area, treatment_area_crs,&lt;br&gt;varloc.upper(), job_name, ignition_density?}" vertex="1">
+          <mxGeometry height="90" width="240" x="-60" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="JobsHandler.ServeHTTP&#xa;(jobs.go)" vertex="1">
+          <mxGeometry height="70" width="280" x="340" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="validate()&lt;br&gt;varloc in allow-list; valid job_name;&lt;br&gt;treatment_area/crs present; ignition_density&amp;gt;0&lt;div&gt;(jobs.go)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="280" x="340" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="versionResolver.resolve()&lt;br&gt;(model / fuels / topo versions, 60s cache)&lt;div&gt;&lt;div&gt;(versions.go, *publish Make targets)&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="280" x="340" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="current pointers&lt;br&gt;gs://models/&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255)); background-color: transparent;&quot;&gt;{&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;varloc}&lt;/span&gt;/current&lt;br&gt;gs://inputs/{fuels,topo}/current" vertex="1">
+          <mxGeometry height="110" width="200" x="797" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="CacheKeyHash&amp;nbsp;= sha256(varloc|area|crs|ignition)&lt;br&gt;+ deterministic outPath&lt;div&gt;(dispatch.go, cache.go)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="280" x="340" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="outputExists()?&#xa;(cache.go)" vertex="1">
+          <mxGeometry height="100" width="200" x="380" y="560" as="geometry" />
+        </mxCell>
+        <mxCell id="n7r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="200 cached&#xa;{output_path}" vertex="1">
+          <mxGeometry height="70" width="240" x="-50" y="575" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="claimRun()&lt;div&gt;CAS write&lt;br&gt;already claimed &amp;amp;&amp;nbsp;&lt;/div&gt;&lt;div&gt;fresh (&amp;lt;35min)?&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="200" x="380" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="n8g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="gs://{output_bucket}/_runs/{CacheKeyHash}&lt;br&gt;ledger object" vertex="1">
+          <mxGeometry height="90" width="263" x="765.5" y="710" as="geometry" />
+        </mxCell>
+        <mxCell id="n8r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="202 pending&#xa;(identical run in flight, retry)" vertex="1">
+          <mxGeometry height="70" width="240" x="-50" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="runner.Run()&lt;br&gt;Cloud Run Admin API -&amp;gt; Jobs.Run()&lt;br&gt;25min budget, poll every 3s" vertex="1">
+          <mxGeometry height="90" width="280" x="340" y="845" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Cloud Run Job execution starts&lt;br&gt;&lt;br&gt;&lt;div&gt;injected env:&lt;/div&gt;&lt;div&gt;varloc, version, inputs, treatment_area, crs, hash, output_path&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="300" x="1170" y="840" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="__main__.main()&lt;br&gt;warm_gpu() fail fast if no CUDA for SPEEEEEED&lt;br&gt;(will need to make small adjustments for XLA library)" vertex="1">
+          <mxGeometry height="70" width="300" x="1170" y="970" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Load model bundle&#xa;artifacts.bundle_dir + load_spec&#xa;(model.pt, config.yaml) + provenance check" vertex="1">
+          <mxGeometry height="90" width="300" x="1170" y="1070" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="_run_config()&lt;br&gt;parse/reproject treatment_area, ignition_density?&lt;br&gt;fuels_paths, topo_path, out_path" vertex="1">
+          <mxGeometry height="80" width="300" x="1170" y="1190" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="burn_emulator.run.run() (run.py)&lt;br&gt;model / dataset instantiation + load checkpoin&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;t from FUSE&lt;/span&gt;" vertex="1">
+          <mxGeometry height="80" width="300" x="1170" y="1300" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Per ignition sample:&lt;div&gt;1. baseline + treatment collation&lt;br&gt;2. forward pass + activation + argmax&lt;br&gt;(unburned | surface | passive | active)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="300" x="1170" y="1410" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="1. _center_component() footprint&lt;br&gt;2. crown-fire state classification&lt;br&gt;3. _fire_touches() filters to treatment area" vertex="1">
+          <mxGeometry height="90" width="300" x="1170" y="1530" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="batched_agg()&#xa;aggregate into running mean raster" vertex="1">
+          <mxGeometry height="70" width="300" x="1170" y="1650" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Write output GeoTIFF&lt;br&gt;with rasterio" vertex="1">
+          <mxGeometry height="80" width="300" x="1170" y="1750" as="geometry" />
+        </mxCell>
+        <mxCell id="n18g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="output object&lt;br&gt;gs://{output_bucket}/{varloc}/{version}/{fuels_version}-{topo_version}/{hash}/{model_name}.tif&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;model_name={varloc}_{architecture}_{version}&lt;br&gt;(redundant I know but too much effort to fix&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;)&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;There should only be one tif in the hash dir&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="150" width="370" x="712" y="1715" as="geometry" />
+        </mxCell>
+        <mxCell id="n19" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1f2f1e);strokeColor=light-dark(#D79B00,#446E2C);" value="Exit 0?" vertex="1">
+          <mxGeometry height="100" width="200" x="1220" y="1860" as="geometry" />
+        </mxCell>
+        <mxCell id="n20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="success: releaseRun()&lt;br&gt;failure: deleteOutput() + releaseRun()&lt;div&gt;(dispatch.go)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="280" x="340" y="1980" as="geometry" />
+        </mxCell>
+        <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Response: 200 completed&#xa;{output_path} (or error)" vertex="1">
+          <mxGeometry height="70" width="280" x="340" y="2100" as="geometry" />
+        </mxCell>
+        <mxCell id="n21r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client receives final result with all paths&lt;br&gt;200 completed / error" vertex="1">
+          <mxGeometry height="70" width="240" x="-50" y="2100" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="n1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="n2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="n3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n5" value="reads">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="n4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="n6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="n7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;" target="n7r" value="yes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="n7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n8" value="no">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="n8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=1 1;" target="n8g" value="CAS write claim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="n8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;" target="n8r" value="already claimed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="n8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n9" value="claimed OK">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="n9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=5;fontSize=12;" target="n10" value="Jobs.Run() trigger">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="n10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="n11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="n12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="n13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="n14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="n15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n16">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="n16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" edge="1" parent="1" source="n17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" edge="1" parent="1" source="n18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="n18g" value="write">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1056" y="1795" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e22" edge="1" parent="1" source="n18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n19">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" edge="1" parent="1" source="n19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;" target="n20" value="detected via poll (op.Error / success)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e24" edge="1" parent="1" source="n20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e25" edge="1" parent="1" source="n21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;" target="n21r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="make train-all&lt;br&gt;burn_emulator -m train&lt;br&gt;-&amp;gt; data/outputs/&lt;div&gt;{varloc}_{architecture}_{data_version}/&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="240" x="120" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="make bundle-model&#xa;burn_emulator -m bundle&#xa;-&gt; data/bundles/&lt;model_name&gt;/&#xa;model.pt, config.yaml, stats.yaml,&#xa;bundle_meta.json" vertex="1">
+          <mxGeometry height="110" width="240" x="120" y="1310" as="geometry" />
+        </mxCell>
+        <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="make publish-model&lt;br&gt;publish_model.sh&lt;br&gt;version = mtime +&amp;nbsp;git_sha" vertex="1">
+          <mxGeometry height="80" width="240" x="120" y="1450" as="geometry" />
+        </mxCell>
+        <mxCell id="mg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Model checkpoints, configs, stats&lt;br&gt;gs://models/{&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;varloc}/{version}/*&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="777" y="1070" as="geometry" />
+        </mxCell>
+        <mxCell id="ig" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Model inputs&lt;br&gt;gs://inputs/{date version}/&lt;br&gt;{baseline, legalmax, topo}/*.tif" vertex="1">
+          <mxGeometry height="100" width="240" x="777" y="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="make publish-fuels&#xa;publish_fuels.sh&#xa;baseline_*.tif + legalmax_*.tif" vertex="1">
+          <mxGeometry height="80" width="240" x="120" y="1650" as="geometry" />
+        </mxCell>
+        <mxCell id="i2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="make publish-topo&#xa;publish_topo.sh&#xa;aspect / slope *.tif" vertex="1">
+          <mxGeometry height="80" width="240" x="120" y="1750" as="geometry" />
+        </mxCell>
+        <mxCell id="me1" edge="1" parent="1" source="m1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="m2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="me2" edge="1" parent="1" source="m2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="m3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="me3" edge="1" parent="1" source="m3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="mg" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="590" y="1490" />
+              <mxPoint x="590" y="1115" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ie1" edge="1" parent="1" source="i1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="ig" value="">
+          <mxGeometry relative="1" x="0.2922" y="-11" as="geometry">
+            <mxPoint x="11" y="11" as="offset" />
+            <Array as="points">
+              <mxPoint x="660.03" y="1690.03" />
+              <mxPoint x="660.03" y="1229.97" />
+            </Array>
+            <mxPoint x="1778.999999999999" y="1240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="djURoE4mO61NqgrSBAHh-10" connectable="0" parent="ie1" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="date from dir name" vertex="1">
+          <mxGeometry relative="1" x="0.3173" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="le1" edge="1" parent="1" source="mg" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;" target="n12" value="GCS-FUSE /models">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1413" y="1115" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="le2" edge="1" parent="1" source="ig" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;dashPattern=8 4 1 4;" target="n13" value="GCS-FUSE /inputs">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1413" y="1230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="djURoE4mO61NqgrSBAHh-4" edge="1" parent="1" source="i1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;dashPattern=1 1;" target="n5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460.03" y="1670.03" />
+              <mxPoint x="460.03" y="1019.97" />
+              <mxPoint x="1020.03" y="1019.97" />
+              <mxPoint x="1020.03" y="480.03" />
+              <mxPoint x="897" y="480.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="djURoE4mO61NqgrSBAHh-5" edge="1" parent="1" source="i2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;exitX=1;exitY=0.25;exitDx=0;exitDy=0;dashed=1;dashPattern=1 1;" target="n5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="490.03" y="1770.03" />
+              <mxPoint x="490.03" y="1049.97" />
+              <mxPoint x="1050.03" y="1049.97" />
+              <mxPoint x="1050.03" y="450.03" />
+              <mxPoint x="897" y="450.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="djURoE4mO61NqgrSBAHh-13" edge="1" parent="1" source="i2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="ig">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="660.03" y="1790.03" />
+              <mxPoint x="660.03" y="1229.97" />
+            </Array>
+            <mxPoint x="300" y="1590" as="sourcePoint" />
+            <mxPoint x="807" y="1230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="djURoE4mO61NqgrSBAHh-1" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#000000,#003333);strokeColor=default;strokeWidth=2;" value="burn-emulator-model (PyTorch)&lt;br&gt;+&lt;br&gt;Makefile targets" vertex="1">
+          <mxGeometry height="100" width="340" x="70" y="1080" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=22;" value="The actual model run" vertex="1">
+          <mxGeometry height="110" width="120" x="1520" y="1410" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-6" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="m2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-7" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="m1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-8" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="i1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-9" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="i2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#fff2cc, #003333);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;" value="Model inputs&lt;br&gt;from DS on Dragon Cluster&lt;br&gt;{baseline, legalmax, topo}/*.tif" vertex="1">
+          <mxGeometry height="115" width="170" x="-180" y="1450" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
