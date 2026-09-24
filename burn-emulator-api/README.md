@@ -8,7 +8,7 @@ Go service. Validates a request, resolves the model version, checks the GCS outp
 | --- | --- |
 | `BURN_EMULATOR_MODELS_URI` | `gs://` root of the model registry (reads `<varloc>/current`) |
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` root of the fuels/topo inputs (reads `fuels/current`, `topo/current`) |
-| `BURN_EMULATOR_OUTPUT_BUCKET` | `gs://` bucket for outputs + the claim ledger |
+| `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs + the claim ledger |
 | `BURN_EMULATOR_RUNNER_JOB` | fully-qualified runner job name: `projects/*/locations/*/jobs/*` |
 | `VARLOCS_FILE` | varloc allow-list (default `configs/varlocs.txt`) |
 

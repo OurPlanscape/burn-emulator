@@ -35,7 +35,7 @@ func main() {
 	cfg := dispatch.Config{
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
 		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
-		OutputBucket: env("BURN_EMULATOR_OUTPUT_BUCKET"),
+		OutputBucket: env("BURN_EMULATOR_OUTPUT_URI"),
 		RunnerJob:    env("BURN_EMULATOR_RUNNER_JOB"),
 	}
 
