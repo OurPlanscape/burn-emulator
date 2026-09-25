@@ -124,8 +124,8 @@ def preserve_ignition_locations(ignitions: list, transform, out_file):
     print("Preserved ignition locations")
 
 
-def write_raster(training_data_dir, treatment, ignition_number, md, template_raster, ft_array):
-    out_dir = training_data_dir / treatment / str(ignition_number) / str(md)
+def write_raster(training_data_dir, treatment, ignition_number, template_raster, ft_array):
+    out_dir = training_data_dir / treatment / str(ignition_number)
     out_dir.mkdir(parents=True, exist_ok=True)
     with rio.open(out_dir / "fire_type.tif", "w", **template_raster.profile) as dst:
         dst.write(ft_array, 1)
@@ -316,9 +316,12 @@ def ignite(
         ch_a[ch_a > RAW_NO_DATA] /= 10  # convert to m
 
         slope_a = rio.open(topo_dir / "slope_degrees.tif").read(1).astype("float32")  # deg
-        slope_a = np.tan(slope_a)  # convert from degrees to rise/run
+        slope_nodata = slope_a == RAW_NO_DATA
+        slope_a = np.tan(np.deg2rad(slope_a))  # convert from degrees to rise/run
+        slope_a[slope_nodata] = 0.0
 
         aspect_a = rio.open(topo_dir / "aspect.tif").read(1).astype("float32")  # degrees
+        aspect_a[aspect_a == RAW_NO_DATA] = 0.0
 
         # fuel_moisture units: kg moisture/kg ovendry weight
         shared_array_refs = {
@@ -382,7 +385,6 @@ def ignite(
                     training_data_dir,
                     result["treatment"],
                     result["ignition_number"],
-                    result["max_duration"],
                     template_raster,
                     result["ft_array"],
                 )
