@@ -15,7 +15,7 @@ if [[ -z "$models_uri" ]]; then
     exit 2
 fi
 
-# the bundle must be complete before we touch the registry
+# the bundle must be complete before the script touches the registry
 if [[ ! -f "$bundle_dir/model.pt" ]]; then
     echo "error: $bundle_dir is missing model.pt" >&2
     exit 1
@@ -39,25 +39,25 @@ if [[ "$model_name" != "${varloc}_"* ]]; then
     exit 1
 fi
 
-# version = when the checkpoint was written + the model code it came from
+# model_version = when the checkpoint was written + the model code it came from
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 git_sha="$(git -C "$repo_root" rev-parse --short HEAD)"
 [ -z "$(git -C "$repo_root" status --porcelain)" ] || git_sha="${git_sha}-dirty"
 
 checkpoint_mtime="$(stat -c %Y "$bundle_dir/model.pt")"
 timestamp="$(date -u -d "@${checkpoint_mtime}" +%Y%m%dT%H%M%SZ)"
-version="${timestamp}-${git_sha}"
+model_version="${timestamp}-${git_sha}"
 
 base="${models_uri%/}/${varloc}"
 
-echo "varloc   ${varloc}"
-echo "version  ${version}"
-echo "from     ${bundle_dir}"
-echo "to       ${base}/${version}/"
+echo "varloc         ${varloc}"
+echo "model_version  ${model_version}"
+echo "from           ${bundle_dir}"
+echo "to             ${base}/${model_version}/"
 echo
 
-gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/${version}/"
-printf '%s' "$version" | gcloud storage cp - "${base}/current"
+gcloud storage cp --recursive "${bundle_dir%/}/"* "${base}/${model_version}/"
+printf '%s' "$model_version" | gcloud storage cp - "${base}/current"
 
 echo
-echo "done: ${varloc}/current now points to ${version}"
+echo "done: ${varloc}/current now points to ${model_version}"

@@ -112,14 +112,18 @@ scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 
 `-m bundle` resolves `<varloc>` against `configs/varlocs/current.yaml`'s architecture/data_version and writes the bundle to `data/bundles/<model_name>/`. `publish_model.sh` uploads that bundle to `<models_uri>` and repoints `current`; `<models_uri>` can also come from `BURN_EMULATOR_MODELS_URI` instead of the third argument.
 
-## Publish fuels
+## Publish inputs (fuels + topo)
 
 ```bash
-scripts/publish_fuels.sh <dir> <inputs_uri>   # <dir> holds both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
-scripts/publish_topo.sh <dir> <inputs_uri>    # <dir> holds all topo tifs, uploaded as-is
+scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> [inputs_uri]
+# <data_version>  DDMonYYYY (28Aug2026) or YYYYMMDD, stored as YYYYMMDD
+# <fuels_dir>     both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
+# <topo_dir>      all topo tifs, uploaded as-is
 ```
 
-The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`'s name (e.g. `24Aug2026` -> `20260824`). `publish_fuels.sh` splits `<dir>` by filename into `baseline/` and `legalmax/` uploads and repoints `fuels/current`; `publish_topo.sh` uploads `<dir>` wholesale to `topo/` and repoints `topo/current`. Both land under `${inputs_uri}/<date>/<layer>/`; re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the second argument; both scripts abort if neither is set.
+Fuels and topo are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` splits `<fuels_dir>` by filename into `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the fourth argument; the script aborts if neither is set.
+
+Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outputs already cached under it; publish changed inputs under a new `data_version`.
 
 `-m bundle` writes `data/bundles/<model_name>/`:
 
@@ -133,4 +137,4 @@ The date each layer is published under comes from a `DDMonYYYY` stamp in `<dir>`
 
 `bundle_meta.json` lets the runner warn when its architecture code no longer matches what this checkpoint was trained on but currently doesn't do anything YET! See [`burn-emulator-runner`](../burn-emulator-runner). `publish_model.sh` refuses a bundle that lacks it.
 
-`publish_model.sh` uploads it to `gs://<models>/<varloc>/<version>/` and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.
+`publish_model.sh` uploads it to `gs://<models>/<varloc>/<model_version>/` (`<model_version>` = `<model.pt mtime>-<git sha>`) and repoints `current`. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.

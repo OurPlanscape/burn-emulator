@@ -16,7 +16,7 @@ VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --p
 API_IMAGE    := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-api:$(VERSION)
 RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
-.PHONY: build-api push-api build-runner push-runner bundle-model bundle-model-all publish-model publish-model-all publish-fuels publish-topo train-all ignitions shell
+.PHONY: build-api push-api build-runner push-runner bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all ignitions shell
 
 build-api:
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
@@ -68,14 +68,14 @@ publish-model-all:
 	    $(MAKE) publish-model VARLOC="$$varloc"
 	done
 
-# FUELS_DIR should hold both baseline_*.tif and legalmax_*.tif;
-publish-fuels:
+# FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs;
+# both land under one DATA_VERSION (DDMonYYYY or YYYYMMDD)
+publish-inputs:
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
-	$(MODEL_DIR)/scripts/publish_fuels.sh $(FUELS_DIR) $(BURN_EMULATOR_INPUTS_URI)
-
-publish-topo:
-	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
-	$(MODEL_DIR)/scripts/publish_topo.sh $(TOPO_DIR) $(BURN_EMULATOR_INPUTS_URI)
+	if [ -z "$(DATA_VERSION)" ] || [ -z "$(FUELS_DIR)" ] || [ -z "$(TOPO_DIR)" ]; then
+	    echo "error: pass DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>" >&2; exit 2
+	fi
+	$(MODEL_DIR)/scripts/publish_inputs.sh $(DATA_VERSION) $(FUELS_DIR) $(TOPO_DIR) $(BURN_EMULATOR_INPUTS_URI)
 
 train-all:
 	$(MODEL_DIR)/scripts/train_varlocs.sh
