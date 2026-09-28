@@ -32,10 +32,12 @@ def load_spec(bundle: Path) -> dict:
     spec["ckpt_path"] = _localize(spec.get("ckpt_path", "model.pt"), bundle)
 
     init = spec.setdefault("dataset", {}).setdefault("init_args", {})
-    if isinstance(init.get("stats_path"), str):
-        init["stats_path"] = _localize(init["stats_path"], bundle)
-    if isinstance(init.get("fbfm_map_path"), str):
-        init["fbfm_map_path"] = _localize(init["fbfm_map_path"], bundle)
+    for key in ("stats_path", "fbfm_map_path"):
+        if not isinstance(init.get(key), str):
+            raise ValueError(f"model bundle {bundle} config.yaml has no dataset.init_args.{key}")
+        init[key] = _localize(init[key], bundle)
+        if not init[key].startswith(_CLOUD_SCHEMES) and not os.path.isfile(init[key]):
+            raise FileNotFoundError(f"model bundle {bundle} is missing {init[key]}")
 
     return spec
 

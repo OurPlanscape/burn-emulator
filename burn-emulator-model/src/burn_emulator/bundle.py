@@ -38,7 +38,8 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
     fbfm_map = _resolve_fbfm_map(config["dataset"])
 
     dst = BUNDLE_DIR / model_name
-    dst.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dst, ignore_errors=True)
+    dst.mkdir(parents=True)
 
     init = {
         k: v

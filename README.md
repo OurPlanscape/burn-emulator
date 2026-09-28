@@ -23,7 +23,7 @@ Run from the repo root.
 | `build-api` / `push-api` | build/push the api image, tagged `<BURN_EMULATOR_ARTIFACT_STORE>/burn-emulator-api:<git-sha>[-dirty]` |
 | `build-runner` / `push-runner` | same, for the runner image |
 | `bundle-model VARLOC=<varloc>` | wraps `burn_emulator -m bundle` for one varloc (in `burn-emulator-model/`) |
-| `publish-model VARLOC=<varloc> [BUNDLE_DIR=<path>]` | uploads a bundle and repoints `current` |
+| `publish-model VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | uploads a bundle and repoints `current`; refuses to overwrite a published version with a different bundle unless `FORCE=1` |
 | `bundle-model-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
 | `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>` | uploads baseline/legalmax fuel tifs and topo tifs under one `data_version`, then repoints `current` |
 | `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh` |
