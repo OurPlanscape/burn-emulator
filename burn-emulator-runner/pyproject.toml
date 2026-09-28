@@ -5,6 +5,7 @@ description = "GPU inference job for burn-emulator"
 requires-python = ">=3.12"
 dependencies = [
     "burn-emulator-model",
+    "google-cloud-storage>=3.13.0",
 ]
 
 [project.scripts]

@@ -13,10 +13,10 @@ _CLOUD_SCHEMES = ("gs://", "s3://", "az://")
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
-def bundle_dir(varloc: str, version: str) -> Path:
-    if not _SEGMENT.match(varloc) or not _SEGMENT.match(version):
-        raise ValueError(f"invalid varloc/version: {varloc!r}/{version!r}")
-    d = MODELS_DIR / varloc / version
+def bundle_dir(varloc: str, model_version: str) -> Path:
+    if not _SEGMENT.match(varloc) or not _SEGMENT.match(model_version):
+        raise ValueError(f"invalid varloc/model_version: {varloc!r}/{model_version!r}")
+    d = MODELS_DIR / varloc / model_version
     if not (d / "model.pt").exists():
         raise FileNotFoundError(f"no model bundle at {d}")
     return d
