@@ -1,5 +1,7 @@
 SHELL      := /bin/bash
 .ONESHELL:
+.SILENT:
+MAKEFLAGS  += --no-print-directory
 
 API_DIR    ?= burn-emulator-api
 MODEL_DIR  ?= burn-emulator-model
@@ -57,7 +59,8 @@ publish-model:
 	    arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' "$$current_yaml")
 	    dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' "$$current_yaml")
 	    dv_iso=$$([[ "$$dv" =~ ^[0-9]{8}$$ ]] && echo "$$dv" || date -u -d "$$dv" +%Y%m%d)
-	    bundle_dir="$(MODEL_DIR)/data/bundles/$(VARLOC)_$${arch}_$${dv_iso}"
+	    varloc="$(VARLOC)"
+	    bundle_dir="$(MODEL_DIR)/data/bundles/$${varloc^^}_$${arch}_$${dv_iso}"
 	fi
 	$(MODEL_DIR)/scripts/publish_model.sh $(VARLOC) "$$bundle_dir" $(BURN_EMULATOR_MODELS_URI)
 
@@ -87,4 +90,4 @@ ignitions:
 	$(MODEL_DIR)/scripts/ignite_inference.sh $(VARLOC) $(OUTPUTS_ROOT)
 
 shell:
-	@bash -c "source $(MODEL_DIR)/.venv/bin/activate && cd $(MODEL_DIR) && exec \$$SHELL"
+	bash -c "source $(MODEL_DIR)/.venv/bin/activate && cd $(MODEL_DIR) && exec \$$SHELL"
