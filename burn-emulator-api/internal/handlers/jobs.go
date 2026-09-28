@@ -18,8 +18,15 @@ import (
 const (
 	// treatment_area is inline GeoJSON which might be big
 	maxBodyBytes = 1 << 20
-	// covers dispatch.runBudget (25m) + GCS calls
-	requestTimeout = 30 * time.Minute
+	// covers the caller-attached steps: version resolution and the cache check
+	// (POST), or the output + claim lookup (GET). The claim + trigger run
+	// detached, under dispatch.DetachedBudget.
+	// if this takes longer than two minutes, something is really wrong and the request should be cancelled.
+	requestTimeout = 2 * time.Minute
+
+	// worst case for one request: the attached steps, then dispatch's detached
+	// budget. http.Server.WriteTimeout is built on top of this.
+	MaxHandlerDuration = requestTimeout + dispatch.DetachedBudget
 )
 
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
@@ -60,30 +67,27 @@ type jobRequestBody struct {
 }
 
 type jobResponseBody struct {
+	JobID        string `json:"job_id"`
 	JobName      string `json:"job_name,omitempty"`
 	Hash         string `json:"hash"`
 	ModelVersion string `json:"model_version"`
-	FuelsVersion string `json:"fuels_version"`
-	TopoVersion  string `json:"topo_version"`
+	DataVersion  string `json:"data_version"`
 	Status       string `json:"status"`
 	VarLoc       string `json:"varloc"`
 	Cached       bool   `json:"cached"`
 	Attempts     int    `json:"attempts,omitempty"`
 	OutputPath   string `json:"output_path"`
+	Error        string `json:"error,omitempty"`
 }
 
-// serve POST /v1/jobs. Caller identity is verified upstream, not here.
+// serve /v1/jobs. Caller identity is verified upstream, not here.
 type JobsHandler struct {
 	Dispatch *dispatch.Client
 	VarLocs  VarLocSet
 }
 
-func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+// POST /v1/jobs
+func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	clientAddr := clientIP(r)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
@@ -116,8 +120,8 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-			// client hung up; the runner aborts the in-flight run.
-			slog.Info("request cancelled, run aborted server-side",
+			// client hung up before the run was claimed.
+			slog.Info("request cancelled",
 				"job_name", body.JobName, "varloc", body.VarLoc, "client_ip", clientAddr)
 			return
 		}
@@ -126,34 +130,66 @@ func (h *JobsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("run handled",
+		"job_id", result.ID.Path(), "job_name", result.JobName, "status", result.Status,
+		"attempts", result.Attempts, "output_path", result.OutputPath, "client_ip", clientAddr)
+
 	statusCode := http.StatusOK
 	if result.Status == "pending" {
 		statusCode = http.StatusAccepted
+		w.Header().Set("Location", "/v1/jobs/"+result.ID.Path())
+	}
+	writeJob(w, statusCode, result)
+}
+
+// GET /v1/jobs/{varloc}/{model_version}/{data_version}/{hash}
+func (h *JobsHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := dispatch.JobID{
+		VarLoc:       r.PathValue("varloc"),
+		ModelVersion: r.PathValue("model_version"),
+		DataVersion:  r.PathValue("data_version"),
+		Hash:         r.PathValue("hash"),
+	}
+	if !h.VarLocs.Contains(id.VarLoc) {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
 	}
 
-	slog.Info("run handled",
-		"job_name", result.JobName, "varloc", body.VarLoc, "hash", result.Hash,
-		"model_version", result.ModelVersion, "fuels_version", result.FuelsVersion,
-		"topo_version", result.TopoVersion, "status", result.Status, "attempts", result.Attempts,
-		"output_path", result.OutputPath, "client_ip", clientAddr)
+	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+	defer cancel()
 
+	result, err := h.Dispatch.GetJob(ctx, id)
+	if errors.Is(err, dispatch.ErrJobNotFound) {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("job lookup failed", "error", err, "job_id", id.Path(), "client_ip", clientIP(r))
+		http.Error(w, "failed to look up job", http.StatusInternalServerError)
+		return
+	}
+	writeJob(w, http.StatusOK, result)
+}
+
+func writeJob(w http.ResponseWriter, statusCode int, result dispatch.JobResult) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(jobResponseBody{
+		JobID:        result.ID.Path(),
 		JobName:      result.JobName,
-		Hash:         result.Hash,
-		ModelVersion: result.ModelVersion,
-		FuelsVersion: result.FuelsVersion,
-		TopoVersion:  result.TopoVersion,
+		Hash:         result.ID.Hash,
+		ModelVersion: result.ID.ModelVersion,
+		DataVersion:  result.ID.DataVersion,
 		Status:       result.Status,
-		VarLoc:       body.VarLoc,
+		VarLoc:       result.ID.VarLoc,
 		Cached:       result.Status == "cached",
 		Attempts:     result.Attempts,
 		OutputPath:   result.OutputPath,
+		Error:        result.Error,
 	})
 }
 
-// job_name is stored in the claim ledger, so it must be label-safe.
+// job_name is stored in the claim, so it must be label-safe.
 func validate(body jobRequestBody, allowed VarLocSet) error {
 	if !allowed.Contains(body.VarLoc) {
 		return errors.New("invalid 'varloc': not in the configured allow-list")

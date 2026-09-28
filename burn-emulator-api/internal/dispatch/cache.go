@@ -13,9 +13,28 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-const runStaleAfter = 35 * time.Minute
+// burn_emulator_runner_timeout (20m) + ~5m for container start and report
+// delivery; keep above the runner timeout or healthy runs get duplicated.
+const runStaleAfter = 25 * time.Minute
 
 const maxClaimAttempts = 3
+
+const releaseTimeout = 10 * time.Second
+
+const (
+	claimPrefix  = "_claims/"
+	reportPrefix = "_reports/"
+)
+
+// claim entry, stored as GCS object metadata.
+type claimRecord struct {
+	Status     string // "running" | "failed"
+	JobName    string
+	Attempts   int
+	UpdatedAt  time.Time
+	Generation int64
+	Error      string
+}
 
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
@@ -26,71 +45,67 @@ func CacheKey(req JobRequest) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// claim ledger entry, stored as GCS object metadata.
-type runRecord struct {
-	Status    string
-	JobName   string
-	Attempts  int
-	UpdatedAt time.Time
-	Generation int64
-}
-
-func ledgerObjectName(key string) string {
-	return "_runs/" + key
-}
-
-// claim a run atomically, using the ledger object's generation as a
-// compare-and-swap: create it if absent, overwrite it if the claim is
-// stale or not "running", and retry a lost race (412) up to
-// maxClaimAttempts times.
-func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, runRecord, error) {
+// claim a run atomically using the claim object's generation
+func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, claimRecord, error) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
-		return false, runRecord{}, err
+		return false, claimRecord{}, err
 	}
-	name := ledgerObjectName(key)
+	name := claimObjectName(key)
 
 	for attempt := 0; attempt < maxClaimAttempts; attempt++ {
 		obj, getErr := c.storage.Objects.Get(bucket, name).Context(ctx).Do()
 		if getErr != nil {
 			if !isStatusCode(getErr, 404) {
-				return false, runRecord{}, fmt.Errorf("reading run ledger %s: %w", key, getErr)
+				return false, claimRecord{}, fmt.Errorf("reading run claim %s: %w", key, getErr)
 			}
-			rec := runRecord{Status: "running", JobName: jobName, Attempts: 1, UpdatedAt: time.Now()}
-			gen, putErr := c.putLedger(ctx, bucket, name, rec, 0)
+			rec := claimRecord{Status: "running", JobName: jobName, Attempts: 1, UpdatedAt: time.Now()}
+			gen, putErr := c.putClaim(ctx, bucket, name, rec, 0)
 			if putErr != nil {
 				if isStatusCode(putErr, 412) {
 					continue // lost the race; retry
 				}
-				return false, runRecord{}, fmt.Errorf("claiming run %s: %w", key, putErr)
+				return false, claimRecord{}, fmt.Errorf("claiming run %s: %w", key, putErr)
 			}
 			rec.Generation = gen
 			return true, rec, nil
 		}
 
-		rec := parseLedger(obj)
+		rec := parseClaim(obj)
 		if rec.Status == "running" && time.Since(rec.UpdatedAt) < runStaleAfter {
 			return false, rec, nil
 		}
 
-		next := runRecord{Status: "running", JobName: jobName, Attempts: rec.Attempts + 1, UpdatedAt: time.Now()}
-		gen, putErr := c.putLedger(ctx, bucket, name, next, obj.Generation)
+		next := claimRecord{Status: "running", JobName: jobName, Attempts: rec.Attempts + 1, UpdatedAt: time.Now()}
+		gen, putErr := c.putClaim(ctx, bucket, name, next, obj.Generation)
 		if putErr != nil {
 			if isStatusCode(putErr, 412) {
 				continue // someone else reclaimed it; retry
 			}
-			return false, runRecord{}, fmt.Errorf("reclaiming run %s: %w", key, putErr)
+			return false, claimRecord{}, fmt.Errorf("reclaiming run %s: %w", key, putErr)
 		}
 		next.Generation = gen
 		return true, next, nil
 	}
-	return false, runRecord{}, fmt.Errorf("claiming run %s: exceeded %d attempts under contention", key, maxClaimAttempts)
+	return false, claimRecord{}, fmt.Errorf("claiming run %s: exceeded %d attempts under contention", key, maxClaimAttempts)
 }
 
-const releaseTimeout = 10 * time.Second
+func (c *Client) readClaim(ctx context.Context, key string) (claimRecord, bool, error) {
+	bucket, err := c.outputBucketName()
+	if err != nil {
+		return claimRecord{}, false, err
+	}
+	obj, err := c.storage.Objects.Get(bucket, claimObjectName(key)).Context(ctx).Do()
+	if err != nil {
+		if isStatusCode(err, 404) {
+			return claimRecord{}, false, nil
+		}
+		return claimRecord{}, false, fmt.Errorf("reading run claim %s: %w", key, err)
+	}
+	return parseClaim(obj), true, nil
+}
 
-// report whether the ledger object is still the one we wrote (generation gen),
-// i.e. our claim has not gone stale and been reclaimed by another run.
+// report whether the claim object is still the one the api wrote
 func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -98,7 +113,7 @@ func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	_, err = c.storage.Objects.Get(bucket, ledgerObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
+	_, err = c.storage.Objects.Get(bucket, claimObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
 	if err != nil {
 		if !isStatusCode(err, 404) && !isStatusCode(err, 412) {
 			slog.Warn("failed to verify run claim", "key", key, "error", err)
@@ -108,7 +123,7 @@ func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
 	return true
 }
 
-// delete the ledger object, only if it is still the claim we wrote once
+// delete the claim object, only if it is still the claim the api wrote once
 // a run finishes (output now exists) or fails (so the next run can claim it).
 func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	bucket, err := c.outputBucketName()
@@ -118,20 +133,58 @@ func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
-	err = c.storage.Objects.Delete(bucket, ledgerObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
+	err = c.storage.Objects.Delete(bucket, claimObjectName(key)).IfGenerationMatch(gen).Context(ctx).Do()
 	if err != nil {
 		if isStatusCode(err, 404) || isStatusCode(err, 412) {
-			slog.Info("run claim no longer ours; leaving it", "key", key)
+			slog.Info("run claim reclaimed or already cleared; leaving it", "key", key)
 			return
 		}
 		slog.Warn("failed to clear run claim", "key", key, "error", err)
 	}
 }
 
+// GCS uploads are atomic (an object only appears once its upload completes)
+func (c *Client) clearFinishedClaim(ctx context.Context, key string) {
+	rec, found, err := c.readClaim(ctx, key)
+	if err != nil || !found || rec.Status != "running" {
+		return
+	}
+	c.releaseRun(ctx, key, rec.Generation)
+}
+
+// mark the api's claim (generation gen) "failed" so GET reports it until the
+// next POST reclaims it. A claim reclaimed by another run is left alone.
+func (c *Client) failRun(ctx context.Context, key string, gen int64, reason string) error {
+	bucket, err := c.outputBucketName()
+	if err != nil {
+		return err
+	}
+	name := claimObjectName(key)
+	obj, err := c.storage.Objects.Get(bucket, name).IfGenerationMatch(gen).Context(ctx).Do()
+	if err != nil {
+		if isStatusCode(err, 404) || isStatusCode(err, 412) {
+			return nil
+		}
+		return fmt.Errorf("reading run claim %s: %w", key, err)
+	}
+	rec := parseClaim(obj)
+	rec.Status = "failed"
+	rec.Error = reason
+	rec.UpdatedAt = time.Now()
+	if _, err := c.putClaim(ctx, bucket, name, rec, gen); err != nil && !isStatusCode(err, 412) {
+		return fmt.Errorf("marking run %s failed: %w", key, err)
+	}
+	return nil
+}
+
+func claimObjectName(key string) string {
+	return claimPrefix + key
+}
+
 // write rec as metadata on an empty object at bucket/name, conditioned on
 // ifGenerationMatch (0 = must not exist, else = unchanged since read).
 // Returns the new object generation, or a 412 error if the check fails.
-func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runRecord, ifGenerationMatch int64) (int64, error) {
+func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRecord, ifGenerationMatch int64) (int64, error) {
 	obj := &storage.Object{
 		Name: name,
 		Metadata: map[string]string{
@@ -140,6 +193,9 @@ func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runReco
 			"attempts":   strconv.Itoa(rec.Attempts),
 			"updated_at": strconv.FormatInt(rec.UpdatedAt.Unix(), 10),
 		},
+	}
+	if rec.Error != "" {
+		obj.Metadata["error"] = rec.Error
 	}
 	written, err := c.storage.Objects.Insert(bucket, obj).
 		Media(strings.NewReader("")).
@@ -152,14 +208,16 @@ func (c *Client) putLedger(ctx context.Context, bucket, name string, rec runReco
 	return written.Generation, nil
 }
 
-func parseLedger(obj *storage.Object) runRecord {
+func parseClaim(obj *storage.Object) claimRecord {
 	attempts, _ := strconv.Atoi(obj.Metadata["attempts"])
 	updatedUnix, _ := strconv.ParseInt(obj.Metadata["updated_at"], 10, 64)
-	return runRecord{
-		Status:    obj.Metadata["status"],
-		JobName:   obj.Metadata["job_name"],
-		Attempts:  attempts,
-		UpdatedAt: time.Unix(updatedUnix, 0),
+	return claimRecord{
+		Status:     obj.Metadata["status"],
+		JobName:    obj.Metadata["job_name"],
+		Attempts:   attempts,
+		UpdatedAt:  time.Unix(updatedUnix, 0),
+		Generation: obj.Generation,
+		Error:      obj.Metadata["error"],
 	}
 }
 

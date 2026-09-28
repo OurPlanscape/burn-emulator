@@ -58,8 +58,11 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/v1/jobs", jobsHandler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /v1/jobs", jobsHandler.Create)
+	mux.HandleFunc("GET /v1/jobs/{varloc}/{model_version}/{data_version}/{hash}", jobsHandler.Get)
+	// must match the Pub/Sub push_endpoint in Terraform
+	mux.Handle("POST /internal/pubsub/run-reports", &handlers.ReportHandler{Dispatch: client})
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
@@ -69,8 +72,9 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// keep above handlers.requestTimeout
-		WriteTimeout: 31 * time.Minute,
+		// handlers.MaxHandlerDuration (3m40s) + margin; burn_emulator_api_timeout
+		// in infrastructure is built on top of this.
+		WriteTimeout: handlers.MaxHandlerDuration + 20*time.Second,
 	}
 
 	slog.Info("burn-emulator-api listening", "addr", srv.Addr)

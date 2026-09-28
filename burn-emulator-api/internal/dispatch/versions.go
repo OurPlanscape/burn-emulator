@@ -24,9 +24,7 @@ type cachedVersion struct {
 	at      time.Time
 }
 
-// resolve and cache a version from a `<key>/current` pointer object (a
-// one-line text file) under a gs:// root. Used for model versions
-// (key = varloc) and burn-emulator-inputs versions (key = "fuels" or "topo").
+// resolve and cache a version from a `<key>/current` written by publish_inputs.sh
 type versionResolver struct {
 	storage *storage.Service
 	bucket  string
