@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram name="API Runner + Model Run" id="0">
-    <mxGraphModel dx="4680" dy="1364" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
+    <mxGraphModel dx="5126" dy="1656" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -100,17 +100,29 @@
         <mxCell id="n19g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="report (empty)&lt;br&gt;gs://{output_bucket}/_reports/{job_id}&lt;br&gt;metadata: status, claim_generation, error" vertex="1">
           <mxGeometry height="100" width="280" x="757" y="2045" as="geometry" />
         </mxCell>
-        <mxCell id="n19p" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="GCS notification (OBJECT_FINALIZE, prefix _reports/)&lt;br&gt;-&amp;gt; Pub/Sub topic run-reports&lt;br&gt;-&amp;gt; push subscription (OIDC, ack 120s,&lt;br&gt;retry, dead-letter after 10)&lt;br&gt;(infrastructure terraform)" vertex="1">
-          <mxGeometry height="100" width="280" x="757" y="2255" as="geometry" />
+        <mxCell id="n19p" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="GCS notification&lt;br&gt;(OBJECT_FINALIZE, prefix _reports/)&lt;br&gt;(infrastructure terraform)" vertex="1">
+          <mxGeometry height="60" width="280" x="757" y="2249" as="geometry" />
+        </mxCell>
+        <mxCell id="n19t" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=20;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="Pub/Sub topic&lt;br&gt;burn-emulator-run-reports-{env}" vertex="1">
+          <mxGeometry height="50" width="280" x="757" y="2349" as="geometry" />
+        </mxCell>
+        <mxCell id="n19s" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="push subscription&lt;br&gt;burn-emulator-run-reports-{env}&lt;br&gt;OIDC (push SA), ack 120s,&lt;br&gt;backoff 10s-600s" vertex="1">
+          <mxGeometry height="70" width="280" x="757" y="2439" as="geometry" />
+        </mxCell>
+        <mxCell id="n19dt" parent="1" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;size=20;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" value="Pub/Sub topic&lt;br&gt;burn-emulator-run-reports-dead-letter-{env}" vertex="1">
+          <mxGeometry height="50" width="280" x="757" y="2569" as="geometry" />
+        </mxCell>
+        <mxCell id="n19ds" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="pull subscription (no consumer)&lt;br&gt;burn-emulator-run-reports-dead-letter-{env}&lt;br&gt;retains 7 days, never expires&lt;br&gt;inspect with gcloud pubsub subscriptions pull" vertex="1">
+          <mxGeometry height="80" width="280" x="757" y="2659" as="geometry" />
         </mxCell>
         <mxCell id="n20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="POST /internal/pubsub/run-reports&lt;br&gt;ReportHandler -&amp;gt; HandleReport()&lt;br&gt;re-read report @ notified generation&lt;br&gt;completed: releaseRun(claim_generation)&lt;br&gt;failed: ownsClaim -&amp;gt; deleteOutput + failRun&lt;br&gt;then delete report&lt;div&gt;(handlers/report.go, dispatch/report.go)&lt;/div&gt;" vertex="1">
-          <mxGeometry height="130" width="280" x="249" y="2240" as="geometry" />
+          <mxGeometry height="130" width="280" x="249" y="2305" as="geometry" />
         </mxCell>
         <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="JobsHandler.Get -&amp;gt; GetJob()&lt;br&gt;GET /v1/jobs/{job_id}&lt;br&gt;cached | pending | failed | 404&lt;br&gt;(stale running claim &amp;gt;25m -&amp;gt; failed)" vertex="1">
-          <mxGeometry height="90" width="280" x="249" y="2410" as="geometry" />
+          <mxGeometry height="90" width="280" x="249" y="2475" as="geometry" />
         </mxCell>
         <mxCell id="n21r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client polls GET Location&lt;br&gt;until cached or failed" vertex="1">
-          <mxGeometry height="90" width="240" x="-236" y="2410" as="geometry" />
+          <mxGeometry height="90" width="240" x="-236" y="2475" as="geometry" />
         </mxCell>
         <mxCell id="e1" edge="1" parent="1" source="n1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n2">
           <mxGeometry relative="1" as="geometry" />
@@ -191,8 +203,25 @@
         <mxCell id="e23b" edge="1" parent="1" source="n19g" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n19p" value="OBJECT_FINALIZE">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e23c" edge="1" parent="1" source="n19p" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=5;fontSize=12;fillColor=none;" target="n20" value="&lt;span&gt;push&lt;br&gt;(2xx acks, 5xx redelivers)&lt;/span&gt;">
+        <mxCell id="e23d" edge="1" parent="1" source="n19p" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n19t" value="publish">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23e" edge="1" parent="1" source="n19t" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="n19s" value="copy per subscription">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23f" edge="1" parent="1" source="n19s" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="n19dt" value="after 10 failed deliveries">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23g" edge="1" parent="1" source="n19dt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="n19ds" value="held for inspection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23c" edge="1" parent="1" source="n19s" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;rounded=0;html=1;strokeWidth=5;fontSize=12;fillColor=none;" target="n20" value="&lt;span&gt;push&lt;br&gt;(2xx acks, 5xx redelivers)&lt;/span&gt;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="640" y="2474" />
+              <mxPoint x="640" y="2369" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="e24" edge="1" parent="1" source="n20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=1 1;" target="n21" value="claim released / failed;&lt;br&gt;next GET sees it">
           <mxGeometry relative="1" as="geometry" />
@@ -411,6 +440,9 @@
         </mxCell>
         <mxCell id="t4wsmApugceGyr_N9LXI-1" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#000000, #1a3300);strokeColor=default;strokeWidth=2;" value="On disk inputs/outputs" vertex="1">
           <mxGeometry height="80" width="280" x="-316" y="1140" as="geometry" />
+        </mxCell>
+        <mxCell id="IY72ubVXEbuafB7K7vlG-1" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#000000, #392f3f);strokeColor=default;strokeWidth=2;" value="GCS Backend" vertex="1">
+          <mxGeometry height="80" width="280" x="440" y="2160" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
