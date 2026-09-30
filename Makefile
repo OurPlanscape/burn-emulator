@@ -20,7 +20,7 @@ RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all ignitions ignitions-all shell
+.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all shell
 
 help: ## show this help
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -107,6 +107,23 @@ inference-all: ## run inference for every varloc (OUTPUTS_ROOT=)
 	for varloc in "$${varlocs[@]}"; do
 	    $(MAKE) inference VARLOC="$$varloc" OUTPUTS_ROOT="$(OUTPUTS_ROOT)/$$varloc"
 	done
+
+smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [OUT_PATH=])
+	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
+	source "$(MODEL_DIR)/.venv/bin/activate"
+	cd "$(MODEL_DIR)"
+	arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
+	wind_range="$(WIND_RANGE)"
+	if [ -z "$$wind_range" ]; then
+	    wind_key=$$(sed -E 's/^([A-Za-z]+)([0-9]+)$$/\U\1_\2/' <<< "$(VARLOC)")
+	    wind_range=$$(awk -F, -v k="$$wind_key" '$$1 == k {print $$2, $$3}' data/training_data/wind_directions.csv)
+	fi
+	if [ -z "$$wind_range" ]; then echo "error: no wind range for $(VARLOC) in wind_directions.csv - pass WIND_RANGE=\"<lo> <hi>\"" >&2; exit 2; fi
+	burn_emulator -m run -d -vl $(VARLOC) -wr $$wind_range \
+	    -c configs/varlocs/current.yaml \
+	    -c "configs/$$arch/model.yaml" \
+	    -c configs/varlocs/templates/run_smoke.yaml \
+	    $(if $(OUT_PATH),-o $(OUT_PATH))
 
 ignitions: ## generate ignitions for one varloc (VARLOC= [NUM_IGNITIONS=] [OVERWRITE=1])
 	set -e
