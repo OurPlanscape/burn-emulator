@@ -18,7 +18,7 @@ VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --p
 API_IMAGE    := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-api:$(VERSION)
 RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
-.PHONY: build-api push-api build-runner push-runner bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all ignitions shell
+.PHONY: build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all ignitions ignitions-all shell
 
 build-api:
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
@@ -36,13 +36,18 @@ build-runner:
 push-runner: build-runner
 	docker push $(RUNNER_IMAGE)
 
+valid-varlocs:
+	source "$(MODEL_DIR)/.venv/bin/activate"
+	cd "$(MODEL_DIR)"
+	python scripts/filter_varlocs_gpkg.py
+
 bundle-model:
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	source "$(MODEL_DIR)/.venv/bin/activate"
 	cd "$(MODEL_DIR)"
 	burn_emulator -m bundle -c configs/varlocs/current.yaml -vl $(VARLOC)
 
-bundle-model-all:
+bundle-model-all: valid-varlocs
 	set -e
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
 	for varloc in "$${varlocs[@]}"; do
@@ -83,11 +88,43 @@ publish-inputs:
 train-all:
 	$(MODEL_DIR)/scripts/train_varlocs.sh
 
-ignitions:
+inference:
 	if [ -z "$(VARLOC)" ] || [ -z "$(OUTPUTS_ROOT)" ]; then
 	    echo "error: pass VARLOC=<varloc> OUTPUTS_ROOT=<dir>" >&2; exit 2
 	fi
 	$(MODEL_DIR)/scripts/ignite_inference.sh $(VARLOC) $(OUTPUTS_ROOT)
 
+# expects one scenario root per varloc at OUTPUTS_ROOT/<varloc>
+inference-all:
+	set -e
+	if [ -z "$(OUTPUTS_ROOT)" ]; then echo "error: pass OUTPUTS_ROOT=<dir>" >&2; exit 2; fi
+	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
+	for varloc in "$${varlocs[@]}"; do
+	    $(MAKE) inference VARLOC="$$varloc" OUTPUTS_ROOT="$(OUTPUTS_ROOT)/$$varloc"
+	done
+
+ignitions:
+	set -e
+	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
+	source "$(MODEL_DIR)/.venv/bin/activate"
+	cd "$(MODEL_DIR)"
+	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
+	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
+	varlocs_txt=configs/varlocs/varlocs.txt
+	if ! grep -qxF "$(VARLOC)" "$$varlocs_txt"; then
+	    { grep -vE '^[[:space:]]*$$' "$$varlocs_txt"; echo "$(VARLOC)"; } | LC_ALL=C sort -u > "$$varlocs_txt.tmp"
+	    mv "$$varlocs_txt.tmp" "$$varlocs_txt"
+	    echo "added $(VARLOC) to $$varlocs_txt"
+	fi
+
+ignitions-all:
+	set -e
+	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
+	for varloc in "$${varlocs[@]}"; do
+	    $(MAKE) ignitions VARLOC="$$varloc"
+	done
+
 shell:
-	bash -c "source $(MODEL_DIR)/.venv/bin/activate && cd $(MODEL_DIR) && exec \$$SHELL"
+	set -e
+	uv sync --project "$(MODEL_DIR)" --locked --inexact --extra data
+	exec bash --rcfile <(echo 'source ~/.bashrc; source "$(CURDIR)/$(MODEL_DIR)/.venv/bin/activate"')

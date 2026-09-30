@@ -1,4 +1,5 @@
 import random
+import shutil
 from time import perf_counter
 
 import geopandas as gpd
@@ -215,6 +216,7 @@ def ignite(
     data_version: str,
     num_ignitions: int = 5000,
     collate_ignitions: bool = False,
+    overwrite: bool = False,
     buffer_dist: float = -2000,  # m; ignitions can't be within this distance of the edge
     max_durations: list[int] = DEFAULT_MAX_DURATIONS,
     upwind_direction_quadrant: list[float] = DEFAULT_UPWIND_DIRECTION_QUADRANT,
@@ -223,6 +225,10 @@ def ignite(
     **kwargs,
 ) -> None:
     training_data_dir = TRAINING_DATA_DIR / varloc / data_version
+    if training_data_dir.exists():
+        if not overwrite:
+            raise FileExistsError(f"{training_data_dir} already exists; pass overwrite to replace it")
+        shutil.rmtree(training_data_dir)
 
     geom = _load_varloc_geom(varloc)
     bounds = geom.bounds

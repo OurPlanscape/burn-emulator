@@ -27,7 +27,10 @@ Run from the repo root.
 | `bundle-model-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
 | `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>` | uploads baseline/legalmax fuel tifs and topo tifs under one `data_version`, then repoints `current` |
 | `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh` |
-| `ignitions VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
+| `inference VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
+| `inference-all OUTPUTS_ROOT=<dir>` | `inference` looped over every varloc, using `OUTPUTS_ROOT/<varloc>` as each varloc's root |
+| `ignitions VARLOC=<varloc> [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | wraps `burn_emulator -m ignite` to generate training data, using `data_version` from `configs/varlocs/current.yaml`; `NUM_IGNITIONS` defaults to 5000 in `ignite.py`; refuses to run if `data/training_data/<varloc>/<data_version>` exists unless `OVERWRITE=1`, which deletes it first |
+| `ignitions-all [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | `ignitions` looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure |
 | `shell` | activates the model repo's venv and cds into it |
 
 `build-*`/`push-*`/`publish-*` need `BURN_EMULATOR_ARTIFACT_STORE` / `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI` exported by the caller.

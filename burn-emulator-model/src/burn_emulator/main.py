@@ -44,6 +44,7 @@ def main():
     # ignite only
     parser.add_argument("-ni", "--num_ignitions", action="store", type=int)
     parser.add_argument("-ci", "--collate_ignitions", action="store_true")
+    parser.add_argument("-ow", "--overwrite", action="store_true")
 
     args = parser.parse_args()
 
@@ -77,6 +78,7 @@ def main():
                 "varloc": args.varloc,
                 "data_version": args.data_version,
                 "collate_ignitions": args.collate_ignitions,
+                "overwrite": args.overwrite,
             }
             if args.num_ignitions is not None:
                 ignite_kwargs["num_ignitions"] = args.num_ignitions
