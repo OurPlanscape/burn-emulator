@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -30,33 +29,6 @@ const (
 )
 
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-
-type VarLocSet map[string]bool
-
-func (s VarLocSet) Contains(name string) bool {
-	return s[name]
-}
-
-// read and parse the varlocs.txt allow-list at path: one varloc per line.
-func LoadVarLocs(path string) (VarLocSet, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading varlocs file %s: %w", path, err)
-	}
-
-	set := make(VarLocSet)
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		set[line] = true
-	}
-	if len(set) == 0 {
-		return nil, fmt.Errorf("varlocs file %s lists no varlocs", path)
-	}
-	return set, nil
-}
 
 type jobRequestBody struct {
 	TreatmentArea    string   `json:"treatment_area"`
@@ -83,7 +55,6 @@ type jobResponseBody struct {
 // serve /v1/jobs. Caller identity is verified upstream, not here.
 type JobsHandler struct {
 	Dispatch *dispatch.Client
-	VarLocs  VarLocSet
 }
 
 // POST /v1/jobs
@@ -103,7 +74,7 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validate(body, h.VarLocs); err != nil {
+	if err := validate(body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -118,6 +89,10 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		JobName:          body.JobName,
 		IgnitionDensity:  body.IgnitionDensity,
 	})
+	if errors.Is(err, dispatch.ErrUnknownVarLoc) {
+		http.Error(w, "invalid 'varloc': not in the published allow-list", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
 			// client hung up before the run was claimed.
@@ -150,11 +125,6 @@ func (h *JobsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		DataVersion:  r.PathValue("data_version"),
 		Hash:         r.PathValue("hash"),
 	}
-	if !h.VarLocs.Contains(id.VarLoc) {
-		http.Error(w, "job not found", http.StatusNotFound)
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 	defer cancel()
 
@@ -190,9 +160,9 @@ func writeJob(w http.ResponseWriter, statusCode int, result dispatch.JobResult) 
 }
 
 // job_name is stored in the claim, so it must be label-safe.
-func validate(body jobRequestBody, allowed VarLocSet) error {
-	if !allowed.Contains(body.VarLoc) {
-		return errors.New("invalid 'varloc': not in the configured allow-list")
+func validate(body jobRequestBody) error {
+	if body.VarLoc == "" {
+		return errors.New("missing 'varloc'")
 	}
 	if !validJobName.MatchString(body.JobName) {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")

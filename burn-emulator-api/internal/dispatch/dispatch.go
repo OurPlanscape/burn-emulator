@@ -61,13 +61,20 @@ type JobResult struct {
 }
 
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, error) {
-	modelVersion, err := c.modelVersions.resolve(ctx, req.VarLoc)
-	if err != nil {
-		return JobResult{}, fmt.Errorf("resolving model version for %s: %w", req.VarLoc, err)
-	}
 	dataVersion, err := c.dataVersions.resolve(ctx, "")
 	if err != nil {
 		return JobResult{}, fmt.Errorf("resolving data version: %w", err)
+	}
+	ok, err := c.varLocs.contains(ctx, dataVersion, req.VarLoc)
+	if err != nil {
+		return JobResult{}, err
+	}
+	if !ok {
+		return JobResult{}, ErrUnknownVarLoc
+	}
+	modelVersion, err := c.modelVersions.resolve(ctx, req.VarLoc)
+	if err != nil {
+		return JobResult{}, fmt.Errorf("resolving model version for %s: %w", req.VarLoc, err)
 	}
 
 	id := JobID{
@@ -137,10 +144,21 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 	return result, nil
 }
 
-// read-only status of a run. ErrJobNotFound covers a malformed id, and a run
-// with neither output nor claim (never started, or its claim was cleared).
+// read-only status of a run. ErrJobNotFound covers a malformed id, a varloc
+// not published with its data_version, and a run with neither output nor claim
+// (never started, or its claim was cleared).
 func (c *Client) GetJob(ctx context.Context, id JobID) (JobResult, error) {
 	if !id.valid() {
+		return JobResult{}, ErrJobNotFound
+	}
+	ok, err := c.varLocs.contains(ctx, id.DataVersion, id.VarLoc)
+	if isStatusCode(err, 404) {
+		return JobResult{}, ErrJobNotFound
+	}
+	if err != nil {
+		return JobResult{}, err
+	}
+	if !ok {
 		return JobResult{}, ErrJobNotFound
 	}
 	outPath := strings.TrimSuffix(c.cfg.OutputBucket, "/") + "/" + id.Path()

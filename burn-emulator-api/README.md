@@ -10,7 +10,6 @@ Go service. Validates a request, resolves the model and data versions, checks th
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` root of the fuels/topo inputs (reads `current` for the `data_version`, written by `publish_inputs.sh`) |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
 | `BURN_EMULATOR_RUNNER_JOB` | fully-qualified runner job name: `projects/*/locations/*/jobs/*` |
-| `VARLOCS_FILE` | varloc allow-list (default `configs/varlocs.txt`) |
 
 ## `POST /v1/jobs`
 
@@ -24,7 +23,7 @@ Go service. Validates a request, resolves the model and data versions, checks th
 }
 ```
 
-`varloc` must be in `burn-emulator-model/configs/varlocs/varlocs.txt`; `job_name` is 1-63 chars `[a-z0-9-]` and is only used for logging and recorded on the claim (it does not affect the hash); `ignition_density` is optional (ignitions per km², defaults to 20 ignitions per km²;  `VarLoc` converts internally); omit it to use the value baked into the model bundle's `config.yaml`. Worth noting here that the max number of ignitions is 2**16. Verify this by using area/density upstream somewhere.
+`varloc` must be in `gs://<inputs>/<data_version>/varlocs/varlocs.txt` for the current `data_version` (published by `publish_inputs.sh`, 60s cache), otherwise 400; `job_name` is 1-63 chars `[a-z0-9-]` and is only used for logging and recorded on the claim (it does not affect the hash); `ignition_density` is optional (ignitions per km², defaults to 20 ignitions per km²;  `VarLoc` converts internally); omit it to use the value baked into the model bundle's `config.yaml`. Worth noting here that the max number of ignitions is 2**16. Verify this by using area/density upstream somewhere.
 
 ```json
 {
@@ -32,7 +31,7 @@ Go service. Validates a request, resolves the model and data versions, checks th
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
   "model_version": "20260829T143000Z-a1b2c3d", # this is from publish-model.sh in the model repo
-  "data_version": "20260828", # fuels + topo, from publish-inputs in the model repo
+  "data_version": "20260828", # fuels + topo + varlocs, from publish-inputs in the model repo
   "status": "pending",
   "varloc": "WC711",
   "cached": false,
@@ -71,9 +70,10 @@ Pub/Sub push endpoint only. Receives GCS `OBJECT_FINALIZE` notifications for `gs
 ## Flow
 
 ```
-1. validate varloc + job_name
-2. model_version = gs://<models>/<varloc>/current       (60s cache)
-   data_version  = gs://<inputs>/current                 (60s cache; fuels + topo)
+1. validate job_name
+2. data_version  = gs://<inputs>/current                 (60s cache; fuels + topo + varlocs)
+   varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400   (60s cache)
+   model_version = gs://<models>/<varloc>/current       (60s cache)
    hash          = sha256(varloc + "|" + treatment_area + "|" + treatment_area_crs [+ "|" + ignition_density])
    out_path      = gs://<out>/<varloc>/<model_version>/<data_version>/<hash>
 3. out_path exists?                                               -> 200 cached

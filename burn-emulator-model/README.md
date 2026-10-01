@@ -112,16 +112,18 @@ scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 
 `-m bundle` resolves `<varloc>` against `configs/varlocs/current.yaml`'s architecture/data_version and writes the bundle to `data/bundles/<model_name>/`. `publish_model.sh` uploads that bundle to `<models_uri>` and repoints `current`; `<models_uri>` can also come from `BURN_EMULATOR_MODELS_URI` instead of the third argument.
 
-## Publish inputs (fuels + topo)
+## Publish inputs (fuels + topo + varlocs)
 
 ```bash
-scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> [inputs_uri]
+scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> [inputs_uri]
 # <data_version>  DDMonYYYY (28Aug2026) or YYYYMMDD, stored as YYYYMMDD
 # <fuels_dir>     both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
 # <topo_dir>      all topo tifs, uploaded as-is
+# <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg from `make valid-varlocs`
+# <varlocs_txt>   the api's varloc allow-list, e.g. configs/varlocs/varlocs.txt
 ```
 
-Fuels and topo are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` splits `<fuels_dir>` by filename into `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the fourth argument; the script aborts if neither is set.
+Fuels, topo and varlocs are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` splits `<fuels_dir>` by filename into `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the sixth argument; the script aborts if neither is set.
 
 Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outputs already cached under it; publish changed inputs under a new `data_version`.
 

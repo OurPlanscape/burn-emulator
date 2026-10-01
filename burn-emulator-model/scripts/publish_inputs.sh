@@ -5,14 +5,16 @@ set -euo pipefail
 data_version_raw="${1:-}"
 fuels_dir="${2:-}"
 topo_dir="${3:-}"
-inputs_uri="${4:-${BURN_EMULATOR_INPUTS_URI:-}}"
+varlocs_gpkg="${4:-}"
+varlocs_txt="${5:-}"
+inputs_uri="${6:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
-if [[ -z "$data_version_raw" || -z "$fuels_dir" || -z "$topo_dir" ]]; then
-    echo "usage: $0 <data_version> <fuels_dir> <topo_dir> [inputs_uri]" >&2
+if [[ -z "$data_version_raw" || -z "$fuels_dir" || -z "$topo_dir" || -z "$varlocs_gpkg" || -z "$varlocs_txt" ]]; then
+    echo "usage: $0 <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> [inputs_uri]" >&2
     exit 2
 fi
 if [[ -z "$inputs_uri" ]]; then
-    echo "error: pass inputs_uri as arg 4, or set BURN_EMULATOR_INPUTS_URI" >&2
+    echo "error: pass inputs_uri as arg 6, or set BURN_EMULATOR_INPUTS_URI" >&2
     exit 2
 fi
 
@@ -36,6 +38,15 @@ for dir in "$fuels_dir" "$topo_dir"; do
         exit 1
     fi
 done
+
+if [[ ! -f "$varlocs_gpkg" || "$varlocs_gpkg" != *.gpkg ]]; then
+    echo "error: $varlocs_gpkg is not a .gpkg file" >&2
+    exit 1
+fi
+if ! grep -qvE '^[[:space:]]*$' "$varlocs_txt" 2>/dev/null; then
+    echo "error: $varlocs_txt is missing or lists no varlocs" >&2
+    exit 1
+fi
 
 # fuels_dir holds both baseline and legalmax tifs together, split by filename
 baseline_files=()
@@ -98,6 +109,7 @@ publish_layer () {
 publish_layer baseline "${baseline_files[@]}"
 publish_layer legalmax "${legalmax_files[@]}"
 publish_layer topo "$topo_dir"/*.tif
+publish_layer varlocs "$varlocs_gpkg" "$varlocs_txt"
 
 # only repoint once every layer of this data_version is up (set -e stops earlier on failure)
 printf '%s' "$data_version" | gcloud storage cp - "${inputs_uri%/}/current"

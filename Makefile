@@ -81,14 +81,17 @@ publish-model-all: ## publish every varloc in varlocs.txt
 	    $(MAKE) publish-model VARLOC="$$varloc"
 	done
 
-# FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs;
-# both land under one DATA_VERSION (DDMonYYYY or YYYYMMDD)
-publish-inputs: ## publish input rasters (DATA_VERSION= FUELS_DIR= TOPO_DIR=)
+# FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs,
+# VARLOCS_GPKG the valid-varlocs output and VARLOCS_TXT the api allow-list; all land under one DATA_VERSION (DDMonYYYY or YYYYMMDD)
+VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs_5070.gpkg
+VARLOCS_TXT  ?= $(MODEL_DIR)/configs/varlocs/varlocs.txt
+
+publish-inputs: ## publish input rasters + varlocs (DATA_VERSION= FUELS_DIR= TOPO_DIR= [VARLOCS_GPKG= VARLOCS_TXT=])
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	if [ -z "$(DATA_VERSION)" ] || [ -z "$(FUELS_DIR)" ] || [ -z "$(TOPO_DIR)" ]; then
 	    echo "error: pass DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>" >&2; exit 2
 	fi
-	$(MODEL_DIR)/scripts/publish_inputs.sh $(DATA_VERSION) $(FUELS_DIR) $(TOPO_DIR) $(BURN_EMULATOR_INPUTS_URI)
+	$(MODEL_DIR)/scripts/publish_inputs.sh $(DATA_VERSION) $(FUELS_DIR) $(TOPO_DIR) $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
 train-all: ## train every varloc
 	$(MODEL_DIR)/scripts/train_varlocs.sh

@@ -25,7 +25,7 @@ Run from the repo root.
 | `bundle-model VARLOC=<varloc>` | wraps `burn_emulator -m bundle` for one varloc (in `burn-emulator-model/`) |
 | `publish-model VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | uploads a bundle and repoints `current`; refuses to overwrite a published version with a different bundle unless `FORCE=1` |
 | `bundle-model-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
-| `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>` | uploads baseline/legalmax fuel tifs and topo tifs under one `data_version`, then repoints `current` |
+| `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir> [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>]` | uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) and the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) under one `data_version`, then repoints `current` |
 | `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh` |
 | `inference VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
 | `inference-all OUTPUTS_ROOT=<dir>` | `inference` looped over every varloc, using `OUTPUTS_ROOT/<varloc>` as each varloc's root |
@@ -48,9 +48,10 @@ gs://<bucket_name>/<models>/<varloc>/<model_version>/    # model.pt, stats.yaml,
 
 ```
 caller --POST /v1/jobs {varloc, treatment_area, treatment_area_crs, job_name}--> burn-emulator-api
-  1. validate varloc + job_name
-  2. model_version = read gs://<models>/<varloc>/current  (60s cache)
-     data_version  = read gs://<inputs>/current            (60s cache; fuels + topo)
+  1. validate job_name
+  2. data_version  = read gs://<inputs>/current            (60s cache; fuels + topo + varlocs)
+     varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400  (60s cache)
+     model_version = read gs://<models>/<varloc>/current  (60s cache)
      hash          = sha256(varloc + "|" + treatment_area + "|" + treatment_area_crs [+ "|" + ignition_density])
      out_path      = gs://<out>/<varloc>/<model_version>/<data_version>/<hash>
   3. out_path exists?                                             -> 200 cached

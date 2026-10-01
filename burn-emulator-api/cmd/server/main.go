@@ -20,13 +20,6 @@ func env(key string) string {
 	return v
 }
 
-func envDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
@@ -45,17 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	varLocsPath := envDefault("VARLOCS_FILE", "configs/varlocs.txt")
-	validVarLocs, err := handlers.LoadVarLocs(varLocsPath)
-	if err != nil {
-		slog.Error("failed to load varlocs allow-list", "path", varLocsPath, "error", err)
-		os.Exit(1)
-	}
-
-	jobsHandler := &handlers.JobsHandler{
-		Dispatch: client,
-		VarLocs:  validVarLocs,
-	}
+	jobsHandler := &handlers.JobsHandler{Dispatch: client}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/jobs", jobsHandler.Create)
