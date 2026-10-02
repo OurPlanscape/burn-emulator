@@ -2,12 +2,12 @@ import json
 import shutil
 from typing import Any
 
-import pandas as pd
 import yaml
 from omegaconf import DictConfig, OmegaConf
 
 from burn_emulator import provenance
-from burn_emulator.constants import BUNDLE_DIR, CONFIG_DIR, WIND_DIRECTIONS, Path
+from burn_emulator.config import wind_range
+from burn_emulator.constants import BUNDLE_DIR, CONFIG_DIR, Path
 from burn_emulator.utils import resolve_model_checkpoint
 
 # dataset.init_args keys the runner / deployment fills in - never bundle them.
@@ -28,7 +28,7 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
 
     model_config = OmegaConf.load(CONFIG_DIR / architecture / "model.yaml")
     configs = OmegaConf.merge(model_config, configs)
-    OmegaConf.update(configs, "dataset.init_args.wind_range", _wind_range(varloc))
+    OmegaConf.update(configs, "dataset.init_args.wind_range", wind_range(varloc))
     config = OmegaConf.to_container(configs, resolve=True)
 
     model_name = config["model_name"]
@@ -80,16 +80,6 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
     for p in sorted(dst.rglob("*")):
         if p.is_file():
             print(f"  {p.relative_to(dst)}")
-
-
-def _wind_range(varloc: str) -> list[int]:
-    df = pd.read_csv(WIND_DIRECTIONS)
-    key = varloc.replace("_", "").upper()
-    match = df[df["varloc"].str.replace("_", "").str.upper() == key]
-    if match.empty:
-        raise ValueError(f"no wind_range for {varloc!r} in {WIND_DIRECTIONS}")
-    row = match.iloc[0]
-    return [int(row["low_dir"]), int(row["high_dir"])]
 
 
 def _resolve_stats(dataset: dict, experiment_dir: Path) -> Path:

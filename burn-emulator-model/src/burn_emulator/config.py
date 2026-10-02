@@ -7,10 +7,11 @@ from datetime import datetime
 from typing import Any
 
 import geopandas as gpd
+import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from shapely.geometry.base import BaseGeometry
 
-from burn_emulator.constants import OUTDIR, TARGET_CRS, Path
+from burn_emulator.constants import OUTDIR, TARGET_CRS, WIND_DIRECTIONS, Path
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
 # bare ${name} interpolations that resolve nowhere fall back to the environment,
@@ -147,6 +148,19 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
         raise ValueError("treatment_buff requires treatment_area")
 
     return configs
+
+
+def wind_range(varloc: str) -> list[int]:
+    # upwind direction range (degrees clockwise from North) for a varloc; WS507 == WS_507
+    df = pd.read_csv(WIND_DIRECTIONS)
+    key = varloc.replace("_", "").upper()
+    match = df[df["varloc"].str.replace("_", "").str.upper() == key]
+    if match.empty:
+        raise ValueError(f"no wind_range for {varloc!r} in {WIND_DIRECTIONS}")
+    if len(match) > 1:
+        raise ValueError(f"{len(match)} wind_range rows for {varloc!r} in {WIND_DIRECTIONS}")
+    row = match.iloc[0]
+    return [int(row["low_dir"]), int(row["high_dir"])]
 
 
 def dynamic_import(loader: dict, kwargs: dict | None = None) -> Any:
