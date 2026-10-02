@@ -9,31 +9,30 @@
 #SBATCH --ntasks=1
 #SBATCH --exclusive
 #SBATCH --mem=0
-# submit from the repo root: sbatch burn-emulator-model/slurm/ignitions.slurm
-# optional: sbatch --export=ALL,VARLOC=<varloc>,NUM_IGNITIONS=<n>,OVERWRITE=1,INPUTS_VERSION=<YYYYMMDD>,IGNITIONS_VERSION=<YYYYMMDD> ...
-# (the versions default to current.yaml; make reads them from the environment)
+# generates training data for one varloc:
+# sbatch --export=ALL,VARLOC=<varloc>[,DATA_VERSION=<inputs>_<ignitions>,NUM_IGNITIONS=<n>,OVERWRITE=1] burn-emulator-model/slurm/ignitions.slurm
+# --job-name and the exports are meant to be set via submit_ignitions_all.sh; DATA_VERSION defaults to current.yaml
 # ray.init() claims every visible cpu, hence --exclusive on the cpu-only node
 
 set -euo pipefail
 
 echo "Job started on $(hostname) at $(date)"
-echo "Job ID: $SLURM_JOB_ID, cpus: $SLURM_CPUS_ON_NODE"
+echo "Job ID: $SLURM_JOB_ID, varloc: ${VARLOC:-}, cpus: $SLURM_CPUS_ON_NODE"
 
 set +u
 source "$HOME/.bashrc"
+source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 set -u
+cd burn-emulator-model
 
-# sbatch --export=ALL carries the submitting make's MAKEFLAGS/MAKELEVEL into the job
-unset MAKEFLAGS MAKELEVEL MFLAGS
+[ -n "${VARLOC:-}" ] || { echo "error: pass VARLOC via sbatch --export=ALL,VARLOC=<varloc>" >&2; exit 2; }
+DATA_VERSION=${DATA_VERSION:-$(scripts/data_version.sh)}
 
-MAKE_ARGS=()
-[ -n "${NUM_IGNITIONS:-}" ] && MAKE_ARGS+=(NUM_IGNITIONS="$NUM_IGNITIONS")
-[ -n "${OVERWRITE:-}" ] && MAKE_ARGS+=(OVERWRITE=1)
+ARGS=(-m ignite -vl "$VARLOC" -dv "$DATA_VERSION")
+[ -n "${NUM_IGNITIONS:-}" ] && ARGS+=(-ni "$NUM_IGNITIONS")
+[ -n "${OVERWRITE:-}" ] && ARGS+=(-ow)
 
-if [ -n "${VARLOC:-}" ]; then
-    make training-data VARLOC="$VARLOC" ${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"}
-else
-    make training-data-all ${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"}
-fi
+echo "[ignite] $VARLOC -> data/training_data/$VARLOC/$DATA_VERSION"
+burn_emulator "${ARGS[@]}"
 
 echo "Job finished at $(date)"

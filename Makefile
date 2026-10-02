@@ -148,9 +148,9 @@ smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND
 	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
 	    $(if $(PT),-pt)
 
-# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 submits slurm/ignitions.slurm
-# (exclusive on dragon03) which runs the same target on the node; $(1) is the varloc, empty for -all
-ignitions_sbatch = mkdir -p "$(MODEL_DIR)/data/logs" && sbatch --export=ALL,VARLOC=$(1),NUM_IGNITIONS=$(NUM_IGNITIONS),OVERWRITE=$(OVERWRITE),INPUTS_VERSION=$(INPUTS_VERSION),IGNITIONS_VERSION=$(IGNITIONS_VERSION) "$(MODEL_DIR)/slurm/ignitions.slurm"
+# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 runs submit_ignitions_all.sh,
+# one slurm/ignitions.slurm job (exclusive on dragon03) per varloc; $(1) is the varloc, empty for -all
+ignitions_sbatch = $(MODEL_DIR)/slurm/submit_ignitions_all.sh $(if $(1),-v $(1)) $(if $(NUM_IGNITIONS),-n $(NUM_IGNITIONS)) $(if $(OVERWRITE),-o) $(if $(INPUTS_VERSION),-i $(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),-g $(IGNITIONS_VERSION))
 
 training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
@@ -168,7 +168,7 @@ training-data-all: ## [metal|slurm] generate ignitions for every varloc in the v
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
-	mapfile -t varlocs < <(python -c "import geopandas as gpd; from burn_emulator.constants import VARLOCS_GPKG; print(*sorted(gpd.read_file(VARLOCS_GPKG, ignore_geometry=True)['varloc'].unique()), sep='\n')")
+	mapfile -t varlocs < <(scripts/gpkg_varlocs.sh)
 	echo "$${#varlocs[@]} varlocs in gpkg"
 	for varloc in "$${varlocs[@]}"; do
 	    if [ -z "$(OVERWRITE)" ] && [ -f "data/training_data/$$varloc/$$dv/legalmax/outputs_table.csv" ]; then
