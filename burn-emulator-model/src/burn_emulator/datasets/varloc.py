@@ -188,7 +188,7 @@ def _load_topos(topo_path: Path, window_bounds: tuple | None) -> dict:
 
     missing = torch.zeros_like(aspect, dtype=torch.bool)
     missing = missing | missing_aspect | missing_slope
-    aspect_rad = torch.deg2rad(aspect * (360.0 / 256.0))
+    aspect_rad = torch.deg2rad(aspect)
     slope[missing] = torch.nan
 
     # sin/cos are already bounded and not standardized, so the sentinel goes in directly;
@@ -581,8 +581,9 @@ class VarLoc(Dataset):
             inbounds = (rows >= 0) & (rows < h) & (cols >= 0) & (cols < w)
             r, c = np.clip(rows, 0, h - 1), np.clip(cols, 0, w - 1)
             present = self.masks[fkey][0][r, c].numpy()
-            ros_n_ch = ROS_FL_CLASSES.index("N")
-            nonburn = self.fuels[fkey]["fbfm"][ros_n_ch][r, c].float().numpy() > 0
+            ros = self.fuels[fkey]["fbfm"][: len(ROS_FL_CLASSES), r, c].float()
+            # N class, or a code missing from the fbfm map (e.g. 0; pyretechnics treats as 91)
+            nonburn = ((ros[ROS_FL_CLASSES.index("N")] > 0) | (ros.sum(0) == 0)).numpy()
             burnable &= inbounds & present & ~nonburn
         return burnable
 
