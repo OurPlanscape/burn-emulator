@@ -23,14 +23,17 @@ set +u
 source "$HOME/.bashrc"
 set -u
 
+# sbatch --export=ALL carries the submitting make's MAKEFLAGS/MAKELEVEL into the job
+unset MAKEFLAGS MAKELEVEL MFLAGS
+
 MAKE_ARGS=()
 [ -n "${NUM_IGNITIONS:-}" ] && MAKE_ARGS+=(NUM_IGNITIONS="$NUM_IGNITIONS")
 [ -n "${OVERWRITE:-}" ] && MAKE_ARGS+=(OVERWRITE=1)
 
 if [ -n "${VARLOC:-}" ]; then
-    make training-data VARLOC="$VARLOC" "${MAKE_ARGS[@]}"
+    make training-data VARLOC="$VARLOC" ${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"}
 else
-    make training-data-all "${MAKE_ARGS[@]}"
+    make training-data-all ${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"}
 fi
 
 echo "Job finished at $(date)"

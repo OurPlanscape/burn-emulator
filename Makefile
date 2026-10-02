@@ -148,18 +148,23 @@ smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND
 	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
 	    $(if $(PT),-pt)
 
-# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml
-training-data: ## [metal] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1])
+# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 submits slurm/ignitions.slurm
+# (exclusive on dragon03) which runs the same target on the node; $(1) is the varloc, empty for -all
+ignitions_sbatch = mkdir -p "$(MODEL_DIR)/data/logs" && sbatch --export=ALL,VARLOC=$(1),NUM_IGNITIONS=$(NUM_IGNITIONS),OVERWRITE=$(OVERWRITE),INPUTS_VERSION=$(INPUTS_VERSION),IGNITIONS_VERSION=$(IGNITIONS_VERSION) "$(MODEL_DIR)/slurm/ignitions.slurm"
+
+training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
+	if [ -n "$(SLURM)" ]; then $(call ignitions_sbatch,$(VARLOC)); exit 0; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
 	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
 
 # skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1
-training-data-all: ## [metal] generate ignitions for every varloc in the varlocs gpkg ([INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1])
+training-data-all: ## [metal|slurm] generate ignitions for every varloc in the varlocs gpkg ([INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
+	if [ -n "$(SLURM)" ]; then $(call ignitions_sbatch,); exit 0; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
