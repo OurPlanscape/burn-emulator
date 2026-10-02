@@ -1,5 +1,7 @@
 architecture: circlepp
-data_version: 28Aug2026 # this is the training data version which gets parsed later
+inputs_version: 20260824 # west fuels date, YYYYMMDD: data/training_data/West_Fuels_DN_<inputs_version>/
+ignitions_version: 20260828 # pt run date, YYYYMMDD
+data_version: ${inputs_version}_${ignitions_version} # names data/training_data/<varloc>/<data_version>/ and the model
 
 activation:
     class_path: torch.nn.Sigmoid

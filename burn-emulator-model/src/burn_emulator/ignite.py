@@ -15,7 +15,7 @@ from pyretechnics.space_time_cube import SpaceTimeCube
 from rasterio.features import geometry_mask
 from rasterio.windows import from_bounds
 
-from burn_emulator.config import wind_range
+from burn_emulator.config import check_data_version, inputs_version, wind_range
 from burn_emulator.constants import (
     ASPECT_FILE,
     INPUT_KEYS,
@@ -217,6 +217,12 @@ def ignite(
         upwind_direction_quadrant = wind_range(varloc)
     print(f"{varloc}: upwind directions {upwind_direction_quadrant}")
 
+    data_version = check_data_version(data_version)
+    fuels = inputs_version(data_version)
+    west_fuels_dir = TRAINING_DATA_DIR / f"{WEST_FUELS_DIR_PREFIX}_{fuels}"
+    if not west_fuels_dir.is_dir():
+        raise FileNotFoundError(f"{west_fuels_dir} not found for data_version {data_version}")
+
     training_data_dir = TRAINING_DATA_DIR / varloc / data_version
     if training_data_dir.exists():
         if not overwrite:
@@ -225,14 +231,6 @@ def ignite(
 
     geom = _load_varloc_geom(varloc)
     bounds = geom.bounds
-
-    west_fuels_dir_matches = list(TRAINING_DATA_DIR.glob(f"{WEST_FUELS_DIR_PREFIX}_*"))
-    if len(west_fuels_dir_matches) != 1:
-        raise ValueError(
-            f"expected exactly one {WEST_FUELS_DIR_PREFIX!r} directory in {TRAINING_DATA_DIR}, "
-            f"found {west_fuels_dir_matches}"
-        )
-    west_fuels_dir = west_fuels_dir_matches[0]
 
     fuels_files = {}
     for treatment in TREATMENTS:
@@ -247,7 +245,7 @@ def ignite(
             src_path = matches[0]
             arr, profile = _read_masked_window(src_path, geom, bounds)
 
-            dst_path = training_data_dir / f"{treatment}_FF" / f"{data_version}_{r}.tif"
+            dst_path = training_data_dir / f"{treatment}_FF" / f"{fuels}_{r}.tif"
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             with rio.open(dst_path, "w", **profile) as dst:
                 dst.write(arr, 1)

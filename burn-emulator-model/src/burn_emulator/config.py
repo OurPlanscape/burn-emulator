@@ -11,7 +11,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from shapely.geometry.base import BaseGeometry
 
-from burn_emulator.constants import OUTDIR, TARGET_CRS, WIND_DIRECTIONS, Path
+from burn_emulator.constants import CONFIG_DIR, OUTDIR, TARGET_CRS, WIND_DIRECTIONS, Path
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
 # bare ${name} interpolations that resolve nowhere fall back to the environment,
@@ -47,17 +47,29 @@ def load_configs(config_dir: str | None, config_paths: list[str] | None) -> Dict
     return merged
 
 
-def _iso_data_version(value: str) -> str:
-    value = value.strip()
-    for fmt in ("%d%b%Y", "%Y%m%d", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(value, fmt).strftime("%Y%m%d")
-        except ValueError:
-            continue
-    raise ValueError(
-        f"data_version {value!r} is not a recognised date "
-        "(expected DDMonYYYY like 28Aug2026, YYYYMMDD, or YYYY-MM-DD)"
-    )
+# <inputs_version>_<ignitions_version>, both YYYYMMDD (current.yaml)
+def check_data_version(value: str) -> str:
+    value = str(value).strip()
+    try:
+        if not re.fullmatch(r"\d{8}_\d{8}", value):
+            raise ValueError
+        for part in value.split("_"):
+            datetime.strptime(part, "%Y%m%d")
+    except ValueError:
+        raise ValueError(
+            f"data_version {value!r} must be <inputs_version>_<ignitions_version>, "
+            "both YYYYMMDD, like 20260824_20260828"
+        ) from None
+    return value
+
+
+def inputs_version(data_version: str) -> str:
+    return check_data_version(data_version).split("_")[0]
+
+
+def current_data_version() -> str:
+    current = OmegaConf.load(CONFIG_DIR / "varlocs" / "current.yaml")
+    return check_data_version(OmegaConf.select(current, "data_version"))
 
 
 def resolve_model_name(
@@ -83,7 +95,7 @@ def resolve_model_name(
 
     parts["varloc"] = str(parts["varloc"]).upper()
     OmegaConf.update(configs, "varloc", parts["varloc"], merge=True)
-    parts["data_version"] = _iso_data_version(str(parts["data_version"]))
+    parts["data_version"] = check_data_version(parts["data_version"])
     model_name = "{varloc}_{architecture}_{data_version}".format(**parts)
     OmegaConf.update(configs, "model_name", model_name, merge=True)
     OmegaConf.update(configs, "experiment_dir", str(OUTDIR / model_name), merge=True)

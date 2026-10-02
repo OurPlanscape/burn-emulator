@@ -24,7 +24,9 @@ burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
 
 Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
-To train every varloc in a batch, run `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm` on the cluster). It trains every varloc with complete training data (`scripts/trainable_varlocs.sh`: `data/training_data/<varloc>/<data_version>/legalmax/outputs_table.csv` exists) and adds each to `configs/varlocs/varlocs.txt` (`scripts/mark_trained.sh`) only once its training succeeds, so `varlocs.txt` lists trained varlocs only. The active architecture and data version come from `configs/varlocs/current.yaml`.
+To train every varloc in a batch, run `scripts/train_all.sh` (or `slurm/submit_train_all.sh` on the cluster, which submits one `slurm/train.slurm` job per varloc). It trains every varloc with complete training data (`scripts/trainable_varlocs.sh`: `data/training_data/<varloc>/<data_version>/legalmax/outputs_table.csv` exists) and adds each to `configs/varlocs/varlocs.txt` (`scripts/mark_trained.sh`) only once its training succeeds, so `varlocs.txt` lists trained varlocs only. The active architecture and data version come from `configs/varlocs/current.yaml`; `inputs_version` (west fuels date) and `ignitions_version` (PT run date) are both YYYYMMDD and join into `data_version` = `<inputs_version>_<ignitions_version>` (`scripts/data_version.sh` for shell), which names `data/training_data/<varloc>/<data_version>/` and the model; `-m ignite` clips from `data/training_data/West_Fuels_DN_<inputs_version>/`.
+
+To train, bundle and publish in one go on the cluster, run `slurm/submit_train_all.sh -p` from the repo root (`make train-publish-all`), or `-p -v <varloc>` for a single varloc (`make train-publish VARLOC=<varloc>`). Each job (one per varloc, `slurm/train.slurm`) bundles and publishes its varloc only after training succeeds, then adds it to `varlocs.txt` and runs `make publish-varlocs` (rebuild the gpkg, upload txt + gpkg to the `current` data_version) while holding the `varlocs.txt.lock` flock, so jobs finishing together each publish the full list; `BURN_EMULATOR_MODELS_URI` and `BURN_EMULATOR_INPUTS_URI` must be exported.
 
 ## Evaluate
 
@@ -99,7 +101,7 @@ burn_paths/{ignition_number}/fire_type.tif # only for training
 | `wind` | ignition wind direction (degrees) |
 | `mask` | burnable / circular-window mask |
 
-Inference samples additionally carry `pdiffs` / `bounds` / `indxes` for stamping predictions back onto the full raster.
+Inference samples additionally carry `pdiffs` / `bounds` / `indxes` for stamping inference back onto the full raster.
 
 If a new fuel product ships different layers (renamed, added/dropped, or different semantics/resolution), add a new `Dataset` rather than messing with `VarLoc`. Keep the same output contract [`x`, `y`, `wind`, `mask`] so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
 
@@ -116,14 +118,14 @@ scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 
 ```bash
 scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> [inputs_uri]
-# <data_version>  DDMonYYYY (28Aug2026) or YYYYMMDD, stored as YYYYMMDD
-# <fuels_dir>     both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_24Aug2026
+# <data_version>  the west fuels date, YYYYMMDD (make publish-inputs defaults it to current.yaml's inputs_version)
+# <fuels_dir>     both baseline_*.tif and legalmax_*.tif, e.g. data/training_data/West_Fuels_DN_20260824
 # <topo_dir>      all topo tifs, uploaded as-is
 # <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg from `make valid-varlocs`
 # <varlocs_txt>   the api's varloc allow-list, e.g. configs/varlocs/varlocs.txt
 ```
 
-Fuels, topo and varlocs are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` splits `<fuels_dir>` by filename into `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the sixth argument; the script aborts if neither is set.
+Fuels, topo and varlocs are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` splits `<fuels_dir>` by filename into `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. To change only the varlocs layer (e.g. after training a new varloc), `scripts/publish_varlocs.sh <varlocs_txt> <varlocs_gpkg> [data_version] [inputs_uri]` (`make publish-varlocs`) overwrites `varlocs/varlocs.txt` and the gpkg under an already published `data_version`, defaulting to `current`, and leaves `current` alone. It refuses a gpkg whose name differs from the published one. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the sixth argument; the script aborts if neither is set.
 
 Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outputs already cached under it; publish changed inputs under a new `data_version`.
 

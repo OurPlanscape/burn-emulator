@@ -22,15 +22,16 @@ Run from the repo root.
 | --- | --- |
 | `build-api` / `push-api` | build/push the api image, tagged `<BURN_EMULATOR_ARTIFACT_STORE>/burn-emulator-api:<git-sha>[-dirty]` |
 | `build-runner` / `push-runner` | same, for the runner image |
-| `bundle-model VARLOC=<varloc>` | wraps `burn_emulator -m bundle` for one varloc (in `burn-emulator-model/`) |
+| `model-bundle VARLOC=<varloc>` | wraps `burn_emulator -m bundle` for one varloc (in `burn-emulator-model/`) |
 | `publish-model VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | uploads a bundle and repoints `current`; refuses to overwrite a published version with a different bundle unless `FORCE=1` |
-| `bundle-model-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
-| `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir> [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>]` | uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) and the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) under one `data_version`, then repoints `current` |
-| `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh`: trains every varloc with complete training data for the current `data_version` and adds each to `configs/varlocs/varlocs.txt` only once its training succeeds |
+| `model-bundle-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
+| `publish-inputs [DATA_VERSION=<YYYYMMDD>] [FUELS_DIR=<dir>] [TOPO_DIR=<dir>] [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>]` | `DATA_VERSION` defaults to `inputs_version` in `configs/varlocs/current.yaml`, `FUELS_DIR` to `data/training_data/West_Fuels_DN_<DATA_VERSION>`, `TOPO_DIR` to `data/training_data/topo/LF` (what `-m ignite` clips from); uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) and the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) under one `data_version`, then repoints `current` |
+| `publish-varlocs [VARLOCS_TXT=<txt>] [VARLOCS_GPKG=<gpkg>] [DATA_VERSION=<version>]` | runs `valid-varlocs` to rebuild the gpkg from the txt, then replaces only the `varlocs/` layer (txt default: `configs/varlocs/varlocs.txt`, gpkg default: `valid-varlocs` output) under an already published `data_version` (default: the one `current` points at); skips unchanged files, prints the varlocs added/removed, never repoints `current`; the api picks up the txt within 60s |
+| `train-all [SLURM=1 [NODES="<n1> <n2>"]]` | wraps `burn-emulator-model/scripts/train_all.sh` (with `SLURM=1`, `burn-emulator-model/slurm/submit_train_all.sh` instead, one `train.slurm` job per varloc): trains every varloc with complete training data for the current `data_version` and adds each to `configs/varlocs/varlocs.txt` only once its training succeeds |
 | `inference VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
 | `inference-all OUTPUTS_ROOT=<dir>` | `inference` looped over every varloc, using `OUTPUTS_ROOT/<varloc>` as each varloc's root |
-| `ignitions VARLOC=<varloc> [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | wraps `burn_emulator -m ignite` to generate training data, using `data_version` from `configs/varlocs/current.yaml`; `NUM_IGNITIONS` defaults to 5000 in `ignite.py`; refuses to run if `data/training_data/<varloc>/<data_version>` exists unless `OVERWRITE=1`, which deletes it first |
-| `ignitions-all [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | `ignitions` looped over every varloc in the varlocs gpkg, skipping ones whose training data for the current `data_version` is complete unless `OVERWRITE=1`, stopping at the first failure |
+| `training-data VARLOC=<varloc> [INPUTS_VERSION=<YYYYMMDD>] [IGNITIONS_VERSION=<YYYYMMDD>] [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | wraps `burn_emulator -m ignite` to generate training data under `data_version` = `<INPUTS_VERSION>_<IGNITIONS_VERSION>`, each defaulting to `configs/varlocs/current.yaml`; `NUM_IGNITIONS` defaults to 5000 in `ignite.py`; refuses to run if `data/training_data/<varloc>/<data_version>` exists unless `OVERWRITE=1`, which deletes it first |
+| `training-data-all [INPUTS_VERSION=<YYYYMMDD>] [IGNITIONS_VERSION=<YYYYMMDD>] [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | `training-data` looped over every varloc in the varlocs gpkg, skipping ones whose training data for the current `data_version` is complete unless `OVERWRITE=1`, stopping at the first failure |
 | `shell` | activates the model repo's venv and cds into it |
 
 `build-*`/`push-*`/`publish-*` need `BURN_EMULATOR_ARTIFACT_STORE` / `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI` exported by the caller.
@@ -42,7 +43,7 @@ gs://<bucket_name>/<models>/<varloc>/current       # text file: the active model
 gs://<bucket_name>/<models>/<varloc>/<model_version>/    # model.pt, stats.yaml, config.yaml
 ```
 
-`<model_version>` = `<model.pt mtime>-<git sha>`. `bundle-model` builds a bundle, `publish-model` uploads it and repoints `current`.
+`<model_version>` = `<model.pt mtime>-<git sha>`. `model-bundle` builds a bundle, `publish-model` uploads it and repoints `current`.
 
 ## Request flow
 

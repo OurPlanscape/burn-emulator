@@ -17,7 +17,7 @@ Go service. Validates a request, resolves the model and data versions, checks th
 {
   "varloc": "WC711",
   "treatment_area": "<geojson>",
-  "treatment_area_crs": "EPSG:4326",
+  "treatment_area_crs": "EPSG:5070", # everything gets reprojected to this anyway
   "job_name": "my-run-01",
   "ignition_density": 20
 }
@@ -27,11 +27,11 @@ Go service. Validates a request, resolves the model and data versions, checks th
 
 ```json
 {
-  "job_id": "WC711/20260829T143000Z-a1b2c3d/20260828/1a2b3c4d…",
+  "job_id": "WC711/20260829T143000Z-a1b2c3d/20260824/1a2b3c4d…",
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
   "model_version": "20260829T143000Z-a1b2c3d", # this is from publish-model.sh in the model repo
-  "data_version": "20260828", # fuels + topo + varlocs, from publish-inputs in the model repo
+  "data_version": "20260824", # west fuels date (fuels + topo + varlocs), from publish-inputs in the model repo
   "status": "pending",
   "varloc": "WC711",
   "cached": false,

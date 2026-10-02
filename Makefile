@@ -22,61 +22,59 @@ RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all shell
+.PHONY: help build-api push-api build-runner push-runner valid-varlocs model-bundle model-bundle-all publish-model publish-model-all publish-inputs publish-varlocs train-all train-publish train-publish-all inference inference-all smoke training-data training-data-all shell
 
-help: ## show this help
+help: ## show this help; [metal] runs here, [slurm] submits to the cluster, [metal|slurm] picks via SLURM=1
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build-api: ## build the API image
+build-api: ## [metal] build the API image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
 	case "$(BURN_EMULATOR_ENV)" in prod|production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) .
 
-push-api: build-api ## build and push the API image
+push-api: build-api ## [metal] build and push the API image
 	docker push $(API_IMAGE)
 
-build-runner: ## build the runner image
+build-runner: ## [metal] build the runner image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
 	case "$(BURN_EMULATOR_ENV)" in prod|production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(RUNNER_DIR)/Dockerfile -t $(RUNNER_IMAGE) .
 
-push-runner: build-runner ## build and push the runner image
+push-runner: build-runner ## [metal] build and push the runner image
 	docker push $(RUNNER_IMAGE)
 
-valid-varlocs: ## filter varlocs gpkg to the valid set
+valid-varlocs: ## [metal] filter varlocs gpkg to the valid set
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
-	python scripts/filter_varlocs_gpkg.py
+	python scripts/filter_varlocs_gpkg.py -v "$(abspath $(VARLOCS_TXT))" -o "$(abspath $(VARLOCS_GPKG))"
 
-bundle-model: ## bundle one model (VARLOC=)
+model-bundle: ## [metal] bundle one model (VARLOC=)
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	burn_emulator -m bundle -c configs/varlocs/current.yaml -vl $(VARLOC)
 
-bundle-model-all: valid-varlocs ## bundle every varloc in varlocs.txt
+model-bundle-all: valid-varlocs ## [metal] bundle every varloc in varlocs.txt
 	set -e
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
 	for varloc in "$${varlocs[@]}"; do
-	    $(MAKE) bundle-model VARLOC="$$varloc"
+	    $(MAKE) model-bundle VARLOC="$$varloc"
 	done
 
-publish-model: ## publish one model bundle (VARLOC= [BUNDLE_DIR=])
+publish-model: ## [metal] publish one model bundle (VARLOC= [BUNDLE_DIR=])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	if [ -z "$(BURN_EMULATOR_MODELS_URI)" ]; then echo "error: BURN_EMULATOR_MODELS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	if [ -n "$(BUNDLE_DIR)" ]; then
 	    bundle_dir="$(BUNDLE_DIR)"
 	else
-	    current_yaml="$(MODEL_DIR)/configs/varlocs/current.yaml"
-	    arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' "$$current_yaml")
-	    dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' "$$current_yaml")
-	    dv_iso=$$([[ "$$dv" =~ ^[0-9]{8}$$ ]] && echo "$$dv" || date -u -d "$$dv" +%Y%m%d)
+	    arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' "$(MODEL_DIR)/configs/varlocs/current.yaml")
+	    dv=$$($(MODEL_DIR)/scripts/data_version.sh)
 	    varloc="$(VARLOC)"
-	    bundle_dir="$(MODEL_DIR)/data/bundles/$${varloc^^}_$${arch}_$${dv_iso}"
+	    bundle_dir="$(MODEL_DIR)/data/bundles/$${varloc^^}_$${arch}_$${dv}"
 	fi
 	$(MODEL_DIR)/scripts/publish_model.sh $(VARLOC) "$$bundle_dir" $(BURN_EMULATOR_MODELS_URI)
 
-publish-model-all: ## publish every varloc in varlocs.txt
+publish-model-all: ## [metal] publish every varloc in varlocs.txt
 	set -e
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
 	for varloc in "$${varlocs[@]}"; do
@@ -84,28 +82,47 @@ publish-model-all: ## publish every varloc in varlocs.txt
 	done
 
 # FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs,
-# VARLOCS_GPKG the valid-varlocs output and VARLOCS_TXT the api allow-list; all land under one DATA_VERSION (DDMonYYYY or YYYYMMDD)
+# VARLOCS_GPKG the valid-varlocs output and VARLOCS_TXT the api allow-list; all land under one DATA_VERSION
+# (YYYYMMDD); defaults follow current.yaml's inputs_version and the dirs -m ignite clips from
 VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs_5070.gpkg
 VARLOCS_TXT  ?= $(MODEL_DIR)/configs/varlocs/varlocs.txt
 
-publish-inputs: ## publish input rasters + varlocs (DATA_VERSION= FUELS_DIR= TOPO_DIR= [VARLOCS_GPKG= VARLOCS_TXT=])
+publish-inputs: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VARLOCS_GPKG= VARLOCS_TXT=], default: current.yaml inputs_version)
+	set -e
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
-	if [ -z "$(DATA_VERSION)" ] || [ -z "$(FUELS_DIR)" ] || [ -z "$(TOPO_DIR)" ]; then
-	    echo "error: pass DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir>" >&2; exit 2
+	data_version="$(DATA_VERSION)"
+	[ -n "$$data_version" ] || data_version=$$($(MODEL_DIR)/scripts/data_version.sh inputs_version)
+	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/West_Fuels_DN_$$data_version)"
+	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo/LF)"
+	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
+
+publish-varlocs: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs txt + gpkg of a published data_version ([VARLOCS_TXT=] [VARLOCS_GPKG=] [DATA_VERSION=], default: current)
+	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
+	$(MODEL_DIR)/scripts/publish_varlocs.sh "$(VARLOCS_TXT)" "$(VARLOCS_GPKG)" "$(DATA_VERSION)" "$(BURN_EMULATOR_INPUTS_URI)"
+
+train-all: ## [metal|slurm] train every varloc with complete training data; adds each to varlocs.txt once trained ([SLURM=1 [NODES="n1 n2"]])
+	if [ -n "$(SLURM)" ]; then
+	    $(MODEL_DIR)/slurm/submit_train_all.sh $(NODES)
+	else
+	    $(MODEL_DIR)/scripts/train_all.sh
 	fi
-	$(MODEL_DIR)/scripts/publish_inputs.sh $(DATA_VERSION) $(FUELS_DIR) $(TOPO_DIR) $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
-train-all: ## train every varloc with complete training data; adds each to varlocs.txt once trained
-	$(MODEL_DIR)/scripts/train_varlocs.sh
+# slurm: trains on the cluster, then bundles + publishes each varloc whose training succeeds
+train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES="n1 n2"])
+	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
+	$(MODEL_DIR)/slurm/submit_train_all.sh -p -v $(VARLOC) $(NODES)
 
-inference: ## run inference for one varloc (VARLOC= OUTPUTS_ROOT=)
+train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([NODES="n1 n2"])
+	$(MODEL_DIR)/slurm/submit_train_all.sh -p $(NODES)
+
+inference: ## [metal] run inference for one varloc (VARLOC= OUTPUTS_ROOT=)
 	if [ -z "$(VARLOC)" ] || [ -z "$(OUTPUTS_ROOT)" ]; then
 	    echo "error: pass VARLOC=<varloc> OUTPUTS_ROOT=<dir>" >&2; exit 2
 	fi
 	$(MODEL_DIR)/scripts/ignite_inference.sh $(VARLOC) $(OUTPUTS_ROOT)
 
 # expects one scenario root per varloc at OUTPUTS_ROOT/<varloc>
-inference-all: ## run inference for every varloc (OUTPUTS_ROOT=)
+inference-all: ## [metal] run inference for every varloc (OUTPUTS_ROOT=)
 	set -e
 	if [ -z "$(OUTPUTS_ROOT)" ]; then echo "error: pass OUTPUTS_ROOT=<dir>" >&2; exit 2; fi
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
@@ -113,7 +130,7 @@ inference-all: ## run inference for every varloc (OUTPUTS_ROOT=)
 	    $(MAKE) inference VARLOC="$$varloc" OUTPUTS_ROOT="$(OUTPUTS_ROOT)/$$varloc"
 	done
 
-smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [OUT_PATH=] [PT=1])
+smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [OUT_PATH=] [PT=1])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
@@ -131,20 +148,21 @@ smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="
 	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
 	    $(if $(PT),-pt)
 
-ignitions: ## generate ignitions for one varloc (VARLOC= [NUM_IGNITIONS=] [OVERWRITE=1])
+# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml
+training-data: ## [metal] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1])
 	set -e
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
-	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
+	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
 	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
 
 # skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1
-ignitions-all: ## generate ignitions for every varloc in the varlocs gpkg ([NUM_IGNITIONS=] [OVERWRITE=1])
+training-data-all: ## [metal] generate ignitions for every varloc in the varlocs gpkg ([INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1])
 	set -e
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
-	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
+	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
 	mapfile -t varlocs < <(python -c "import geopandas as gpd; from burn_emulator.constants import VARLOCS_GPKG; print(*sorted(gpd.read_file(VARLOCS_GPKG, ignore_geometry=True)['varloc'].unique()), sep='\n')")
 	echo "$${#varlocs[@]} varlocs in gpkg"
 	for varloc in "$${varlocs[@]}"; do
@@ -152,10 +170,10 @@ ignitions-all: ## generate ignitions for every varloc in the varlocs gpkg ([NUM_
 	        echo "skipping $$varloc: $$dv already complete"
 	        continue
 	    fi
-	    $(MAKE) -C "$(CURDIR)" ignitions VARLOC="$$varloc" OVERWRITE=1 $(if $(NUM_IGNITIONS),NUM_IGNITIONS=$(NUM_IGNITIONS))
+	    $(MAKE) -C "$(CURDIR)" training-data VARLOC="$$varloc" OVERWRITE=1 $(if $(NUM_IGNITIONS),NUM_IGNITIONS=$(NUM_IGNITIONS)) $(if $(INPUTS_VERSION),INPUTS_VERSION=$(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),IGNITIONS_VERSION=$(IGNITIONS_VERSION))
 	done
 
-shell: ## sync the model venv and open a shell with it activated
+shell: ## [metal] sync the model venv and open a shell with it activated
 	set -e
 	UV_PROJECT_ENVIRONMENT="$(VENV_NAME)" uv sync --project "$(MODEL_DIR)" --locked --inexact --extra data
 	exec bash --rcfile <(echo 'source ~/.bashrc; source "$(CURDIR)/$(VENV)/bin/activate"')

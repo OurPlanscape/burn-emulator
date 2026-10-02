@@ -22,9 +22,9 @@ VARLOC_DIR="$CONFIG_DIR/varlocs"
 CURRENT_FILE="$VARLOC_DIR/current.yaml"
 EVAL_TEMPLATE="$VARLOC_DIR/templates/eval_data.yaml"
 
-current_key () { grep -oP "^$1:[[:space:]]*\K\S+" "$CURRENT_FILE"; }
+current_key () { grep -oP "^$1:[[:space:]]*\"?\K[^\"[:space:]]+" "$CURRENT_FILE"; }
 ARCHITECTURE=$(current_key architecture)
-DATA_VERSION=$(current_key data_version)
+DATA_VERSION=$(scripts/data_version.sh)
 
 DATA_ROOT="data/training_data/${VARLOC}/${DATA_VERSION}"
 MODEL_YAML="$CONFIG_DIR/${ARCHITECTURE}/model.yaml"

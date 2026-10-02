@@ -1,7 +1,12 @@
 import argparse
 
 from burn_emulator.bundle import bundle
-from burn_emulator.config import apply_overrides, load_configs, resolve_model_name
+from burn_emulator.config import (
+    apply_overrides,
+    current_data_version,
+    load_configs,
+    resolve_model_name,
+)
 from burn_emulator.constants import METHODS
 from burn_emulator.evaluate import evaluate
 from burn_emulator.run import run
@@ -78,7 +83,7 @@ def main():
 
             ignite_kwargs = {
                 "varloc": args.varloc,
-                "data_version": args.data_version,
+                "data_version": args.data_version or current_data_version(),
                 "collate_ignitions": args.collate_ignitions,
                 "overwrite": args.overwrite,
             }

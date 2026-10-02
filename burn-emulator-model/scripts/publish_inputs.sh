@@ -18,13 +18,11 @@ if [[ -z "$inputs_uri" ]]; then
     exit 2
 fi
 
-# data_version as DDMonYYYY (28Aug2026) or YYYYMMDD, normalised to YYYYMMDD
+# data_version is the west fuels date, YYYYMMDD
 if [[ "$data_version_raw" =~ ^[0-9]{8}$ ]]; then
     data_version="$data_version_raw"
-elif [[ "$data_version_raw" =~ ^([0-9]{1,2})([A-Za-z]{3})([0-9]{4})$ ]]; then
-    data_version="$(date -u -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}" +%Y%m%d)"
 else
-    echo "error: data_version '$data_version_raw' must be DDMonYYYY or YYYYMMDD" >&2
+    echo "error: data_version '$data_version_raw' must be YYYYMMDD" >&2
     exit 1
 fi
 
