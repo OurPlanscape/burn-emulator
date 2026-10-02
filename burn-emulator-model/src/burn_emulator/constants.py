@@ -48,7 +48,7 @@ OUTDIR = Path("data/outputs")
 BUNDLE_DIR = Path("data/bundles")
 CONFIG_DIR = Path("configs")
 TRAINING_DATA_DIR = Path("data/training_data")
-WIND_DIRECTIONS = TRAINING_DATA_DIR / "wind_directions.csv"
+WIND_DIRECTIONS = CONFIG_DIR / "wind_directions.csv"
 
 # training-data generation (src/burn_emulator/ignite.py)
 WEST_FUELS_DIR_PREFIX = "West_Fuels_DN"

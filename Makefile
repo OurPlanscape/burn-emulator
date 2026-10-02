@@ -121,7 +121,7 @@ smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="
 	wind_range="$(WIND_RANGE)"
 	if [ -z "$$wind_range" ]; then
 	    wind_key=$$(sed -E 's/^([A-Za-z]+)([0-9]+)$$/\U\1_\2/' <<< "$(VARLOC)")
-	    wind_range=$$(awk -F, -v k="$$wind_key" '$$1 == k {print $$2, $$3}' data/training_data/wind_directions.csv)
+	    wind_range=$$(awk -F, -v k="$$wind_key" '$$1 == k {print $$2, $$3}' configs/wind_directions.csv)
 	fi
 	if [ -z "$$wind_range" ]; then echo "error: no wind range for $(VARLOC) in wind_directions.csv - pass WIND_RANGE=\"<lo> <hi>\"" >&2; exit 2; fi
 	burn_emulator -m run -d -vl $(VARLOC) -wr $$wind_range \
