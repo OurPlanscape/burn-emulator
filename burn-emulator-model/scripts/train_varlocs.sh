@@ -11,7 +11,6 @@ cd "$MODEL_DIR"
 
 CONFIG_DIR=configs
 VARLOC_DIR="$CONFIG_DIR/varlocs"
-VARLOCS_FILE="$VARLOC_DIR/varlocs.txt"
 CURRENT_FILE="$VARLOC_DIR/current.yaml"
 TRAIN_TEMPLATE="$VARLOC_DIR/templates/train.yaml"
 
@@ -24,7 +23,8 @@ DATA_VERSION_ISO=$(iso8601_date "$DATA_VERSION") # ISO 8601 for resolve_model_na
 MODEL_YAML="$CONFIG_DIR/$ARCHITECTURE/model.yaml"
 TRAIN_YAML="$CONFIG_DIR/$ARCHITECTURE/train.yaml"
 
-mapfile -t VARLOCS < <(grep -vE '^[[:space:]]*$' "$VARLOCS_FILE")
+# varlocs with complete training data; each is added to varlocs.txt once its training succeeds
+mapfile -t VARLOCS < <(scripts/trainable_varlocs.sh)
 
 echo "architecture=$ARCHITECTURE  data_version=$DATA_VERSION  varlocs=${#VARLOCS[@]}"
 
@@ -38,6 +38,7 @@ run_task () {
         -c "$MODEL_YAML" \
         -c "$TRAIN_YAML" \
         -c "$TRAIN_TEMPLATE"
+    scripts/mark_trained.sh "$VARLOC"
 }
 
 running=0

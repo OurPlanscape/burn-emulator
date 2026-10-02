@@ -11,3 +11,6 @@ wheels/
 # model project scratch
 **/data
 **/logs
+
+# mark_trained.sh lock
+varlocs.txt.lock

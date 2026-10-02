@@ -24,7 +24,7 @@ burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
 
 Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
-To train every varloc in a batch, run `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm` on the cluster). It reads `configs/varlocs/varlocs.txt` ; one varloc name per line, where each name maps to `data/training_data/<varloc>/<data_version>/`. The active architecture and data version come from `configs/varlocs/current.yaml`.
+To train every varloc in a batch, run `scripts/train_varlocs.sh` (or `slurm/train_varlocs.slurm` on the cluster). It trains every varloc with complete training data (`scripts/trainable_varlocs.sh`: `data/training_data/<varloc>/<data_version>/legalmax/outputs_table.csv` exists) and adds each to `configs/varlocs/varlocs.txt` (`scripts/mark_trained.sh`) only once its training succeeds, so `varlocs.txt` lists trained varlocs only. The active architecture and data version come from `configs/varlocs/current.yaml`.
 
 ## Evaluate
 

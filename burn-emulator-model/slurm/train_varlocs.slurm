@@ -20,11 +20,16 @@ cd burn-emulator-model
 
 CONFIG_DIR=configs
 VARLOC_DIR=$CONFIG_DIR/varlocs
-VARLOCS_FILE=$VARLOC_DIR/varlocs.txt
 CURRENT_FILE=$VARLOC_DIR/current.yaml
 TRAIN_TEMPLATE=$VARLOC_DIR/templates/train.yaml
 
-mapfile -t VARLOCS < <(grep -vE '^[[:space:]]*$' "$VARLOCS_FILE")
+# VARLOCS_LIST: the snapshot submit_train_all.sh indexed into, so new training data
+# appearing while jobs are queued can't shift the indices
+if [ -n "${VARLOCS_LIST:-}" ]; then
+    mapfile -t VARLOCS < "$VARLOCS_LIST"
+else
+    mapfile -t VARLOCS < <(scripts/trainable_varlocs.sh)
+fi
 VARLOC=${VARLOCS[$SLURM_ARRAY_TASK_ID]}
 
 current_key () { grep -oP "^$1:[[:space:]]*\K\S+" "$CURRENT_FILE"; }
@@ -75,16 +80,19 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     MONITOR_PID=$!
 fi
 
+status=0
 burn_emulator -m train \
     -a "$ARCHITECTURE" \
     -vl "$VARLOC" \
     -dv "$DATA_VERSION" \
     -c "$CONFIG_DIR/$ARCHITECTURE/model.yaml" \
     -c "$CONFIG_DIR/$ARCHITECTURE/train.yaml" \
-    -c "$TRAIN_TEMPLATE"
+    -c "$TRAIN_TEMPLATE" || status=$?
+[ "$status" -eq 0 ] && scripts/mark_trained.sh "$VARLOC"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null
 fi
 
 echo "Job finished at $(date)"
+exit "$status"

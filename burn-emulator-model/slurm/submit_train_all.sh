@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-r <indices>] [node ...]
-# varlocs.txt indices (default: all; -r takes a slurm-style list, e.g. 0-5,9) are dealt
-# round-robin across the nodes, one array job per node
+# indices into the varlocs with complete training data (default: all; -r takes a
+# slurm-style list, e.g. 0-5,9) are dealt round-robin across the nodes, one array job per node
 
 usage () { echo "usage: $0 [-r <indices, e.g. 0-5,9>] [node ...]" >&2; exit 1; }
 
@@ -19,8 +19,13 @@ shift $((OPTIND - 1))
 NODES=("$@")
 [ ${#NODES[@]} -eq 0 ] && NODES=(dragon02 dragon04 dragon05 dragon06)
 
-VARLOCS_FILE=burn-emulator-model/configs/varlocs/varlocs.txt
-N_VARLOCS=$(grep -cvE '^[[:space:]]*$' "$VARLOCS_FILE")
+# snapshot the list the array indices refer to; tasks read it instead of recomputing
+mkdir -p burn-emulator-model/data/logs
+VARLOCS_LIST=$(realpath burn-emulator-model/data/logs)/train_varlocs_$(date +%Y%m%dT%H%M%S).txt
+(cd burn-emulator-model && scripts/trainable_varlocs.sh) > "$VARLOCS_LIST"
+N_VARLOCS=$(grep -cvE '^[[:space:]]*$' "$VARLOCS_LIST" || true)
+[ "$N_VARLOCS" -gt 0 ] || { echo "no varlocs with complete training data" >&2; exit 1; }
+echo "varlocs snapshot: $VARLOCS_LIST"
 [ -z "$RANGE" ] && RANGE="0-$((N_VARLOCS - 1))"
 
 INDICES=()
@@ -30,7 +35,7 @@ for part in "${PARTS[@]}"; do
     lo=${BASH_REMATCH[1]}
     hi=${BASH_REMATCH[3]:-$lo}
     for ((i = lo; i <= hi; i++)); do
-        [ "$i" -lt "$N_VARLOCS" ] || { echo "index $i out of range (varlocs.txt has $N_VARLOCS)" >&2; exit 1; }
+        [ "$i" -lt "$N_VARLOCS" ] || { echo "index $i out of range ($VARLOCS_LIST has $N_VARLOCS)" >&2; exit 1; }
         INDICES+=("$i")
     done
 done
@@ -69,6 +74,6 @@ for n in "${!NODES[@]}"; do
         --array="${ARRAY}%${SLOTS}" \
         --cpus-per-task="$CPUS_PER_TASK" \
         --mem="$MEM_PER_TASK" \
-        --export=ALL,SLOTS="$SLOTS" \
+        --export=ALL,SLOTS="$SLOTS",VARLOCS_LIST="$VARLOCS_LIST" \
         "$(dirname "$0")/train_varlocs.slurm"
 done

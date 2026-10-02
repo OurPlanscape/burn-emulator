@@ -26,11 +26,11 @@ Run from the repo root.
 | `publish-model VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | uploads a bundle and repoints `current`; refuses to overwrite a published version with a different bundle unless `FORCE=1` |
 | `bundle-model-all` / `publish-model-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `publish-model-all` doesn't accept `BUNDLE_DIR` |
 | `publish-inputs DATA_VERSION=<version> FUELS_DIR=<dir> TOPO_DIR=<dir> [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>]` | uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) and the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) under one `data_version`, then repoints `current` |
-| `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh` |
+| `train-all` | wraps `burn-emulator-model/scripts/train_varlocs.sh`: trains every varloc with complete training data for the current `data_version` and adds each to `configs/varlocs/varlocs.txt` only once its training succeeds |
 | `inference VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
 | `inference-all OUTPUTS_ROOT=<dir>` | `inference` looped over every varloc, using `OUTPUTS_ROOT/<varloc>` as each varloc's root |
 | `ignitions VARLOC=<varloc> [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | wraps `burn_emulator -m ignite` to generate training data, using `data_version` from `configs/varlocs/current.yaml`; `NUM_IGNITIONS` defaults to 5000 in `ignite.py`; refuses to run if `data/training_data/<varloc>/<data_version>` exists unless `OVERWRITE=1`, which deletes it first |
-| `ignitions-all [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | `ignitions` looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure |
+| `ignitions-all [NUM_IGNITIONS=<n>] [OVERWRITE=1]` | `ignitions` looped over every varloc in the varlocs gpkg, skipping ones whose training data for the current `data_version` is complete unless `OVERWRITE=1`, stopping at the first failure |
 | `shell` | activates the model repo's venv and cds into it |
 
 `build-*`/`push-*`/`publish-*` need `BURN_EMULATOR_ARTIFACT_STORE` / `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI` exported by the caller.

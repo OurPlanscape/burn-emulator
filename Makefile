@@ -22,7 +22,7 @@ RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all ignite-all shell
+.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all shell
 
 help: ## show this help
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -95,7 +95,7 @@ publish-inputs: ## publish input rasters + varlocs (DATA_VERSION= FUELS_DIR= TOP
 	fi
 	$(MODEL_DIR)/scripts/publish_inputs.sh $(DATA_VERSION) $(FUELS_DIR) $(TOPO_DIR) $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
-train-all: ## train every varloc
+train-all: ## train every varloc with complete training data; adds each to varlocs.txt once trained
 	$(MODEL_DIR)/scripts/train_varlocs.sh
 
 inference: ## run inference for one varloc (VARLOC= OUTPUTS_ROOT=)
@@ -138,12 +138,6 @@ ignitions: ## generate ignitions for one varloc (VARLOC= [NUM_IGNITIONS=] [OVERW
 	cd "$(MODEL_DIR)"
 	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
 	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
-	varlocs_txt=configs/varlocs/varlocs.txt
-	if ! grep -qxF "$(VARLOC)" "$$varlocs_txt"; then
-	    { grep -vE '^[[:space:]]*$$' "$$varlocs_txt"; echo "$(VARLOC)"; } | LC_ALL=C sort -u > "$$varlocs_txt.tmp"
-	    mv "$$varlocs_txt.tmp" "$$varlocs_txt"
-	    echo "added $(VARLOC) to $$varlocs_txt"
-	fi
 
 # skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1
 ignitions-all: ## generate ignitions for every varloc in the varlocs gpkg ([NUM_IGNITIONS=] [OVERWRITE=1])
