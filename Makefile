@@ -13,7 +13,7 @@ VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --p
 # BURN_EMULATOR_ARTIFACT_STORE / BURN_EMULATOR_MODELS_URI / BURN_EMULATOR_INPUTS_URI
 # must be exported by the caller (see burn-emulator-api/README.md / burn-emulator-model/README.md
 # for what each points at). VERSION gets a -dirty suffix on an uncommitted tree; build-api/
-# build-runner refuse to run with that suffix when BURN_EMULATOR_ENV is prod/production
+# build-runner refuse to run with that suffix when BURN_EMULATOR_ENV is production
 # (unset BURN_EMULATOR_ENV does not trigger this check - dev/staging pushes get a -dirty
 # tag instead of colliding with the last clean push).
 
@@ -29,7 +29,7 @@ help: ## show this help; [metal] runs here, [slurm] submits to the cluster, [met
 
 build-api: ## [metal] build the API image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
-	case "$(BURN_EMULATOR_ENV)" in prod|production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
+	case "$(BURN_EMULATOR_ENV)" in production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) .
 
 push-api: build-api ## [metal] build and push the API image
@@ -37,7 +37,7 @@ push-api: build-api ## [metal] build and push the API image
 
 build-runner: ## [metal] build the runner image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
-	case "$(BURN_EMULATOR_ENV)" in prod|production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
+	case "$(BURN_EMULATOR_ENV)" in production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(RUNNER_DIR)/Dockerfile -t $(RUNNER_IMAGE) .
 
 push-runner: build-runner ## [metal] build and push the runner image
