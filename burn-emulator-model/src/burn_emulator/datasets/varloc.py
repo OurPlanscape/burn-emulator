@@ -109,14 +109,9 @@ def _read_fuel_dir(
     window_size: int,
 ) -> tuple[dict, torch.Tensor | None, dict | None, tuple | None]:
     # TODO: convert to zarr and/or icechunk inputs
-    files = {f.stem.rsplit("_", 1)[1]: f for f in fuels_path.glob("*.tif")}
     layer, mask, profile = {}, None, None
     for name in INPUT_KEYS:
-        file = files.get(name)
-        if file is None:
-            raise FileNotFoundError(f"Missing {name} in {fuels_path}")
-
-        with rasterio.open(file) as src:
+        with rasterio.open(fuels_path / f"{name}.tif") as src:
             if window_bounds is None and sample_region is not None:
                 # margin so every ignition's full model window fits in the read
                 window_bounds = tuple(
@@ -580,11 +575,10 @@ class VarLoc(Dataset):
             _, h, w = self.fuels[fkey]["fbfm"].shape
             inbounds = (rows >= 0) & (rows < h) & (cols >= 0) & (cols < w)
             r, c = np.clip(rows, 0, h - 1), np.clip(cols, 0, w - 1)
-            present = self.masks[fkey][0][r, c].numpy()
             ros = self.fuels[fkey]["fbfm"][: len(ROS_FL_CLASSES), r, c].float()
-            # N class, or a code missing from the fbfm map (e.g. 0; pyretechnics treats as 91)
+            # N class (0 and 91-99), or a code missing from the fbfm map (nodata: -999 clipped, NaN published)
             nonburn = ((ros[ROS_FL_CLASSES.index("N")] > 0) | (ros.sum(0) == 0)).numpy()
-            burnable &= inbounds & present & ~nonburn
+            burnable &= inbounds & ~nonburn
         return burnable
 
     def _sample_ignitions(

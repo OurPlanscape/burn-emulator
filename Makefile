@@ -92,7 +92,7 @@ publish-inputs: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUE
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	data_version="$(DATA_VERSION)"
 	[ -n "$$data_version" ] || data_version=$$($(MODEL_DIR)/scripts/data_version.sh inputs_version)
-	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/West_Fuels_DN_$$data_version)"
+	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/fuels_$$data_version)"
 	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo_$$data_version)"
 	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
@@ -137,8 +137,7 @@ smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND
 	arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
 	wind_range="$(WIND_RANGE)"
 	if [ -z "$$wind_range" ]; then
-	    wind_key=$$(sed -E 's/^([A-Za-z]+)([0-9]+)$$/\U\1_\2/' <<< "$(VARLOC)")
-	    wind_range=$$(awk -F, -v k="$$wind_key" '$$1 == k {print $$2, $$3}' configs/wind_directions.csv)
+	    wind_range=$$(awk -F, -v k="$(VARLOC)" '$$1 == k {print $$2, $$3}' configs/wind_directions.csv)
 	fi
 	if [ -z "$$wind_range" ]; then echo "error: no wind range for $(VARLOC) in wind_directions.csv - pass WIND_RANGE=\"<lo> <hi>\"" >&2; exit 2; fi
 	burn_emulator -m run -d -vl $(VARLOC) -wr $$wind_range \

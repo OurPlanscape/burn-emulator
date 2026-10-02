@@ -46,34 +46,12 @@ if ! grep -qvE '^[[:space:]]*$' "$varlocs_txt" 2>/dev/null; then
     exit 1
 fi
 
-# fuels_dir holds both baseline and legalmax tifs together, split by filename
-baseline_files=()
-legalmax_files=()
-unmatched_files=()
-for f in "$fuels_dir"/*.tif; do
-    lower="$(basename "$f")"
-    lower="${lower,,}"
-    if [[ "$lower" == *baseline* ]]; then
-        baseline_files+=("$f")
-    elif [[ "$lower" == *legalmax* ]]; then
-        legalmax_files+=("$f")
-    else
-        unmatched_files+=("$f")
-    fi
+# fuels_dir/{baseline,legalmax}/<layer>.tif (INPUT_KEYS), published as-is to <data_version>/{baseline,legalmax}/
+for t in baseline legalmax; do
+    for l in cbd cbh cc fbfm th; do
+        [[ -f "$fuels_dir/$t/$l.tif" ]] || { echo "error: $fuels_dir/$t/$l.tif not found" >&2; exit 1; }
+    done
 done
-
-if [[ ${#unmatched_files[@]} -gt 0 ]]; then
-    echo "error: fuels filenames must contain 'baseline' or 'legalmax', got: ${unmatched_files[*]}" >&2
-    exit 1
-fi
-if [[ ${#baseline_files[@]} -eq 0 ]]; then
-    echo "error: no *baseline*.tif files found in $fuels_dir" >&2
-    exit 1
-fi
-if [[ ${#legalmax_files[@]} -eq 0 ]]; then
-    echo "error: no *legalmax*.tif files found in $fuels_dir" >&2
-    exit 1
-fi
 
 base="${inputs_uri%/}/${data_version}"
 
@@ -104,8 +82,8 @@ publish_layer () {
     echo
 }
 
-publish_layer baseline "${baseline_files[@]}"
-publish_layer legalmax "${legalmax_files[@]}"
+publish_layer baseline "$fuels_dir"/baseline/*.tif
+publish_layer legalmax "$fuels_dir"/legalmax/*.tif
 publish_layer topo "$topo_dir"/*.tif
 publish_layer varlocs "$varlocs_gpkg" "$varlocs_txt"
 

@@ -4,8 +4,8 @@ dataset:
         ignitions_path: data/training_data/${varloc}/${data_version}/ignition_locations.csv
         fbfm_map_path: configs/fbfm_behavior_adjectives.csv 
         fuels_paths:
-            baseline:   data/training_data/${varloc}/${data_version}/baseline_FF
-            treatment:  data/training_data/${varloc}/${data_version}/legalmax_FF
+            baseline:   data/training_data/${varloc}/${data_version}/baseline_fuels
+            treatment:  data/training_data/${varloc}/${data_version}/legalmax_fuels
         burn_paths:
             baseline:   data/training_data/${varloc}/${data_version}/baseline
             treatment:  data/training_data/${varloc}/${data_version}/legalmax

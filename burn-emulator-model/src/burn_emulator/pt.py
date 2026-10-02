@@ -134,12 +134,7 @@ def _read_raw(path: Path, bounds: tuple, shape: tuple[int, int]) -> np.ndarray:
 def read_raw_inputs(fuels_path: Path, topo_path: Path, profile: dict) -> dict[str, np.ndarray]:
     shape = (profile["height"], profile["width"])
     bounds = array_bounds(*shape, profile["transform"])
-    files = {f.stem.rsplit("_", 1)[1]: f for f in Path(fuels_path).glob("*.tif")}
-    raw = {}
-    for name in INPUT_KEYS:
-        if name not in files:
-            raise FileNotFoundError(f"Missing {name} in {fuels_path}")
-        raw[name] = _read_raw(files[name], bounds, shape)
+    raw = {name: _read_raw(Path(fuels_path) / f"{name}.tif", bounds, shape) for name in INPUT_KEYS}
     raw["slope"] = _read_raw(Path(topo_path) / "slope_degrees.tif", bounds, shape)
     raw["aspect"] = _read_raw(Path(topo_path) / "aspect.tif", bounds, shape)
     return raw

@@ -23,7 +23,7 @@ from burn_emulator.constants import (
     TOPO_DIR_PREFIX,
     TRAINING_DATA_DIR,
     VARLOCS_GPKG,
-    WEST_FUELS_DIR_PREFIX,
+    FUELS_DIR_PREFIX,
 )
 from burn_emulator.pt import CUBE_BANDS, DEFAULT_PT_ADJUSTMENTS, pt_inputs, simulate
 
@@ -218,9 +218,9 @@ def ignite(
 
     data_version = check_data_version(data_version)
     fuels = inputs_version(data_version)
-    west_fuels_dir = TRAINING_DATA_DIR / f"{WEST_FUELS_DIR_PREFIX}_{fuels}"
+    fuels_source_dir = TRAINING_DATA_DIR / f"{FUELS_DIR_PREFIX}_{fuels}"
     topo_source_dir = TRAINING_DATA_DIR / f"{TOPO_DIR_PREFIX}_{fuels}"
-    for src_dir in (west_fuels_dir, topo_source_dir):
+    for src_dir in (fuels_source_dir, topo_source_dir):
         if not src_dir.is_dir():
             raise FileNotFoundError(f"{src_dir} not found for data_version {data_version}")
 
@@ -237,16 +237,12 @@ def ignite(
     for treatment in TREATMENTS:
         fuels_files[treatment] = {}
         for r in INPUT_KEYS:
-            matches = list(west_fuels_dir.glob(f"{treatment.capitalize()}_*_{r}.tif"))
-            if len(matches) != 1:
-                raise ValueError(
-                    f"expected exactly one {r!r} file for treatment {treatment!r} in "
-                    f"{west_fuels_dir}, found {matches}"
-                )
-            src_path = matches[0]
+            src_path = fuels_source_dir / treatment / f"{r}.tif"
+            if not src_path.is_file():
+                raise FileNotFoundError(f"{src_path} not found")
             arr, profile = _read_masked_window(src_path, geom, bounds)
 
-            dst_path = training_data_dir / f"{treatment}_FF" / f"{fuels}_{r}.tif"
+            dst_path = training_data_dir / f"{treatment}_fuels" / f"{r}.tif"
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             with rio.open(dst_path, "w", **profile) as dst:
                 dst.write(arr, 1)

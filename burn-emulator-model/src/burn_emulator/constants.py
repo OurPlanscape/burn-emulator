@@ -51,6 +51,6 @@ TRAINING_DATA_DIR = Path("data/training_data")
 WIND_DIRECTIONS = CONFIG_DIR / "wind_directions.csv"
 
 # training-data generation (src/burn_emulator/ignite.py)
-WEST_FUELS_DIR_PREFIX = "West_Fuels_DN"
-VARLOCS_GPKG = TRAINING_DATA_DIR / "western_varlocs_5070_cleaned.gpkg"
+FUELS_DIR_PREFIX = "fuels"
+VARLOCS_GPKG = TRAINING_DATA_DIR / "varlocs.gpkg"
 TOPO_DIR_PREFIX = "topo"

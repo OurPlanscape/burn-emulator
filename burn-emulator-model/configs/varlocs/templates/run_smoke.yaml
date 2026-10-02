@@ -3,8 +3,8 @@ dataset:
     init_args:
         treatment_area: data/training_data/${varloc}/sample.geojson
         fuels_paths:
-            baseline: data/training_data/${varloc}/${data_version}/baseline_FF
-            treatment: data/training_data/${varloc}/${data_version}/legalmax_FF
+            baseline: data/training_data/${varloc}/${data_version}/baseline_fuels
+            treatment: data/training_data/${varloc}/${data_version}/legalmax_fuels
         burn_paths: null
         wind_ang_paths: null
         wind_range: ${wind_range}

@@ -1,5 +1,5 @@
 architecture: circlepp
-inputs_version: 20260824 # west fuels date, YYYYMMDD: data/training_data/West_Fuels_DN_<inputs_version>/
+inputs_version: 20260824 # west fuels date, YYYYMMDD: data/training_data/fuels_<inputs_version>/
 ignitions_version: 20260828 # pt run date, YYYYMMDD
 data_version: ${inputs_version}_${ignitions_version} # names data/training_data/<varloc>/<data_version>/ and the model
 

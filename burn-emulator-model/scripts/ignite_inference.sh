@@ -50,7 +50,7 @@ run_task () {
         export treatment_fuels_path="${SCENARIO_DIR}/${N}_legalmax"
         export treatment_wind_ang_path="${BASELINE_DIR}/${N}_outputs_table.csv"
     else
-        export baseline_fuels_path="${DATA_ROOT}/baseline_FF"
+        export baseline_fuels_path="${DATA_ROOT}/baseline_fuels"
         export baseline_wind_ang_path="${BASELINE_DIR}/${N}_outputs_table.csv"
     fi
 

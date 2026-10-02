@@ -163,10 +163,9 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
 
 
 def wind_range(varloc: str) -> list[int]:
-    # upwind direction range (degrees clockwise from North) for a varloc; WS507 == WS_507
+    # upwind direction range (degrees clockwise from North) for a varloc
     df = pd.read_csv(WIND_DIRECTIONS)
-    key = varloc.replace("_", "").upper()
-    match = df[df["varloc"].str.replace("_", "").str.upper() == key]
+    match = df[df["varloc"] == varloc]
     if match.empty:
         raise ValueError(f"no wind_range for {varloc!r} in {WIND_DIRECTIONS}")
     if len(match) > 1:
