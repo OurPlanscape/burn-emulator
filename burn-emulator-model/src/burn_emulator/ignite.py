@@ -1,11 +1,13 @@
+import contextlib
 import random
+import resource
 import shutil
-from time import perf_counter
+import threading
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import pyretechnics.eulerian_level_set as els
+import psutil
 import pyretechnics.fuel_models as fm
 import rasterio as rio
 import ray
@@ -13,6 +15,7 @@ from pyretechnics.space_time_cube import SpaceTimeCube
 from rasterio.features import geometry_mask
 from rasterio.windows import from_bounds
 
+from burn_emulator.config import wind_range
 from burn_emulator.constants import (
     ASPECT_FILE,
     INPUT_KEYS,
@@ -23,29 +26,44 @@ from burn_emulator.constants import (
     VARLOCS_GPKG,
     WEST_FUELS_DIR_PREFIX,
 )
+from burn_emulator.pt import CUBE_BANDS, DEFAULT_PT_ADJUSTMENTS, pt_inputs, simulate
 
 TREATMENTS = ["baseline", "legalmax"]
 
 RAY_MEM = 4 * 1024 * 1024 * 1024
 DEFAULT_MAX_DURATIONS = [8 * 60]
-DEFAULT_UPWIND_DIRECTION_QUADRANT = [225, 270]
-DEFAULT_PT_ADJUSTMENTS = {"fuel_spread": 1.0, "weather_spread": 1.0}
 
-WIND_SPEED_10M = 10.0  # km/hr (10 km/hr ~= 6.2 mph)
-FUEL_MOISTURES = {
-    "1hr": 0.05,
-    "10hr": 0.10,
-    "100hr": 0.15,
-    "LH": 0.90,
-    "LW": 0.60,
-    "FMC": 0.90,
-}
+MEM_SAMPLE_INTERVAL = 5  # seconds
+GIB = 1024**3
 
-CUBE_RESOLUTION = (
-    60,  # band_duration: minutes
-    30,  # cell_height:   meters
-    30,  # cell_width:    meters
-)
+
+def _process_tree_pss(proc: psutil.Process) -> int:
+    total = 0
+    for p in [proc, *proc.children(recursive=True)]:
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            total += p.memory_full_info().pss
+    return total
+
+
+def _sample_memory(peak: dict):
+    peak["tree_pss"] = max(peak["tree_pss"], _process_tree_pss(psutil.Process()))
+    peak["system_used"] = max(peak["system_used"], psutil.virtual_memory().used)
+
+
+def _monitor_memory(stop: threading.Event, peak: dict):
+    while not stop.wait(MEM_SAMPLE_INTERVAL):
+        _sample_memory(peak)
+
+
+def _print_memory_summary(peak: dict):
+    driver_peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024  # KiB on Linux
+    print("Memory Summary:")
+    print(f"   Peak Total (driver + Ray, PSS): {peak['tree_pss'] / GIB:.2f} GiB")
+    print(f"   Peak Driver RSS: {driver_peak_rss / GIB:.2f} GiB")
+    print(
+        f"   Peak System Used: {peak['system_used'] / GIB:.2f} GiB "
+        f"of {psutil.virtual_memory().total / GIB:.2f} GiB"
+    )
 
 
 def _load_varloc_geom(varloc: str):
@@ -125,71 +143,37 @@ def preserve_ignition_locations(ignitions: list, transform, out_file):
     print("Preserved ignition locations")
 
 
-def write_raster(training_data_dir, treatment, ignition_number, template_raster, ft_array):
+def write_raster(training_data_dir, treatment, ignition_number, profile, ft_array):
     out_dir = training_data_dir / treatment / str(ignition_number)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with rio.open(out_dir / "fire_type.tif", "w", **template_raster.profile) as dst:
+    with rio.open(out_dir / "fire_type.tif", "w", **profile) as dst:
         dst.write(ft_array, 1)
-
-
-def compute_cbp(results: list, shape: tuple) -> np.ndarray:
-    burned_sum = np.zeros(shape, dtype=np.float32)
-    for result in results:
-        burned_sum += (result["ft_array"] != 0).astype(np.float32)
-    return burned_sum / len(results)
 
 
 @ray.remote
 def run_ignition_ray(
-    cube_shape,
     treatment,
     md,
     ignition_number,
     ignition_point,
     shared_array_refs,
     upwind_direction,
+    training_data_dir,
+    profile,
+    collate_ignitions,
 ):
     print(f"{treatment=}; {ignition_number=}; {md=}; {upwind_direction=}")
-    spread_state = els.SpreadState(cube_shape).ignite_cell(ignition_point)
-
-    start_time = 0  # minutes
-
     shared_arrays = {
         name: attach_shared_array(shared_array_ref)
         for (name, shared_array_ref) in shared_array_refs.items()
     }
+    sim = simulate(shared_arrays, ignition_point, upwind_direction, md)
+    stop_condition = sim["stop_condition"]  # "max duration reached" or "no burnable cells"
+    fire_type = sim["fire_type"]
 
-    space_time_cubes = {
-        name: SpaceTimeCube(cube_shape, shared_array)
-        for (name, shared_array) in shared_arrays.items()
-    }
-    space_time_cubes["upwind_direction"] = SpaceTimeCube(
-        cube_shape, upwind_direction
-    )  # manually add this now that it's not passed via Ray
-
-    spread_state.set_start_time(start_time)
-
-    runtime_start = perf_counter()
-    fire_spread_results = els.spread_fire_with_phi_field(
-        space_time_cubes,
-        spread_state,
-        CUBE_RESOLUTION,
-        start_time,
-        md,
-        surface_lw_ratio_model="rothermel",
-    )
-    runtime_stop = perf_counter()
-    stop_condition = fire_spread_results[
-        "stop_condition"
-    ]  # "max duration reached" or "no burnable cells"
-    spread_state = fire_spread_results[
-        "spread_state"
-    ]  # updated SpreadState object (mutated from inputs)
-    output_matrices = spread_state.get_full_matrices()
-
-    num_burned_cells = np.count_nonzero(output_matrices["fire_type"])  # cells
+    num_burned_cells = np.count_nonzero(fire_type)  # cells
     acres_burned = num_burned_cells / 4.5  # acres
-    simulation_runtime = runtime_stop - runtime_start  # seconds
+    simulation_runtime = sim["runtime"]  # seconds
     runtime_per_burned_cell = (
         1000.0 * simulation_runtime / num_burned_cells if num_burned_cells > 0 else 0.0
     )  # ms/cell; some FBFMs at short burn periods might not burn anything
@@ -199,16 +183,20 @@ def run_ignition_ray(
     print("   Runtime Per Burned Cell: " + str(runtime_per_burned_cell) + " ms/cell")
     print("   Stop Condition: " + stop_condition)
 
-    return {
+    result = {
         "ignition_number": ignition_number,
         "treatment": treatment,
         "max_duration": md,
         "acres_burned": acres_burned,
         "total_runtime": runtime_per_burned_cell,
         "stop_condition": stop_condition,
-        "ft_array": output_matrices["fire_type"],
         "upwind_direction": upwind_direction,
     }
+    if collate_ignitions:
+        result["burned"] = fire_type != 0
+    else:
+        write_raster(training_data_dir, treatment, ignition_number, profile, fire_type)
+    return result
 
 
 def ignite(
@@ -219,11 +207,16 @@ def ignite(
     overwrite: bool = False,
     buffer_dist: float = -2000,  # m; ignitions can't be within this distance of the edge
     max_durations: list[int] = DEFAULT_MAX_DURATIONS,
-    upwind_direction_quadrant: list[float] = DEFAULT_UPWIND_DIRECTION_QUADRANT,
+    upwind_direction_quadrant: list[float] | None = None,  # default: wind_directions.csv
     seed: int = 42,
     pt_adjustments: dict = DEFAULT_PT_ADJUSTMENTS,
     **kwargs,
 ) -> None:
+    # resolved before anything is deleted or written; must match the range bundles bake in
+    if upwind_direction_quadrant is None:
+        upwind_direction_quadrant = wind_range(varloc)
+    print(f"{varloc}: upwind directions {upwind_direction_quadrant}")
+
     training_data_dir = TRAINING_DATA_DIR / varloc / data_version
     if training_data_dir.exists():
         if not overwrite:
@@ -269,12 +262,9 @@ def ignite(
 
     template_raster = rio.open(fuels_files[TREATMENTS[0]]["fbfm"])
     template_array = template_raster.read(1).astype("float32")
+    template_profile = dict(template_raster.profile)
 
-    cube_shape = (
-        96,  # bands: 3 days + 3 hours @ 1 hour/band
-        template_raster.height,
-        template_raster.width,
-    )
+    cube_shape = (CUBE_BANDS, template_raster.height, template_raster.width)
 
     aoi_gdf = gpd.GeoDataFrame(geometry=[geom], crs=TARGET_CRS)
     buffered_geom = aoi_gdf.buffer(buffer_dist)  # ignitions can't be within this of the edge
@@ -296,6 +286,11 @@ def ignite(
     print("Starting Pyretechnics")
     ray.init()
 
+    mem_peak = {"tree_pss": 0, "system_used": 0}
+    mem_stop = threading.Event()
+    mem_thread = threading.Thread(target=_monitor_memory, args=(mem_stop, mem_peak), daemon=True)
+    mem_thread.start()
+
     np.random.seed(seed)
     upwind_directions = np.random.randint(
         low=upwind_direction_quadrant[0],
@@ -306,66 +301,38 @@ def ignite(
     for treatment in TREATMENTS:
         (training_data_dir / treatment).mkdir(parents=True, exist_ok=True)
 
-        fuel_model_a = rio.open(fuels_files[treatment]["fbfm"]).read(1).astype("float32")
-        fuel_model_a[(fuel_model_a == RAW_NO_DATA) | (fuel_model_a == 0.0)] = 91.0
-
-        cc_a = rio.open(fuels_files[treatment]["cc"]).read(1).astype("float32")
-        cc_a[cc_a > RAW_NO_DATA] /= 100  # convert to 0-1
-
-        cbd_a = rio.open(fuels_files[treatment]["cbd"]).read(1).astype("float32")
-        cbd_a[cbd_a > RAW_NO_DATA] /= 100  # convert to kg/m^3
-
-        cbh_a = rio.open(fuels_files[treatment]["cbh"]).read(1).astype("float32")
-        cbh_a[cbh_a > RAW_NO_DATA] /= 10  # convert to m
-
-        ch_a = rio.open(fuels_files[treatment]["th"]).read(1).astype("float32")
-        ch_a[ch_a > RAW_NO_DATA] /= 10  # convert to m
-
-        slope_a = rio.open(topo_dir / "slope_degrees.tif").read(1).astype("float32")  # deg
-        slope_nodata = slope_a == RAW_NO_DATA
-        slope_a = np.tan(np.deg2rad(slope_a))  # convert from degrees to rise/run
-        slope_a[slope_nodata] = 0.0
-
-        aspect_a = rio.open(topo_dir / "aspect.tif").read(1).astype("float32")  # degrees
-        aspect_a[aspect_a == RAW_NO_DATA] = 0.0
-
-        # fuel_moisture units: kg moisture/kg ovendry weight
+        raw = {r: rio.open(fuels_files[treatment][r]).read(1) for r in INPUT_KEYS}
+        raw["slope"] = rio.open(topo_dir / "slope_degrees.tif").read(1)
+        raw["aspect"] = rio.open(topo_dir / "aspect.tif").read(1)
         shared_array_refs = {
-            "slope": ray.put(slope_a),  # rise/run
-            "aspect": ray.put(aspect_a),  # degrees clockwise from North
-            "fuel_model": ray.put(fuel_model_a),  # index in fm.fuel_model_table
-            "canopy_cover": ray.put(cc_a),  # 0-1
-            "canopy_height": ray.put(ch_a),  # m
-            "canopy_base_height": ray.put(cbh_a),  # m
-            "canopy_bulk_density": ray.put(cbd_a),  # kg/m^3
-            "wind_speed_10m": ray.put(WIND_SPEED_10M),
-            "fuel_moisture_dead_1hr": ray.put(FUEL_MOISTURES["1hr"]),
-            "fuel_moisture_dead_10hr": ray.put(FUEL_MOISTURES["10hr"]),
-            "fuel_moisture_dead_100hr": ray.put(FUEL_MOISTURES["100hr"]),
-            "fuel_moisture_live_herbaceous": ray.put(FUEL_MOISTURES["LH"]),
-            "fuel_moisture_live_woody": ray.put(FUEL_MOISTURES["LW"]),
-            "foliar_moisture": ray.put(FUEL_MOISTURES["FMC"]),
-            "fuel_spread_adjustment": ray.put(pt_adjustments["fuel_spread"]),  # >= 0.0
-            "weather_spread_adjustment": ray.put(pt_adjustments["weather_spread"]),  # >= 0.0
+            name: ray.put(value) for name, value in pt_inputs(raw, pt_adjustments).items()
         }
 
-        run_ignition_ray_ids = [
+        pending = [
             run_ignition_ray.options(memory=RAY_MEM).remote(
-                cube_shape,
                 treatment,
                 md,
                 ignition_number,
                 ignition_point,
                 shared_array_refs,
                 upwind_directions[ignition_number],
+                training_data_dir,
+                template_profile,
+                collate_ignitions,
             )
             for ignition_number, ignition_point in enumerate(ignition_locations)
             for md in max_durations
         ]
 
-        # ensure these finish before starting the next treatment's batch
-        ray.wait(run_ignition_ray_ids, num_returns=len(run_ignition_ray_ids))
-        results = ray.get(run_ignition_ray_ids)
+        rows = []
+        burned_sum = np.zeros((template_raster.height, template_raster.width), dtype=np.float32)
+        while pending:
+            done, pending = ray.wait(pending, num_returns=min(100, len(pending)))
+            for result in ray.get(done):
+                burned = result.pop("burned", None)
+                if burned is not None:
+                    burned_sum += burned
+                rows.append(result)
 
         outputs_columns = [
             "ignition_number",
@@ -376,21 +343,20 @@ def ignite(
             "stop_condition",
             "upwind_direction",
         ]
-        csv_outputs = pd.DataFrame(results)[outputs_columns]
+        csv_outputs = pd.DataFrame(rows)[outputs_columns].sort_values(
+            ["ignition_number", "max_duration"]
+        )
         csv_outputs.to_csv(training_data_dir / treatment / "outputs_table.csv", index=False)
 
         if collate_ignitions:
-            cbp = compute_cbp(results, (template_raster.height, template_raster.width))
-            cbp_profile = template_raster.profile | {"dtype": "float32", "count": 1}
+            cbp = burned_sum / len(rows)
+            cbp_profile = template_profile | {"dtype": "float32", "count": 1}
             with rio.open(training_data_dir / treatment / "cbp.tif", "w", **cbp_profile) as dst:
                 dst.write(cbp, 1)
             print(f"Wrote collated CBP raster for {treatment}")
-        else:
-            for result in results:
-                write_raster(
-                    training_data_dir,
-                    result["treatment"],
-                    result["ignition_number"],
-                    template_raster,
-                    result["ft_array"],
-                )
+
+    mem_stop.set()
+    mem_thread.join()
+    _sample_memory(mem_peak)
+    ray.shutdown()
+    _print_memory_summary(mem_peak)
