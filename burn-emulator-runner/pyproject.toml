@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "GPU inference job for burn-emulator"
 requires-python = ">=3.12"
 dependencies = [
-    "burn-emulator-model",
+    "burn-emulator-model[data]",
     "google-cloud-storage>=3.13.0",
 ]
 

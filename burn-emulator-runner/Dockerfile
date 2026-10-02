@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
 RUN mkdir -p /models
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgomp1 libexpat1 libgeos-c1v5 \
+        libgomp1 libexpat1 libgeos-c1v5 build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv

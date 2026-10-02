@@ -5,6 +5,8 @@ MAKEFLAGS  += --no-print-directory
 
 API_DIR    ?= burn-emulator-api
 MODEL_DIR  ?= burn-emulator-model
+VENV_NAME  ?= $(or $(UV_PROJECT_ENVIRONMENT),.venv-$(shell uname -m))
+VENV       ?= $(MODEL_DIR)/$(VENV_NAME)
 RUNNER_DIR ?= burn-emulator-runner
 VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --porcelain)" ] || echo -dirty)
 
@@ -20,7 +22,7 @@ RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all shell
+.PHONY: help build-api push-api build-runner push-runner valid-varlocs bundle-model bundle-model-all publish-model publish-model-all publish-inputs train-all inference inference-all smoke ignitions ignitions-all ignite-all shell
 
 help: ## show this help
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -42,13 +44,13 @@ push-runner: build-runner ## build and push the runner image
 	docker push $(RUNNER_IMAGE)
 
 valid-varlocs: ## filter varlocs gpkg to the valid set
-	source "$(MODEL_DIR)/.venv/bin/activate"
+	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	python scripts/filter_varlocs_gpkg.py
 
 bundle-model: ## bundle one model (VARLOC=)
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
-	source "$(MODEL_DIR)/.venv/bin/activate"
+	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	burn_emulator -m bundle -c configs/varlocs/current.yaml -vl $(VARLOC)
 
@@ -111,9 +113,9 @@ inference-all: ## run inference for every varloc (OUTPUTS_ROOT=)
 	    $(MAKE) inference VARLOC="$$varloc" OUTPUTS_ROOT="$(OUTPUTS_ROOT)/$$varloc"
 	done
 
-smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [OUT_PATH=])
+smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [OUT_PATH=] [PT=1])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
-	source "$(MODEL_DIR)/.venv/bin/activate"
+	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
 	wind_range="$(WIND_RANGE)"
@@ -126,12 +128,13 @@ smoke: ## run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="
 	    -c configs/varlocs/current.yaml \
 	    -c "configs/$$arch/model.yaml" \
 	    -c configs/varlocs/templates/run_smoke.yaml \
-	    $(if $(OUT_PATH),-o $(OUT_PATH))
+	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
+	    $(if $(PT),-pt)
 
 ignitions: ## generate ignitions for one varloc (VARLOC= [NUM_IGNITIONS=] [OVERWRITE=1])
 	set -e
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
-	source "$(MODEL_DIR)/.venv/bin/activate"
+	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
 	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
 	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
@@ -142,14 +145,23 @@ ignitions: ## generate ignitions for one varloc (VARLOC= [NUM_IGNITIONS=] [OVERW
 	    echo "added $(VARLOC) to $$varlocs_txt"
 	fi
 
-ignitions-all: ## generate ignitions for every varloc in varlocs.txt
+# skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1
+ignitions-all: ## generate ignitions for every varloc in the varlocs gpkg ([NUM_IGNITIONS=] [OVERWRITE=1])
 	set -e
-	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
+	source "$(VENV)/bin/activate"
+	cd "$(MODEL_DIR)"
+	dv=$$(grep -oP '^data_version:[[:space:]]*\K\S+' configs/varlocs/current.yaml)
+	mapfile -t varlocs < <(python -c "import geopandas as gpd; from burn_emulator.constants import VARLOCS_GPKG; print(*sorted(gpd.read_file(VARLOCS_GPKG, ignore_geometry=True)['varloc'].unique()), sep='\n')")
+	echo "$${#varlocs[@]} varlocs in gpkg"
 	for varloc in "$${varlocs[@]}"; do
-	    $(MAKE) ignitions VARLOC="$$varloc"
+	    if [ -z "$(OVERWRITE)" ] && [ -f "data/training_data/$$varloc/$$dv/legalmax/outputs_table.csv" ]; then
+	        echo "skipping $$varloc: $$dv already complete"
+	        continue
+	    fi
+	    $(MAKE) -C "$(CURDIR)" ignitions VARLOC="$$varloc" OVERWRITE=1 $(if $(NUM_IGNITIONS),NUM_IGNITIONS=$(NUM_IGNITIONS))
 	done
 
 shell: ## sync the model venv and open a shell with it activated
 	set -e
-	uv sync --project "$(MODEL_DIR)" --locked --inexact --extra data
-	exec bash --rcfile <(echo 'source ~/.bashrc; source "$(CURDIR)/$(MODEL_DIR)/.venv/bin/activate"')
+	UV_PROJECT_ENVIRONMENT="$(VENV_NAME)" uv sync --project "$(MODEL_DIR)" --locked --inexact --extra data
+	exec bash --rcfile <(echo 'source ~/.bashrc; source "$(CURDIR)/$(VENV)/bin/activate"')
