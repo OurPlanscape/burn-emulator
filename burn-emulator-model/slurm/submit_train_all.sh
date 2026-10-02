@@ -1,13 +1,11 @@
 #!/bin/bash -l
 set -euo pipefail
 
-# run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-p] [-v <varloc>]... [-r <indices>] [node ...]
-# indices into the varlocs with complete training data (default: all; -v restricts to the given
-# varlocs; -r takes a slurm-style list, e.g. 0-5,9) are dealt round-robin across the nodes, one
-# train.slurm array per node with one task per varloc. -p bundles and publishes each varloc once its training succeeds, then
-# republishes the varlocs txt + gpkg (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI exported)
+# run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-p] [-v <varloc>]... [-r <indices>] [node[,node...] ...]
+# trains every trainable varloc (-v: only these, -r: indices e.g. 0-5,9) across the given GPU nodes
+# -p also bundles + publishes each (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)
 
-usage () { echo "usage: $0 [-p] [-v <varloc>]... [-r <indices, e.g. 0-5,9>] [node ...]" >&2; exit 1; }
+usage () { echo "usage: $0 [-p] [-v <varloc>]... [-r <indices, e.g. 0-5,9>] [node[,node...] ...]" >&2; exit 1; }
 
 RANGE=""
 PUBLISH=""
@@ -28,8 +26,30 @@ if [ -n "$PUBLISH" ]; then
     done
 fi
 
-NODES=("$@")
+# node's GPU count from slurm GRES, 0 if none
+node_gpus () { scontrol show node "$1" 2>/dev/null | grep -oP 'Gres=gpu:([^:,(]+:)?\K[0-9]+' || echo 0; }
+SHARED_SLOTS=8
+
+# nodes as args and/or comma-separated
+NODES=()
+for arg in "$@"; do
+    IFS=, read -ra PARTS <<<"$arg"
+    for part in "${PARTS[@]}"; do
+        [ -z "$part" ] || [[ " ${NODES[*]} " == *" $part "* ]] || NODES+=("$part")
+    done
+done
 [ ${#NODES[@]} -eq 0 ] && NODES=(dragon02 dragon04 dragon05 dragon06)
+declare -A GPUS
+POOL=()
+POOL_GPUS=0
+for NODE in "${NODES[@]}"; do
+    GPUS[$NODE]=$(node_gpus "$NODE")
+    case "${GPUS[$NODE]}" in
+        0) echo "$NODE has no GPUs in slurm (or does not exist)" >&2; exit 1 ;;
+        1) ;;
+        *) POOL+=("$NODE"); POOL_GPUS=$((POOL_GPUS + GPUS[$NODE])) ;;
+    esac
+done
 
 mkdir -p burn-emulator-model/data/logs
 mapfile -t TRAINABLE < <(cd burn-emulator-model && scripts/trainable_varlocs.sh)
@@ -60,48 +80,64 @@ mapfile -t INDICES < <(printf '%s\n' "${INDICES[@]}" | sort -nu)
 
 echo "${#INDICES[@]} of $N_VARLOCS varlocs across ${#NODES[@]} nodes: ${NODES[*]}${PUBLISH:+ (bundle + publish)}"
 
-# one held train.slurm array per node (each task takes 1/SLOTS of it, so slurm runs at most SLOTS at
-# once per node), tasks renamed to train_<varloc> then released; each array reads a snapshot of its varlocs
+# every worker claims varlocs from one shared queue
 STAMP=$(date +%Y%m%dT%H%M%S)
-MONITOR=1
-for n in "${!NODES[@]}"; do
-    NODE=${NODES[$n]}
-    case "$NODE" in
-        dragon02) SLOTS=6 ;;
-        dragon04|dragon05|dragon06) SLOTS=8 ;;
-        *) echo "unknown node: $NODE" >&2; exit 1 ;;
-    esac
+QUEUE=$(realpath burn-emulator-model/data/logs)/train_queue_${STAMP}.txt
+for i in "${INDICES[@]}"; do
+    printf '%s\n' "${VARLOCS[$i]}"
+done > "$QUEUE"
+mkdir "${QUEUE%.txt}.d"
+echo "queue: $QUEUE"
 
-    SUBMIT=()
-    for ((k = n; k < ${#INDICES[@]}; k += ${#NODES[@]})); do
-        SUBMIT+=("${VARLOCS[${INDICES[$k]}]}")
-    done
-    [ ${#SUBMIT[@]} -gt 0 ] || continue
-
-    NODE_INFO=$(scontrol show node "$NODE")
-    EFCT_CPUS=$(grep -oP 'CPUEfctv=\K[0-9]+' <<<"$NODE_INFO")
-    TOTAL_MEM_MB=$(grep -oP 'RealMemory=\K[0-9]+' <<<"$NODE_INFO")
-    CPUS_PER_TASK=$((EFCT_CPUS / SLOTS))
-    MEM_PER_TASK=$((TOTAL_MEM_MB / SLOTS))
-
-    VARLOCS_LIST=$(realpath burn-emulator-model/data/logs)/train_varlocs_${NODE}_${STAMP}.txt
-    printf '%s\n' "${SUBMIT[@]}" > "$VARLOCS_LIST"
-    echo "[$NODE] ${#SUBMIT[@]} varlocs SLOTS=$SLOTS cpus-per-task=$CPUS_PER_TASK mem=$MEM_PER_TASK: ${SUBMIT[*]}"
-
-    ARRAY_ID=$(sbatch --parsable --hold \
-        --array="0-$((${#SUBMIT[@]} - 1))" \
-        --nodelist="$NODE" \
-        --cpus-per-task="$CPUS_PER_TASK" \
-        --mem="$MEM_PER_TASK" \
-        --export=ALL,VARLOC=,VARLOCS_LIST="$VARLOCS_LIST",SLOTS="$SLOTS",PUBLISH="$PUBLISH",MONITOR="$MONITOR" \
+# submit_array <name> <slots> <workers> <cpus-per-task> <mem> [sbatch args...]
+submit_array () {
+    local name=$1 slots=$2 workers=$3 cpus=$4 mem=$5
+    shift 5
+    ARRAY_ID=$(sbatch --parsable "$@" \
+        --array="0-$((workers - 1))" \
+        --job-name="train_$name" \
+        --cpus-per-task="$cpus" \
+        --mem="$mem" \
+        --export=ALL,VARLOC=,QUEUE="$QUEUE",SLOTS="$slots",PUBLISH="$PUBLISH",MONITOR="$MONITOR" \
         "$(dirname "$0")/train.slurm")
     ARRAY_ID=${ARRAY_ID%%;*}
     MONITOR=""
+    echo "[$name] array $ARRAY_ID: $workers workers slots=$slots cpus-per-task=$cpus mem=$mem $*"
+}
 
-    for i in "${!SUBMIT[@]}"; do
-        scontrol update JobId="${ARRAY_ID}_$i" JobName="train_${SUBMIT[$i]}" \
-            || echo "warning: could not rename ${ARRAY_ID}_$i (${SUBMIT[$i]})" >&2
-    done
-    scontrol release "$ARRAY_ID"
-    echo "[$NODE] array $ARRAY_ID: $VARLOCS_LIST"
+# per-worker cpus and mem: the node's total / slots
+node_share () {
+    local info
+    info=$(scontrol show node "$1")
+    echo "$(($(grep -oP 'CPUEfctv=\K[0-9]+' <<<"$info") / $2)) $(($(grep -oP 'RealMemory=\K[0-9]+' <<<"$info") / $2))"
+}
+
+REMAINING=${#INDICES[@]}
+MONITOR=1
+POOL_DONE=""
+for NODE in "${NODES[@]}"; do
+    [ "$REMAINING" -gt 0 ] || break
+    if [ "${GPUS[$NODE]}" -gt 1 ]; then
+        # one array for all multi-GPU nodes, sized to fit the smallest per-GPU share
+        [ -z "$POOL_DONE" ] || continue
+        POOL_DONE=1
+        WORKERS=$((REMAINING < POOL_GPUS ? REMAINING : POOL_GPUS))
+        REMAINING=$((REMAINING - WORKERS))
+        CPUS_PER_TASK="" MEM_PER_TASK=""
+        for P in "${POOL[@]}"; do
+            read -r c m <<<"$(node_share "$P" "${GPUS[$P]}")"
+            [ -z "$CPUS_PER_TASK" ] || [ "$c" -lt "$CPUS_PER_TASK" ] && CPUS_PER_TASK=$c
+            [ -z "$MEM_PER_TASK" ] || [ "$m" -lt "$MEM_PER_TASK" ] && MEM_PER_TASK=$m
+        done
+        # --exclude, as a multi-node --nodelist would require every node per task
+        EXCLUDE=$(sinfo -h -N -o %N | sort -u | { grep -vxF -f <(printf '%s\n' "${POOL[@]}") || true; } | paste -sd, -)
+        POOL_NAME=$(IFS=-; echo "${POOL[*]}")
+        submit_array "$POOL_NAME" "$POOL_GPUS" "$WORKERS" "$CPUS_PER_TASK" "$MEM_PER_TASK" \
+            --gres=gpu:1 ${EXCLUDE:+--exclude="$EXCLUDE"}
+    else
+        WORKERS=$((REMAINING < SHARED_SLOTS ? REMAINING : SHARED_SLOTS))
+        REMAINING=$((REMAINING - WORKERS))
+        read -r CPUS_PER_TASK MEM_PER_TASK <<<"$(node_share "$NODE" "$SHARED_SLOTS")"
+        submit_array "$NODE" "$SHARED_SLOTS" "$WORKERS" "$CPUS_PER_TASK" "$MEM_PER_TASK" --nodelist="$NODE"
+    fi
 done

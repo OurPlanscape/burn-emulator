@@ -100,19 +100,19 @@ publish-varlocs: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then r
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	$(MODEL_DIR)/scripts/publish_varlocs.sh "$(VARLOCS_TXT)" "$(VARLOCS_GPKG)" "$(DATA_VERSION)" "$(BURN_EMULATOR_INPUTS_URI)"
 
-train-all: ## [metal|slurm] train every varloc with complete training data; adds each to varlocs.txt once trained ([SLURM=1 [NODES="n1 n2"]])
+train-all: ## [metal|slurm] train every varloc with complete training data; adds each to varlocs.txt once trained ([SLURM=1 [NODES=n1,n2]])
 	if [ -n "$(SLURM)" ]; then
 	    $(MODEL_DIR)/slurm/submit_train_all.sh $(NODES)
 	else
 	    $(MODEL_DIR)/scripts/train_all.sh
 	fi
 
-# slurm: one train.slurm array per node (submit_train_all.sh), one task per varloc; each bundles + publishes once its training succeeds
-train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES="n1 n2"])
+# slurm: trains across the GPU nodes; each varloc is bundled + published once its training succeeds
+train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES=n1,n2])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p -v $(VARLOC) $(NODES)
 
-train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([NODES="n1 n2"])
+train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([NODES=n1,n2])
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p $(NODES)
 
 inference: ## [metal] run inference for one varloc (VARLOC= OUTPUTS_ROOT=)
