@@ -36,6 +36,7 @@ type jobRequestBody struct {
 	VarLoc           string   `json:"varloc"`
 	JobName          string   `json:"job_name"`
 	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
+	Backend          string   `json:"backend,omitempty"`
 }
 
 type jobResponseBody struct {
@@ -44,6 +45,7 @@ type jobResponseBody struct {
 	Hash         string `json:"hash"`
 	ModelVersion string `json:"model_version"`
 	DataVersion  string `json:"data_version"`
+	Backend      string `json:"backend"`
 	Status       string `json:"status"`
 	VarLoc       string `json:"varloc"`
 	Cached       bool   `json:"cached"`
@@ -74,6 +76,9 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.Backend == "" {
+		body.Backend = dispatch.BackendDL
+	}
 	if err := validate(body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -88,6 +93,7 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		VarLoc:           body.VarLoc,
 		JobName:          body.JobName,
 		IgnitionDensity:  body.IgnitionDensity,
+		Backend:          body.Backend,
 	})
 	if errors.Is(err, dispatch.ErrUnknownVarLoc) {
 		http.Error(w, "invalid 'varloc': not in the published allow-list", http.StatusBadRequest)
@@ -150,6 +156,7 @@ func writeJob(w http.ResponseWriter, statusCode int, result dispatch.JobResult) 
 		Hash:         result.ID.Hash,
 		ModelVersion: result.ID.ModelVersion,
 		DataVersion:  result.ID.DataVersion,
+		Backend:      result.ID.Backend(),
 		Status:       result.Status,
 		VarLoc:       result.ID.VarLoc,
 		Cached:       result.Status == "cached",
@@ -179,6 +186,9 @@ func validate(body jobRequestBody) error {
 	}
 	if body.IgnitionDensity != nil && *body.IgnitionDensity <= 0 {
 		return errors.New("invalid 'ignition_density': must be > 0")
+	}
+	if body.Backend != dispatch.BackendDL && body.Backend != dispatch.BackendPT {
+		return fmt.Errorf("invalid 'backend': must be %q or %q", dispatch.BackendDL, dispatch.BackendPT)
 	}
 	return nil
 }

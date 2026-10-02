@@ -20,7 +20,14 @@ const DetachedBudget = claimTriggerTimeout + releaseTimeout
 
 var ErrJobNotFound = errors.New("job not found")
 
-var validHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+// sha256 hex + one backend bit: 0 DL, 1 PT
+var validHash = regexp.MustCompile(`^[0-9a-f]{64}[01]$`)
+
+// must match BACKENDS in burn-emulator-model's constants.py
+const (
+	BackendDL = "DL" // deep learning emulator, GPU runner job
+	BackendPT = "PT" // pyretechnics, CPU-only runner job
+)
 
 type JobRequest struct {
 	TreatmentArea    string
@@ -28,6 +35,7 @@ type JobRequest struct {
 	VarLoc           string
 	JobName          string
 	IgnitionDensity  *float64
+	Backend          string // BackendDL | BackendPT
 }
 
 type JobID struct {
@@ -40,6 +48,13 @@ type JobID struct {
 // <varloc>/<model_version>/<data_version>/<hash>
 func (id JobID) Path() string {
 	return strings.Join([]string{id.VarLoc, id.ModelVersion, id.DataVersion, id.Hash}, "/")
+}
+
+func (id JobID) Backend() string {
+	if strings.HasSuffix(id.Hash, "1") {
+		return BackendPT
+	}
+	return BackendDL
 }
 
 func (id JobID) valid() bool {
@@ -121,6 +136,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		TreatmentArea:    req.TreatmentArea,
 		TreatmentAreaCRS: req.TreatmentAreaCRS,
 		IgnitionDensity:  req.IgnitionDensity,
+		Backend:          req.Backend,
 		Hash:             id.Hash,
 		OutputPath:       outPath,
 		ReportPath:       reportPath,

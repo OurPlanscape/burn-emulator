@@ -46,7 +46,7 @@ def main():
     # run only
     parser.add_argument("-o", "--out_path", action="store")
 
-    # run / evaluate: simulate with pyretechnics instead of the emulator
+    # run / evaluate: simulate with pyretechnics instead of the emulator (run: BURN_EMULATOR_BACKEND=PT)
     parser.add_argument("-pt", "--pyretechnics", action="store_true")
 
     # ignite only
@@ -67,6 +67,8 @@ def main():
         configs = apply_overrides(configs, args)
         configs["debug"] = args.debug
         configs["pyretechnics"] = args.pyretechnics
+        if args.pyretechnics:
+            configs["backend"] = "PT"
 
     match args.method:
         case "train":

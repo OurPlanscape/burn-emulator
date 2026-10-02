@@ -11,7 +11,7 @@ import torch
 from rasterio.features import geometry_mask
 
 from burn_emulator.config import dynamic_import
-from burn_emulator.constants import INF_PROFILE, RUN_DEVICE, RUN_DTYPE, Path
+from burn_emulator.constants import BACKENDS, INF_PROFILE, RUN_BACKEND, RUN_DEVICE, RUN_DTYPE, Path
 from burn_emulator.datasets.utils import compute_crop_region
 from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
 
@@ -79,13 +79,20 @@ def peak_memory_rows() -> dict:
     return rows
 
 
+def pt_model_name(model_name: str) -> str:
+    # model_name is {VARLOC}_{architecture}_{data_version}, see config.resolve_model_name
+    varloc, _, data_version = model_name.split("_", 2)
+    return f"model_{varloc}_pt_{data_version}"
+
+
 def pt_out_path(out_path: str | Path | None, experiment_dir: Path, model_name: str) -> str | Path:
+    pt_name = pt_model_name(model_name)
     if out_path is None:
-        return experiment_dir / "pt.tif"
-    # string ops so gs:// URIs survive; swap the model name for "pt" in the file name
+        return experiment_dir / f"{pt_name}.tif"
+    # string ops so gs:// URIs survive; swap the model name for the pt name in the file name
     out_path = str(out_path)
     head, _, name = out_path.rpartition("/")
-    name = name.replace(model_name, "pt") if model_name in name else f"pt_{name}"
+    name = name.replace(model_name, pt_name) if model_name in name else f"{pt_name}_{name}"
     return f"{head}/{name}" if head else name
 
 
@@ -303,10 +310,14 @@ def run(
     out_path: str | Path | None = None,
     debug: bool = False,
     cancel: threading.Event | None = None,
-    pyretechnics: bool = False,
+    backend: str = RUN_BACKEND,
     pt_workers: int | None = None,
     **kwargs: Any,
-) -> dict | None:
+) -> dict:
+    backend = backend.upper()
+    if backend not in BACKENDS:
+        raise ValueError(f"backend {backend!r} must be one of {BACKENDS}")
+
     timings = {} if debug else None
     t_start = time.perf_counter() if debug else None
 
@@ -326,16 +337,18 @@ def run(
     n_ignitions = len(ds)
 
     # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
-    if pyretechnics:
+    if backend == "PT":
+        out_name = pt_model_name(model_name)
         out_path = pt_out_path(out_path, experiment_dir, model_name)
-        backend = "pyretechnics"
+        label = "pyretechnics"
     else:
+        out_name = model_name
         out_path = out_path or experiment_dir / f"{model_name}.tif"
-        backend = f"device={RUN_DEVICE}"
+        label = f"device={RUN_DEVICE}"
     if debug:
-        print(f"[run] {backend}: {n_ignitions} ignitions -> {out_path}", flush=True)
+        print(f"[run] {label}: {n_ignitions} ignitions -> {out_path}", flush=True)
 
-    if pyretechnics:
+    if backend == "PT":
         stats = _run_pt(ds, region, out_path, pt_workers, timings, debug, cancel)
     else:
         stats = _run_emulator(
@@ -343,16 +356,17 @@ def run(
             timings, debug, cancel,
         )
 
+    result = {"model_name": out_name, "out_path": out_path, "timings": None}
     if debug:
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
         timing_report(
             "run",
-            f"{backend}  ({n_ignitions} ignitions, {stats['n_kept']} kept)",
+            f"{label}  ({n_ignitions} ignitions, {stats['n_kept']} kept)",
             timings,
             total,
             {**stats["rows"], **peak_memory_rows()},
         )
-        return {**timings, "total": total}
+        result["timings"] = {**timings, "total": total}
 
-    return None
+    return result

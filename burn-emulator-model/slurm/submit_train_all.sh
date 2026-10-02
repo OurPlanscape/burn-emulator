@@ -4,7 +4,7 @@ set -euo pipefail
 # run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-p] [-v <varloc>]... [-r <indices>] [node ...]
 # indices into the varlocs with complete training data (default: all; -v restricts to the given
 # varlocs; -r takes a slurm-style list, e.g. 0-5,9) are dealt round-robin across the nodes, one
-# train.slurm job per varloc. -p bundles and publishes each varloc once its training succeeds, then
+# train.slurm array per node with one task per varloc. -p bundles and publishes each varloc once its training succeeds, then
 # republishes the varlocs txt + gpkg (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI exported)
 
 usage () { echo "usage: $0 [-p] [-v <varloc>]... [-r <indices, e.g. 0-5,9>] [node ...]" >&2; exit 1; }
@@ -60,6 +60,9 @@ mapfile -t INDICES < <(printf '%s\n' "${INDICES[@]}" | sort -nu)
 
 echo "${#INDICES[@]} of $N_VARLOCS varlocs across ${#NODES[@]} nodes: ${NODES[*]}${PUBLISH:+ (bundle + publish)}"
 
+# one held train.slurm array per node (each task takes 1/SLOTS of it, so slurm runs at most SLOTS at
+# once per node), tasks renamed to train_<varloc> then released; each array reads a snapshot of its varlocs
+STAMP=$(date +%Y%m%dT%H%M%S)
 MONITOR=1
 for n in "${!NODES[@]}"; do
     NODE=${NODES[$n]}
@@ -69,23 +72,36 @@ for n in "${!NODES[@]}"; do
         *) echo "unknown node: $NODE" >&2; exit 1 ;;
     esac
 
+    SUBMIT=()
+    for ((k = n; k < ${#INDICES[@]}; k += ${#NODES[@]})); do
+        SUBMIT+=("${VARLOCS[${INDICES[$k]}]}")
+    done
+    [ ${#SUBMIT[@]} -gt 0 ] || continue
+
     NODE_INFO=$(scontrol show node "$NODE")
     EFCT_CPUS=$(grep -oP 'CPUEfctv=\K[0-9]+' <<<"$NODE_INFO")
     TOTAL_MEM_MB=$(grep -oP 'RealMemory=\K[0-9]+' <<<"$NODE_INFO")
     CPUS_PER_TASK=$((EFCT_CPUS / SLOTS))
     MEM_PER_TASK=$((TOTAL_MEM_MB / SLOTS))
 
-    # each job takes 1/SLOTS of the node, so slurm runs at most SLOTS at once per node
-    for ((k = n; k < ${#INDICES[@]}; k += ${#NODES[@]})); do
-        VARLOC=${VARLOCS[${INDICES[$k]}]}
-        echo "[$NODE] $VARLOC SLOTS=$SLOTS cpus-per-task=$CPUS_PER_TASK mem=$MEM_PER_TASK"
-        sbatch \
-            --job-name="train_$VARLOC" \
-            --nodelist="$NODE" \
-            --cpus-per-task="$CPUS_PER_TASK" \
-            --mem="$MEM_PER_TASK" \
-            --export=ALL,VARLOC="$VARLOC",SLOTS="$SLOTS",PUBLISH="$PUBLISH",MONITOR="$MONITOR" \
-            "$(dirname "$0")/train.slurm"
-        MONITOR=""
+    VARLOCS_LIST=$(realpath burn-emulator-model/data/logs)/train_varlocs_${NODE}_${STAMP}.txt
+    printf '%s\n' "${SUBMIT[@]}" > "$VARLOCS_LIST"
+    echo "[$NODE] ${#SUBMIT[@]} varlocs SLOTS=$SLOTS cpus-per-task=$CPUS_PER_TASK mem=$MEM_PER_TASK: ${SUBMIT[*]}"
+
+    ARRAY_ID=$(sbatch --parsable --hold \
+        --array="0-$((${#SUBMIT[@]} - 1))" \
+        --nodelist="$NODE" \
+        --cpus-per-task="$CPUS_PER_TASK" \
+        --mem="$MEM_PER_TASK" \
+        --export=ALL,VARLOC=,VARLOCS_LIST="$VARLOCS_LIST",SLOTS="$SLOTS",PUBLISH="$PUBLISH",MONITOR="$MONITOR" \
+        "$(dirname "$0")/train.slurm")
+    ARRAY_ID=${ARRAY_ID%%;*}
+    MONITOR=""
+
+    for i in "${!SUBMIT[@]}"; do
+        scontrol update JobId="${ARRAY_ID}_$i" JobName="train_${SUBMIT[$i]}" \
+            || echo "warning: could not rename ${ARRAY_ID}_$i (${SUBMIT[$i]})" >&2
     done
+    scontrol release "$ARRAY_ID"
+    echo "[$NODE] array $ARRAY_ID: $VARLOCS_LIST"
 done

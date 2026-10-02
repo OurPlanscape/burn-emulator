@@ -13,7 +13,8 @@ type Config struct {
 	ModelsURI    string // gs://<bucket>[/<prefix>] root of the model registry
 	InputsURI    string // gs://<bucket> root of the fuels/topo/varlocs inputs (reads current -> data_version)
 	OutputBucket string // gs://<bucket> for outputs + the claim
-	RunnerJob    string // fully-qualified burn-emulator-runner job name: projects/*/locations/*/jobs/*
+	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*
+	RunnerCPUJob string // fully-qualified CPU-only burn-emulator-runner job name (PT)
 }
 
 type Client struct {
@@ -42,7 +43,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := newRunnerClient(ctx, cfg.RunnerJob)
+	runner, err := newRunnerClient(ctx, cfg.RunnerGPUJob, cfg.RunnerCPUJob)
 	if err != nil {
 		return nil, err
 	}

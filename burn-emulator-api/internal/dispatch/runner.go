@@ -9,20 +9,21 @@ import (
 	run "google.golang.org/api/run/v2"
 )
 
-// must match the runner job's "inputs" GCS volume mount_path in Terraform.
+// must match both runner jobs' "inputs" GCS volume mount_path in Terraform.
 const inputsMountPath = "/inputs"
 
 type runnerClient struct {
-	svc *run.Service
-	job string // fully-qualified job name: projects/*/locations/*/jobs/*
+	svc  *run.Service
+	jobs map[string]string // backend -> fully-qualified job name: projects/*/locations/*/jobs/*
 }
 
-func newRunnerClient(ctx context.Context, job string) (*runnerClient, error) {
+func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient, error) {
 	svc, err := run.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("creating run client: %w", err)
 	}
-	return &runnerClient{svc: svc, job: job}, nil
+	jobs := map[string]string{BackendDL: gpuJob, BackendPT: cpuJob}
+	return &runnerClient{svc: svc, jobs: jobs}, nil
 }
 
 // a single inference request, passed to the job execution as env var overrides.
@@ -33,6 +34,7 @@ type inferRequest struct {
 	TreatmentArea    string
 	TreatmentAreaCRS string
 	IgnitionDensity  *float64
+	Backend          string
 	Hash             string
 	OutputPath       string
 	ReportPath       string // gs:// path of the _reports/ report the runner writes when it finishes
@@ -42,12 +44,17 @@ type inferRequest struct {
 // start a runner job execution without waiting on it; the runner reports
 // back through its _reports/ report (see report.go).
 func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
+	job, ok := r.jobs[req.Backend]
+	if !ok {
+		return fmt.Errorf("no runner job for backend %q", req.Backend)
+	}
 	env := []*run.GoogleCloudRunV2EnvVar{
 		{Name: "BURN_EMULATOR_VARLOC", Value: req.VarLoc},
 		{Name: "BURN_EMULATOR_MODEL_VERSION", Value: req.ModelVersion},
 		{Name: "BURN_EMULATOR_TREATMENT_AREA", Value: req.TreatmentArea},
 		{Name: "BURN_EMULATOR_TREATMENT_AREA_CRS", Value: req.TreatmentAreaCRS},
 		{Name: "BURN_EMULATOR_HASH", Value: req.Hash},
+		{Name: "BURN_EMULATOR_BACKEND", Value: req.Backend},
 		{Name: "BURN_EMULATOR_OUTPUT_PATH", Value: req.OutputPath},
 		{Name: "BURN_EMULATOR_REPORT_PATH", Value: req.ReportPath},
 		{Name: "BURN_EMULATOR_CLAIM_GENERATION", Value: strconv.FormatInt(req.ClaimGeneration, 10)},
@@ -71,10 +78,10 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 		},
 	}
 
-	op, err := r.svc.Projects.Locations.Jobs.Run(r.job, body).Context(ctx).Do()
+	op, err := r.svc.Projects.Locations.Jobs.Run(job, body).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("triggering runner job: %w", err)
 	}
-	slog.Info("runner job triggered", "operation", op.Name, "hash", req.Hash)
+	slog.Info("runner job triggered", "operation", op.Name, "backend", req.Backend, "hash", req.Hash)
 	return nil
 }

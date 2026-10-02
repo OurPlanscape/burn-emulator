@@ -42,7 +42,11 @@ func CacheKey(req JobRequest) string {
 	if req.IgnitionDensity != nil {
 		fmt.Fprintf(h, "|%g", *req.IgnitionDensity)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	key := hex.EncodeToString(h.Sum(nil))
+	if req.Backend == BackendPT {
+		return key + "1"
+	}
+	return key + "0"
 }
 
 // claim a run atomically using the claim object's generation

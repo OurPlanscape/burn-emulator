@@ -29,7 +29,8 @@ func main() {
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
 		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
 		OutputBucket: env("BURN_EMULATOR_OUTPUT_URI"),
-		RunnerJob:    env("BURN_EMULATOR_RUNNER_JOB"),
+		RunnerGPUJob: env("BURN_EMULATOR_RUNNER_GPU_JOB"),
+		RunnerCPUJob: env("BURN_EMULATOR_RUNNER_CPU_JOB"),
 	}
 
 	client, err := dispatch.NewClient(ctx, cfg)

@@ -9,7 +9,8 @@ Go service. Validates a request, resolves the model and data versions, checks th
 | `BURN_EMULATOR_MODELS_URI` | `gs://` root of the model registry (reads `<varloc>/current`) |
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` root of the fuels/topo inputs (reads `current` for the `data_version`, written by `publish_inputs.sh`) |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
-| `BURN_EMULATOR_RUNNER_JOB` | fully-qualified runner job name: `projects/*/locations/*/jobs/*` |
+| `BURN_EMULATOR_RUNNER_GPU_JOB` | fully-qualified GPU runner job name, used for `DL`: `projects/*/locations/*/jobs/*` |
+| `BURN_EMULATOR_RUNNER_CPU_JOB` | fully-qualified CPU-only runner job name, used for `PT` |
 
 ## `POST /v1/jobs`
 
@@ -19,11 +20,12 @@ Go service. Validates a request, resolves the model and data versions, checks th
   "treatment_area": "<geojson>",
   "treatment_area_crs": "EPSG:5070", # everything gets reprojected to this anyway
   "job_name": "my-run-01",
-  "ignition_density": 20
+  "ignition_density": 20,
+  "backend": "DL" # optional: "DL" (emulator, GPU job, default) | "PT" (pyretechnics, CPU-only job)
 }
 ```
 
-`varloc` must be in `gs://<inputs>/<data_version>/varlocs/varlocs.txt` for the current `data_version` (published by `publish_inputs.sh`, 60s cache), otherwise 400; `job_name` is 1-63 chars `[a-z0-9-]` and is only used for logging and recorded on the claim (it does not affect the hash); `ignition_density` is optional (ignitions per km², defaults to 20 ignitions per km²;  `VarLoc` converts internally); omit it to use the value baked into the model bundle's `config.yaml`. Worth noting here that the max number of ignitions is 2**16. Verify this by using area/density upstream somewhere.
+`varloc` must be in `gs://<inputs>/<data_version>/varlocs/varlocs.txt` for the current `data_version` (published by `publish_inputs.sh`, 60s cache), otherwise 400; `job_name` is 1-63 chars `[a-z0-9-]` and is only used for logging and recorded on the claim (it does not affect the hash); `backend` picks the runner job and is part of the hash: the hash is the sha256 hex plus a trailing `0` (DL) or `1` (PT); `ignition_density` is optional (ignitions per km², defaults to 20 ignitions per km²;  `VarLoc` converts internally); omit it to use the value baked into the model bundle's `config.yaml`. Worth noting here that the max number of ignitions is 2**16. Verify this by using area/density upstream somewhere.
 
 ```json
 {
@@ -31,6 +33,7 @@ Go service. Validates a request, resolves the model and data versions, checks th
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
   "model_version": "20260829T143000Z-a1b2c3d", # this is from publish-model.sh in the model repo
+  "backend": "DL",
   "data_version": "20260824", # west fuels date (fuels + topo + varlocs), from publish-inputs in the model repo
   "status": "pending",
   "varloc": "WC711",
@@ -42,7 +45,7 @@ Go service. Validates a request, resolves the model and data versions, checks th
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `<output_path>/<model_name>.tif` exists |
+| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `model_<VARLOC>_pt_<data_version>.tif` (PT) exists |
 | `pending` | 202 | run triggered by this request, or an identical run already in flight; `Location: /v1/jobs/<job_id>` |
 
 POST is idempotent: an identical body dedupes onto the same run. A previously `failed` run is retried.
@@ -55,7 +58,7 @@ Read-only status of the run named by `job_id` (the `Location` from the POST). Th
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `<output_path>/<model_name>.tif` exists (same status as POST) |
+| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `model_<VARLOC>_pt_<data_version>.tif` (PT) exists (same status as POST) |
 | `pending` | 200 | run in flight |
 | `failed` | 200 | the run failed (`error` is set), or its claim went stale without it reporting back; re-POST to retry |
 | - | 404 | unknown id, or no output and no claim |
@@ -92,7 +95,7 @@ All three object kinds share the suffix `<varloc>/<model_version>/<data_version>
 
 ```
 gs://<out>/
-├── <varloc>/<model_version>/<data_version>/<hash>/<model_name>.tif   # output
+├── <varloc>/<model_version>/<data_version>/<hash>/<model_name>.tif   # output (PT: model_<VARLOC>_pt_<data_version>.tif)
 ├── _claims/<varloc>/<model_version>/<data_version>/<hash>               # claim
 └── _reports/<varloc>/<model_version>/<data_version>/<hash>               # runner report
 ```

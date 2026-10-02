@@ -107,7 +107,7 @@ train-all: ## [metal|slurm] train every varloc with complete training data; adds
 	    $(MODEL_DIR)/scripts/train_all.sh
 	fi
 
-# slurm: trains on the cluster, then bundles + publishes each varloc whose training succeeds
+# slurm: one train.slurm array per node (submit_train_all.sh), one task per varloc; each bundles + publishes once its training succeeds
 train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES="n1 n2"])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p -v $(VARLOC) $(NODES)

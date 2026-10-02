@@ -132,23 +132,27 @@ def main() -> None:
             )
 
         # TODO: test memory limits on the largest varlocs; /tmp is in-memory on Cloud
-        # Run, so the raster counts against burn_emulator_runner_ram on top of the run.
+        # Run, so the raster counts against burn_emulator_runner_{gpu,cpu}_ram on top of the run.
         with tempfile.TemporaryDirectory() as local_dir:
             cfg = _run_config(
                 spec, varloc, treatment_area, treatment_area_crs, ignition_density, local_dir
             )
 
             log.info(
-                "run start varloc=%s model_version=%s hash=%s", varloc, model_version, run_hash
+                "run start varloc=%s model_version=%s backend=%s hash=%s",
+                varloc,
+                model_version,
+                os.environ.get("BURN_EMULATOR_BACKEND", "DL"),
+                run_hash,
             )
-            run(**cfg)
+            result = run(**cfg)
 
             # NOTE: the run succeeded; friends don't let a late SIGTERM turn them into
             # a failure (mid-upload or between the upload and the completed report).
             # the local file is complete here, and an interrupted upload creates no
             # object, so the api can never serve a partial or blank raster.
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            local_out = cfg["out_path"]
+            local_out = os.fspath(result["out_path"])
             _upload_output(local_out, f"{output_path.rstrip('/')}/{os.path.basename(local_out)}")
 
         log.info("run done hash=%s output_path=%s", run_hash, output_path)

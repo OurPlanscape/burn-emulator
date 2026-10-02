@@ -9,12 +9,13 @@
 #SBATCH --mem=10000
 #SBATCH --nodelist=dragon05
 # trains one varloc: sbatch --export=ALL,VARLOC=<varloc> burn-emulator-model/slurm/train.slurm
-# --job-name, --cpus-per-task, --mem, --nodelist, SLOTS, PUBLISH and MONITOR are meant to be overridden via submit_train_all.sh
+# or, as an array task from submit_train_all.sh, line SLURM_ARRAY_TASK_ID of VARLOCS_LIST
+# --cpus-per-task, --mem, --nodelist, SLOTS, PUBLISH and MONITOR (task 0 only) are meant to be overridden via submit_train_all.sh
 # PUBLISH=1 bundles and publishes the varloc after a successful train, then publishes the varlocs txt + gpkg
 # (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)
 
 echo "Job started on $(hostname) at $(date)"
-echo "Job ID: $SLURM_JOB_ID, varloc: ${VARLOC:-}"
+echo "Job ID: $SLURM_JOB_ID, Array Task ID: ${SLURM_ARRAY_TASK_ID:-}"
 
 source $HOME/.bashrc
 source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
@@ -25,6 +26,10 @@ VARLOC_DIR=$CONFIG_DIR/varlocs
 CURRENT_FILE=$VARLOC_DIR/current.yaml
 TRAIN_TEMPLATE=$VARLOC_DIR/templates/train.yaml
 
+if [ -z "${VARLOC:-}" ] && [ -n "${VARLOCS_LIST:-}" ]; then
+    mapfile -t VARLOCS < "$VARLOCS_LIST"
+    VARLOC=${VARLOCS[$SLURM_ARRAY_TASK_ID]}
+fi
 [ -n "${VARLOC:-}" ] || { echo "error: pass VARLOC via sbatch --export=ALL,VARLOC=<varloc>" >&2; exit 2; }
 
 if [ -n "${PUBLISH:-}" ]; then
@@ -69,6 +74,7 @@ fi
 echo "[gpu] $SLURMD_NODENAME slot $SLOT -> CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "[train] $VARLOC -> ${VARLOC}_${ARCHITECTURE}_${DATA_VERSION}"
 
+[ "${SLURM_ARRAY_TASK_ID:-0}" = 0 ] || MONITOR=""
 if [ -n "${MONITOR:-}" ]; then
     (
         while true; do

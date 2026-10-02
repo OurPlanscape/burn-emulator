@@ -24,9 +24,9 @@ burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
 
 Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
 
-To train every varloc in a batch, run `scripts/train_all.sh` (or `slurm/submit_train_all.sh` on the cluster, which submits one `slurm/train.slurm` job per varloc). It trains every varloc with complete training data (`scripts/trainable_varlocs.sh`: `data/training_data/<varloc>/<data_version>/legalmax/outputs_table.csv` exists) and adds each to `configs/varlocs/varlocs.txt` (`scripts/mark_trained.sh`) only once its training succeeds, so `varlocs.txt` lists trained varlocs only. The active architecture and data version come from `configs/varlocs/current.yaml`; `inputs_version` (west fuels date) and `ignitions_version` (PT run date) are both YYYYMMDD and join into `data_version` = `<inputs_version>_<ignitions_version>` (`scripts/data_version.sh` for shell), which names `data/training_data/<varloc>/<data_version>/` and the model; `-m ignite` clips from `data/training_data/fuels_<inputs_version>/` and `data/training_data/topo_<inputs_version>/`.
+To train every varloc in a batch, run `scripts/train_all.sh` (or `slurm/submit_train_all.sh` on the cluster, which submits one `slurm/train.slurm` job array per node, one task per varloc named `train_<varloc>`). It trains every varloc with complete training data (`scripts/trainable_varlocs.sh`: `data/training_data/<varloc>/<data_version>/legalmax/outputs_table.csv` exists) and adds each to `configs/varlocs/varlocs.txt` (`scripts/mark_trained.sh`) only once its training succeeds, so `varlocs.txt` lists trained varlocs only. The active architecture and data version come from `configs/varlocs/current.yaml`; `inputs_version` (west fuels date) and `ignitions_version` (PT run date) are both YYYYMMDD and join into `data_version` = `<inputs_version>_<ignitions_version>` (`scripts/data_version.sh` for shell), which names `data/training_data/<varloc>/<data_version>/` and the model; `-m ignite` clips from `data/training_data/fuels_<inputs_version>/` and `data/training_data/topo_<inputs_version>/`.
 
-To train, bundle and publish in one go on the cluster, run `slurm/submit_train_all.sh -p` from the repo root (`make train-publish-all`), or `-p -v <varloc>` for a single varloc (`make train-publish VARLOC=<varloc>`). Each job (one per varloc, `slurm/train.slurm`) bundles and publishes its varloc only after training succeeds, then adds it to `varlocs.txt` and runs `make publish-varlocs` (rebuild the gpkg, upload txt + gpkg to the `current` data_version) while holding the `varlocs.txt.lock` flock, so jobs finishing together each publish the full list; `BURN_EMULATOR_MODELS_URI` and `BURN_EMULATOR_INPUTS_URI` must be exported.
+To train, bundle and publish in one go on the cluster, run `slurm/submit_train_all.sh -p` from the repo root (`make train-publish-all`), or `-p -v <varloc>` for a single varloc (`make train-publish VARLOC=<varloc>`). Each array task (one per varloc, `slurm/train.slurm`) bundles and publishes its varloc only after training succeeds, then adds it to `varlocs.txt` and runs `make publish-varlocs` (rebuild the gpkg, upload txt + gpkg to the `current` data_version) while holding the `varlocs.txt.lock` flock, so tasks finishing together each publish the full list; `BURN_EMULATOR_MODELS_URI` and `BURN_EMULATOR_INPUTS_URI` must be exported.
 
 ## Evaluate
 
@@ -78,7 +78,7 @@ burn_emulator -m run \
 
 `<dir>` is `-o` if given, else `data/outputs/<model_name>`.
 
-Env: `RUN_DEVICE` (`cuda` | `XLA` | `cpu`), `RUN_DTYPE` (`bfloat16`), `USE_CLOUD_PATHS` (`1` for `gs://`).
+Env: `RUN_DEVICE` (`cuda` | `XLA` | `cpu`), `RUN_DTYPE` (`bfloat16`), `USE_CLOUD_PATHS` (`1` for `gs://`), `BURN_EMULATOR_BACKEND` (`DL` | `PT`; `PT` runs pyretechnics and writes `model_<VARLOC>_pt_<data_version>.tif`, same as `-pt`).
 
 ## Inputs
 

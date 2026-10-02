@@ -17,6 +17,9 @@ __all__ = ["Path"]
 # training and inference constants
 RUN_DEVICE = os.environ.get("RUN_DEVICE", "cuda")
 RUN_DTYPE = getattr(torch, os.environ.get("RUN_DTYPE", "bfloat16"))
+# inference backend: PT (pyretechnics) | DL (deep learning emulator)
+BACKENDS = ("PT", "DL")
+RUN_BACKEND = os.environ.get("BURN_EMULATOR_BACKEND", "DL").upper()
 DEFAULT_DEVICE = torch.device(RUN_DEVICE)   # default device for training
 DEFAULT_DTYPE = torch.bfloat16              # default trainining dtype for memory saving
 NO_DATA = -3                                # no data value for NN inputs (-3σ of normalized data)
