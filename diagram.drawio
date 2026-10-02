@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram name="API Runner + Model Run" id="0">
-    <mxGraphModel dx="5126" dy="1656" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
+    <mxGraphModel dx="5547" dy="1932" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -251,7 +251,7 @@
           <mxGeometry height="100" width="240" x="777" y="1230" as="geometry" />
         </mxCell>
         <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make publish-inputs&lt;/b&gt; [metal]&lt;br&gt;publish_inputs.sh&lt;br&gt;DATA_VERSION default: current.yaml inputs_version&lt;br&gt;baseline_*.tif + legalmax_*.tif + topo*.tif&lt;br&gt;+ varlocs gpkg + varlocs.txt&lt;br&gt;all under one data_version, then repoint current" vertex="1">
-          <mxGeometry height="110" width="240" x="-296" y="1929.93" as="geometry" />
+          <mxGeometry height="110" width="312" x="-332" y="1929.93" as="geometry" />
         </mxCell>
         <mxCell id="me1" edge="1" parent="1" source="m1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="m2">
           <mxGeometry relative="1" as="geometry" />
@@ -262,8 +262,8 @@
         <mxCell id="me3" edge="1" parent="1" source="m3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" target="mg" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="590" y="1730" />
-              <mxPoint x="590" y="1165" />
+              <mxPoint x="490" y="1729.88" />
+              <mxPoint x="490" y="1165.06" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -271,8 +271,9 @@
           <mxGeometry relative="1" x="0.2922" y="-11" as="geometry">
             <mxPoint x="11" y="11" as="offset" />
             <Array as="points">
-              <mxPoint x="660" y="1980" />
-              <mxPoint x="660" y="1280" />
+              <mxPoint x="-20" y="1980" />
+              <mxPoint x="580" y="1980" />
+              <mxPoint x="580" y="1280" />
             </Array>
             <mxPoint x="1778.999999999999" y="1290" as="targetPoint" />
           </mxGeometry>
@@ -317,25 +318,25 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;align=center;" value="Raw inputs from DS on Dragon Cluster&lt;br&gt;data/training_data/&lt;br&gt;fuels_{inputs_version}/{baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif&lt;br&gt;topo_{inputs_version}/{aspect, slope_degrees}.tif&lt;br&gt;varlocs.gpkg" vertex="1">
-          <mxGeometry height="170" width="370" x="-1796" y="1164.93" as="geometry" />
+          <mxGeometry height="170" width="370" x="-1810" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="DRsQ0ycy17QCxkV9Jszo-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=22;fontStyle=1" value="Offline training and publishing model.&lt;br&gt;&lt;br&gt;Left to right: Pyretechnics training data, PyTorch training, bundle + publish." vertex="1">
-          <mxGeometry height="240" width="451.5" x="-670" y="1899.93" as="geometry" />
+          <mxGeometry height="150" width="451.5" x="-787.5" y="1952.5" as="geometry" />
         </mxCell>
         <mxCell id="tg1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make training-data(-all)&lt;/b&gt; [metal]&lt;br&gt;&lt;b&gt;SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_ignitions_all.sh -&amp;gt; ignitions.slurm array, 1 task per varloc&lt;br&gt;-&amp;gt; burn_emulator -m ignite -vl VARLOC -dv DV [-ni 5000] [-ci]&lt;br&gt;(ignite.py; uv sync --extra data: pyretechnics + ray)" vertex="1">
-          <mxGeometry height="100" width="300" x="-1761" y="1374.93" as="geometry" />
+          <mxGeometry height="100" width="300" x="-1775" y="1374.93" as="geometry" />
         </mxCell>
         <mxCell id="tg2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Clip per varloc&lt;/b&gt;&lt;br&gt;_load_varloc_geom() from gpkg&lt;br&gt;_read_masked_window(): window to varloc bounds,&lt;br&gt;outside geom / NaN -&amp;gt; -999, int16&lt;br&gt;-&amp;gt; {baseline,legalmax}_fuels/{layer}.tif, topo/" vertex="1">
-          <mxGeometry height="100" width="300" x="-1761" y="1484.93" as="geometry" />
+          <mxGeometry height="100" width="300" x="-1775" y="1484.93" as="geometry" />
         </mxCell>
         <mxCell id="tg3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;sample_ignited_cells_buffered()&lt;/b&gt;&lt;br&gt;N random cells (seed 42) that are:&lt;br&gt;burnable FBFM (exists, not 91-99) and&lt;br&gt;inside varloc buffered by -2000 m&lt;br&gt;-&amp;gt; ignition_locations.csv (row, col, x, y)" vertex="1">
-          <mxGeometry height="100" width="300" x="-1761" y="1614.93" as="geometry" />
+          <mxGeometry height="100" width="300" x="-1775" y="1614.93" as="geometry" />
         </mxCell>
         <mxCell id="tg4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Wind per ignition&lt;/b&gt;&lt;br&gt;upwind_direction ~ U[225, 270) deg&lt;br&gt;same draw for baseline and legalmax" vertex="1">
-          <mxGeometry height="70" width="300" x="-1761" y="1744.93" as="geometry" />
+          <mxGeometry height="70" width="300" x="-1775" y="1744.93" as="geometry" />
         </mxCell>
         <mxCell id="tg5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Convert to Pyretechnics units&lt;/b&gt;&lt;br&gt;cc /100 (0-1), cbd /100 (kg/m3), cbh, th /10 (m)&lt;br&gt;slope tan(deg) rise/run, fbfm nodata|0 -&amp;gt; 91&lt;br&gt;&lt;b&gt;Constant weather:&lt;/b&gt; wind 10 km/h&lt;br&gt;moisture 1h .05, 10h .10, 100h .15,&lt;br&gt;LH .90, LW .60, FMC .90; spread adj 1.0" vertex="1">
-          <mxGeometry height="120" width="300" x="-1761" y="1844.93" as="geometry" />
+          <mxGeometry height="120" width="300" x="-1775" y="1844.93" as="geometry" />
         </mxCell>
         <mxCell id="tp1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#fad9c1, #5c2a0e);strokeColor=light-dark(#c75b12,#e07b39);align=center;spacingLeft=6;" value="&lt;b&gt;ignite(): Ray fan-out&lt;/b&gt; (ignite.py)&lt;br&gt;per treatment&lt;br&gt;in {baseline, legalmax}:&lt;br&gt;ray.put() shared arrays&lt;br&gt;N x run_ignition_ray.remote() (4 GiB each)&lt;br&gt;ray.wait() all before next treatment" vertex="1">
           <mxGeometry height="110" width="320" x="-1360" y="1319.93" as="geometry" />
@@ -350,16 +351,16 @@
           <mxGeometry height="95" width="320" x="-1360" y="1739.93" as="geometry" />
         </mxCell>
         <mxCell id="tp5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);align=center;" value="&lt;b&gt;Training data&lt;/b&gt;&lt;br&gt;data/training_data/{varloc}/{inputs_version}_{ignitions_version}/&lt;br&gt;{baseline,legalmax}_fuels/*.tif, topo/*.tif&lt;br&gt;ignition_locations.csv&lt;br&gt;{baseline,legalmax}/{i}/fire_type.tif&lt;br&gt;{baseline,legalmax}/outputs_table.csv&lt;br&gt;(-ci: cbp.tif burn probability instead)" vertex="1">
-          <mxGeometry height="170" width="320" x="-1360" y="1907.43" as="geometry" />
+          <mxGeometry height="170" width="421" x="-1410.5" y="1907.43" as="geometry" />
         </mxCell>
         <mxCell id="tt1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make train-all&lt;/b&gt; [metal] -&amp;gt; scripts/train_all.sh&lt;br&gt;&lt;b&gt;make train-all SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh&lt;br&gt;&lt;b&gt;make train-publish(-all)&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh -p&lt;br&gt;-&amp;gt; queue file; multi-GPU nodes: 1 pooled --gres array, 1/GPU&lt;br&gt;1-GPU nodes: array of 8 each; workers claim via mkdir&lt;br&gt;architecture + data_version from current.yaml" vertex="1">
           <mxGeometry height="125" width="380" x="-880" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="tt2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;burn_emulator -m train&lt;/b&gt; -a ARCH -vl VARLOC -dv DV&lt;br&gt;-c circlepp/model.yaml -c circlepp/train.yaml&lt;br&gt;-c varlocs/templates/train.yaml (CLI wins, later -c wins)&lt;br&gt;resolve_model_name() -&amp;gt; {varloc}_{arch}_{dv}" vertex="1">
-          <mxGeometry height="80" width="380" x="-880" y="1294.93" as="geometry" />
+          <mxGeometry height="80" width="380" x="-880" y="1310" as="geometry" />
         </mxCell>
         <mxCell id="tt3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;VarLoc dataset&lt;/b&gt; (datasets/varloc.py)&lt;br&gt;len = ignitions x {baseline, treatment}&lt;br&gt;129 x 129 window centered on ignition&lt;br&gt;x: 23 channels = sin/cos aspect, slope,&lt;br&gt;cbd, cbh, cc, th, gtr_ros, gtr_fl (log1p + z-score,&lt;br&gt;stats -&amp;gt; stats.yaml), FBFM ROS + FL one-hots (7 + 7)&lt;br&gt;nodata -&amp;gt; -3; mask: burnable + circular window&lt;br&gt;y: fire_type one-hot (4); wind: outputs_table.csv" vertex="1">
-          <mxGeometry height="150" width="380" x="-880" y="1404.93" as="geometry" />
+          <mxGeometry height="150" width="380" x="-880" y="1411" as="geometry" />
         </mxCell>
         <mxCell id="tt4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;CirclePP&lt;/b&gt; (models/circlepp.py)&lt;br&gt;UNet++ with circular 3x3 kernels&lt;br&gt;FiLM conditioning on wind (sin, cos)&lt;br&gt;23 in -&amp;gt; 4 out (fire_type logits)" vertex="1">
           <mxGeometry height="80" width="380" x="-880" y="1584.93" as="geometry" />
@@ -409,9 +410,8 @@
         <mxCell id="tpe5" edge="1" parent="1" source="tp5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;align=center;" target="tt3" value="read by VarLoc">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="-1101" y="1994.93" />
-              <mxPoint x="-970" y="1994.93" />
-              <mxPoint x="-970" y="1479.93" />
+              <mxPoint x="-970" y="1992.4" />
+              <mxPoint x="-970" y="1479.9" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -439,13 +439,14 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make publish-varlocs&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs_5070.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
-          <mxGeometry height="110" width="240" x="-296" y="1799.93" as="geometry" />
+          <mxGeometry height="110" width="240" x="-296" y="1804.93" as="geometry" />
         </mxCell>
         <mxCell id="pve1" edge="1" parent="1" source="pv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;entryPerimeter=0;" target="ig" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="630" y="1850" />
-              <mxPoint x="630" y="1250" />
+              <mxPoint x="-56" y="1850" />
+              <mxPoint x="530" y="1850" />
+              <mxPoint x="530" y="1250" />
             </Array>
           </mxGeometry>
         </mxCell>
