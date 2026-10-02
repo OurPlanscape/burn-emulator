@@ -148,8 +148,8 @@ smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND
 	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
 	    $(if $(PT),-pt)
 
-# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 runs submit_ignitions_all.sh,
-# one slurm/ignitions.slurm job (exclusive on dragon03) per varloc; $(1) is the varloc, empty for -all
+# INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 runs submit_ignitions_all.sh: a
+# slurm/ignitions.slurm array (exclusive on dragon03), one task per varloc; $(1) is the varloc, empty for -all
 ignitions_sbatch = $(MODEL_DIR)/slurm/submit_ignitions_all.sh $(if $(1),-v $(1)) $(if $(NUM_IGNITIONS),-n $(NUM_IGNITIONS)) $(if $(OVERWRITE),-o) $(if $(INPUTS_VERSION),-i $(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),-g $(IGNITIONS_VERSION))
 
 training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])

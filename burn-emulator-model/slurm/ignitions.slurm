@@ -11,13 +11,13 @@
 #SBATCH --mem=0
 # generates training data for one varloc:
 # sbatch --export=ALL,VARLOC=<varloc>[,DATA_VERSION=<inputs>_<ignitions>,NUM_IGNITIONS=<n>,OVERWRITE=1] burn-emulator-model/slurm/ignitions.slurm
-# --job-name and the exports are meant to be set via submit_ignitions_all.sh; DATA_VERSION defaults to current.yaml
+# or, as an array task from submit_ignitions_all.sh, line SLURM_ARRAY_TASK_ID of VARLOCS_LIST; DATA_VERSION defaults to current.yaml
 # ray.init() claims every visible cpu, hence --exclusive on the cpu-only node
 
 set -euo pipefail
 
 echo "Job started on $(hostname) at $(date)"
-echo "Job ID: $SLURM_JOB_ID, varloc: ${VARLOC:-}, cpus: $SLURM_CPUS_ON_NODE"
+echo "Job ID: $SLURM_JOB_ID, Array Task ID: ${SLURM_ARRAY_TASK_ID:-}, cpus: $SLURM_CPUS_ON_NODE"
 
 set +u
 source "$HOME/.bashrc"
@@ -25,6 +25,10 @@ source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/act
 set -u
 cd burn-emulator-model
 
+if [ -z "${VARLOC:-}" ] && [ -n "${VARLOCS_LIST:-}" ]; then
+    mapfile -t VARLOCS < "$VARLOCS_LIST"
+    VARLOC=${VARLOCS[$SLURM_ARRAY_TASK_ID]}
+fi
 [ -n "${VARLOC:-}" ] || { echo "error: pass VARLOC via sbatch --export=ALL,VARLOC=<varloc>" >&2; exit 2; }
 DATA_VERSION=${DATA_VERSION:-$(scripts/data_version.sh)}
 
