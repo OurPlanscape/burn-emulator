@@ -8,8 +8,8 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=10000
 #SBATCH --nodelist=dragon05
-#SBATCH --array=0-12%8 # update range to match the number of varlocs in varlocs.txt; throttle (%N) should match SLOTS below for the target node (dragon02=6, dragon04/dragon05=8)
-# --cpus-per-task, --mem, --nodelist, --array and SLOTS are meant to be overridden via submit_varlocs.sh
+#SBATCH --array=0-12%8
+# --cpus-per-task, --mem, --nodelist, --array and SLOTS are meant to be overridden via submit_train_all.sh
 
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
