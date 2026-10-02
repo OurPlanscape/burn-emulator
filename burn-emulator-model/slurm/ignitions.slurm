@@ -18,7 +18,9 @@ set -euo pipefail
 echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, cpus: $SLURM_CPUS_ON_NODE"
 
-source $HOME/.bashrc
+set +u
+source "$HOME/.bashrc"
+set -u
 
 MAKE_ARGS=()
 [ -n "${NUM_IGNITIONS:-}" ] && MAKE_ARGS+=(NUM_IGNITIONS="$NUM_IGNITIONS")
