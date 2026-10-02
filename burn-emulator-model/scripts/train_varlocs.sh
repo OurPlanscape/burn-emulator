@@ -6,7 +6,7 @@ MAX_CONCURRENT=1
 
 MODEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-source "$MODEL_DIR/.venv/bin/activate"
+source "$MODEL_DIR/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 cd "$MODEL_DIR"
 
 CONFIG_DIR=configs

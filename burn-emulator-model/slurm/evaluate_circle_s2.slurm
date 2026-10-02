@@ -14,7 +14,7 @@ echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 source $HOME/.bashrc
-source .venv/bin/activate
+source "${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 
 ARCHITECTURE=circlepp
 VARLOC=WC711

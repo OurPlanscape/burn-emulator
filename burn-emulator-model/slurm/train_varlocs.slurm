@@ -15,7 +15,7 @@ echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 source $HOME/.bashrc
-source burn-emulator-model/.venv/bin/activate
+source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 cd burn-emulator-model
 
 CONFIG_DIR=configs

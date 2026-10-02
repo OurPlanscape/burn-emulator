@@ -1,7 +1,6 @@
-import copy
-import resource
 import time
-from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from collections import Counter
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any
 
 import numpy as np
@@ -13,7 +12,7 @@ from torch.utils.data import DataLoader
 from burn_emulator.config import dynamic_import
 from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, INF_PROFILE, RUN_DEVICE, Path
 from burn_emulator.datasets.utils import compute_crop_region
-from burn_emulator.run import _center_component
+from burn_emulator.run import _center_component, peak_memory_rows, timing_report
 from burn_emulator.utils import peak_gpu_gb, resolve_model_checkpoint, timed
 
 
@@ -140,30 +139,12 @@ def evaluate_model(
     return n_batches
 
 
-def _run_single_evaluation(
-    eval_name: str,
-    model_name: str,
-    experiment_dir: str | Path,
-    model: dict,
-    dataset: dict,
-    dataloader: dict,
-    activation: dict,
-    out_channels: int,
-    iteration: int | None = None,
-    scenario: int | None = None,
-    scenarios_path: Path | None = None,
-    num_sims: int = 1,
-    max_write_workers: int = 4,
-    debug: bool = False,
-    **kwargs: Any,
-) -> tuple[int | None, int | None]:
-    timings = {} if debug else None
-    t_start = time.perf_counter() if debug else None
-
-    experiment_dir = Path(experiment_dir)
+def _load_model(
+    model: dict, experiment_dir: Path, ckpt_path: str | None, timings: dict | None
+) -> tuple[torch.nn.Module, Path]:
     with timed(timings, "model load"):
         model = dynamic_import(model)
-        ckpt_path = resolve_model_checkpoint(experiment_dir, kwargs.get("ckpt_path"))
+        ckpt_path = resolve_model_checkpoint(experiment_dir, ckpt_path)
 
         ckpt = torch.load(ckpt_path, map_location=DEFAULT_DEVICE)
         if next(iter(ckpt.keys())).startswith("_orig_mod"):
@@ -173,29 +154,121 @@ def _run_single_evaluation(
         model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
         model.eval()
         model = torch.compile(model)
+    return model, ckpt_path
+
+
+def evaluate_pt(
+    eval_name: str,
+    dataset: Any,
+    out_channels: int,
+    outdir: Path,
+    pt_workers: int | None,
+    timings: dict[str, float] | None = None,
+) -> dict:
+    # deferred: pyretechnics is an optional dep (pyproject.toml [data] extra)
+    from burn_emulator import pt
+
+    # same role the emulator sees: VarLoc without burn_paths only serves the first fuels role
+    fkey = list(dataset.fuels_paths)[0]
+    profile = dataset.profile | INF_PROFILE
+    profile.update({"count": out_channels})
+
+    with timed(timings, "pt inputs"):
+        raw = pt.read_raw_inputs(dataset.fuels_paths[fkey], dataset.topo_path, dataset.profile)
+        state = {"inputs": pt.pt_inputs(raw), "profile": profile}
+
+    ignitions = dataset.ignitions
+    out_name = f"{eval_name}.tif"
+    sim_runtime, stops = 0.0, Counter()
+    eval_start_time = time.perf_counter()
+    pt_workers = pt.resolve_workers(profile["height"] * profile["width"], pt_workers)
+    with pt.pool(state, pt_workers) as pool:
+        futures = [
+            pool.submit(
+                pt.fire_type_task,
+                (int(ignition["row"]), int(ignition["col"])),
+                float(dataset.wind_angles[fkey].iloc[i]),
+                outdir / str(ignition["cbp_burn"]) / str(ignition["ignition_number"]) / out_name,
+            )
+            for i, (_, ignition) in enumerate(ignitions.iterrows())
+        ]
+        with timed(timings, "pt simulate + write"):
+            for future in as_completed(futures):
+                result = future.result()
+                sim_runtime += result["runtime"]
+                stops.update(result["stop_conditions"])
+    eval_perf_time = time.perf_counter() - eval_start_time
+
+    tp = {
+        "model": eval_name,
+        "num_batches": len(futures),
+        "batch_size": 1,
+        "max_memory_alloc": None,
+        "eval_perf_time": round(eval_perf_time, 2),
+    }
+    df = pd.DataFrame([tp])
+    header = not (outdir / "throughput.csv").exists()
+    df.to_csv(outdir / "throughput.csv", mode="a", index=False, header=header)
+
+    n_sims = len(futures)
+    return {
+        "n_sims": n_sims,
+        "rows": {
+            "workers": pt_workers,
+            "sim cpu": f"{sim_runtime:7.2f}s",
+            "sim mean": f"{1000 * sim_runtime / max(n_sims, 1):7.2f}ms ({n_sims} sims)",
+            **{f"stop: {k}": v for k, v in stops.items()},
+        },
+    }
+
+
+def evaluate(
+    eval_name: str,
+    model_name: str,
+    experiment_dir: str | Path,
+    model: dict,
+    dataset: dict,
+    dataloader: dict,
+    activation: dict,
+    out_channels: int,
+    max_write_workers: int = 4,
+    num_sims: int = 1,
+    ckpt_path: str | None = None,
+    debug: bool = False,
+    pyretechnics: bool = False,
+    pt_workers: int | None = None,
+    **kwargs: Any,
+) -> None:
+    timings = {} if debug else None
+    t_start = time.perf_counter() if debug else None
+
+    experiment_dir = Path(experiment_dir)
+    if not pyretechnics:
+        model, ckpt_path = _load_model(model, experiment_dir, ckpt_path, timings)
 
     outdir = experiment_dir / "inference"
-    if iteration is not None and scenario is not None:
-        spath = scenarios_path / f"iteration_{iteration}" / f"{scenario}_{eval_name}"
-        fpath = dataset.get("init_args", {}).get("fuels_paths")
-        outdir /= f"iteration_{iteration}"
-        init_args = {
-            "ignitions_path": spath / f"{scenario}_ignitions_locations.csv",
-            "fuels_paths": {"baseline": spath} if fpath is None else fpath,
-        }
-        ds_kwargs = copy.deepcopy(dataset)
-        ds_kwargs["init_args"] = {**ds_kwargs.get("init_args", {}), **init_args}
-    else:
-        ds_kwargs = dataset
 
-    ds_kwargs.setdefault("init_args", {}).setdefault(
-        "stats_path", experiment_dir / "stats.yaml"
-    )
+    dataset.setdefault("init_args", {}).setdefault("stats_path", experiment_dir / "stats.yaml")
     with timed(timings, "dataset caching"):
-        dataset = dynamic_import(ds_kwargs)
+        dataset = dynamic_import(dataset)
         eval_loader = dynamic_import(dataloader, {"dataset": dataset})
-    activation = dynamic_import(activation)
 
+    if pyretechnics:
+        run_eval_name = f"pt_{eval_name}"
+        pt_stats = evaluate_pt(run_eval_name, dataset, out_channels, outdir, pt_workers, timings)
+        if debug:
+            total = time.perf_counter() - t_start
+            timings["other"] = max(total - sum(timings.values()), 0.0)
+            timing_report(
+                "eval",
+                f"pyretechnics  {run_eval_name}  ({pt_stats['n_sims']} ignitions)",
+                timings,
+                total,
+                {**pt_stats["rows"], **peak_memory_rows()},
+            )
+        return
+
+    activation = dynamic_import(activation)
     run_eval_name = f"{model_name}_{eval_name}"
     with torch.no_grad():
         n_batches = evaluate_model(
@@ -213,94 +286,11 @@ def _run_single_evaluation(
     if debug:
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
-        peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
-        peak_gpu = peak_gpu_gb()
-        rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
-        gpu_row = "" if peak_gpu is None else f"\n  {'peak gpu mem':<18}: {peak_gpu:7.2f}GB"
-        print(
-            f"[eval] used checkpoint: {ckpt_path}\n"
-            f"[eval] timing  device={RUN_DEVICE}  {run_eval_name}  ({n_batches} batches)\n"
-            f"{rows}\n"
-            f"  {'total':<18}: {total:7.2f}s\n"
-            f"  {'peak cpu mem':<18}: {peak_rss_gb:7.2f}GB"
-            f"{gpu_row}",
-            flush=True,
+        print(f"[eval] used checkpoint: {ckpt_path}", flush=True)
+        timing_report(
+            "eval",
+            f"device={RUN_DEVICE}  {run_eval_name}  ({n_batches} batches)",
+            timings,
+            total,
+            peak_memory_rows(),
         )
-
-    return iteration, scenario
-
-
-def evaluate(
-    eval_name: str,
-    model_name: str,
-    experiment_dir: str | Path,
-    model: dict,
-    dataset: dict,
-    dataloader: dict,
-    activation: dict,
-    max_write_workers: int,
-    out_channels: int,
-    debug: bool = False,
-    **kwargs: Any,
-) -> None:
-    _run_single_evaluation(
-        eval_name=eval_name,
-        model_name=model_name,
-        experiment_dir=experiment_dir,
-        model=model,
-        dataset=dataset,
-        dataloader=dataloader,
-        activation=activation,
-        max_write_workers=max_write_workers,
-        out_channels=out_channels,
-        debug=debug,
-    )
-
-
-def evaluate_iterations(
-    eval_name: str,
-    model_name: str,
-    experiment_dir: str | Path,
-    model: dict,
-    dataset: dict,
-    dataloader: dict,
-    activation: dict,
-    out_channels: int,
-    num_iterations: int,
-    num_scenarios: int,
-    scenarios_path: str,
-    max_workers: int = 4,
-    num_sims: int = 1,
-    max_write_workers: int = 4,
-    debug: bool = False,
-    **kwargs: Any,
-) -> None:
-    tasks = [(i, s) for i in range(num_iterations) for s in range(1, num_scenarios + 1)]
-    scenarios_path = Path(scenarios_path)
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                _run_single_evaluation,
-                eval_name,
-                model_name,
-                experiment_dir,
-                model,
-                dataset,
-                dataloader,
-                activation,
-                out_channels,
-                i,
-                s,
-                scenarios_path,
-                num_sims,
-                max_write_workers,
-                debug,
-            ): (i, s)
-            for i, s in tasks
-        }
-        for future in as_completed(futures):
-            i, s = futures[future]
-            try:
-                future.result()
-            except Exception as e:
-                print(f"iteration_{i} scenario_{s} failed: {e}")

@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # training-data generation only (src/burn_emulator/ignite.py)
-data = ["pyretechnics==2026.8.10", "ray"]
+data = ["pyretechnics==2026.8.10", "psutil", "ray"]
 
 [project.scripts]
 burn_emulator = "burn_emulator.main:main"

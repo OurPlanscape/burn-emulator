@@ -1,8 +1,11 @@
 import resource
 import threading
 import time
+from collections import Counter
+from concurrent.futures import as_completed
 from typing import Any
 
+import numpy as np
 import rasterio
 import torch
 from rasterio.features import geometry_mask
@@ -49,47 +52,149 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
     return seed
 
 
-def run(
-    model_name: str,
+def timing_report(tag: str, header: str, timings: dict, total: float, rows: dict) -> None:
+    # rows: extra "label: value" lines printed after the timings, e.g. memory
+    timing_rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
+    extra_rows = "".join(f"\n  {label:<18}: {value}" for label, value in rows.items())
+    print(
+        f"[{tag}] timing  {header}\n"
+        f"{timing_rows}\n"
+        f"  {'total':<18}: {total:7.2f}s"
+        f"{extra_rows}",
+        flush=True,
+    )
+
+
+def peak_memory_rows() -> dict:
+    # ru_maxrss is peak resident set size (Linux reports KiB); children = reaped workers
+    rows = {
+        "peak cpu mem": f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2):7.2f}GB"
+    }
+    peak_child = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / (1024**2)
+    if peak_child > 0:
+        rows["peak worker mem"] = f"{peak_child:7.2f}GB"
+    peak_gpu = peak_gpu_gb()
+    if peak_gpu is not None:
+        rows["peak gpu mem"] = f"{peak_gpu:7.2f}GB"
+    return rows
+
+
+def pt_out_path(out_path: str | Path | None, experiment_dir: Path, model_name: str) -> str | Path:
+    if out_path is None:
+        return experiment_dir / "pt.tif"
+    # string ops so gs:// URIs survive; swap the model name for "pt" in the file name
+    out_path = str(out_path)
+    head, _, name = out_path.rpartition("/")
+    name = name.replace(model_name, "pt") if model_name in name else f"pt_{name}"
+    return f"{head}/{name}" if head else name
+
+
+def _run_pt(
+    ds: Any,
+    region: Any,
+    out_path: str | Path,
+    pt_workers: int | None,
+    timings: dict | None,
+    debug: bool,
+    cancel: threading.Event | None,
+) -> dict:
+    # deferred: pyretechnics is an optional dep (pyproject.toml [data] extra)
+    from burn_emulator import pt
+
+    profile = ds.profile | INF_PROFILE
+    shape = (profile["height"], profile["width"])
+    n_change = 3  # 0 no change | 1 non-crown -> crown | 2 crown -> non-crown
+    profile.update({"count": n_change})
+
+    with timed(timings, "pt inputs"):
+        baseline = pt.read_raw_inputs(ds.fuels_paths["baseline"], ds.topo_path, ds.profile)
+        treatment = pt.read_raw_inputs(ds.fuels_paths["treatment"], ds.topo_path, ds.profile)
+        treatment = pt.collate_treatment(baseline, treatment, region, ds.profile)
+        state = {
+            "inputs": {"baseline": pt.pt_inputs(baseline), "treatment": pt.pt_inputs(treatment)},
+            "keep_mask": geometry_mask(
+                [region], out_shape=shape, transform=profile["transform"], invert=True
+            ),
+        }
+
+    to_crown = np.zeros(shape, dtype=np.float32)
+    from_crown = np.zeros(shape, dtype=np.float32)
+    n_kept, sim_runtime, stops = 0, 0.0, Counter()
+    points = zip(ds.ignitions["row"], ds.ignitions["col"], strict=True)
+    pt_workers = pt.resolve_workers(shape[0] * shape[1], pt_workers)
+    with pt.pool(state, pt_workers) as pool:
+        futures = [
+            pool.submit(
+                pt.change_task,
+                (int(row), int(col)),
+                {role: float(ds.wind_angles[role].iloc[i]) for role in state["inputs"]},
+            )
+            for i, (row, col) in enumerate(points)
+        ]
+        completed = as_completed(futures)
+        while True:
+            with timed(timings, "pt simulate"):
+                future = next(completed, None)
+                result = None if future is None else future.result()
+            if result is None:
+                break
+            if cancel is not None and cancel.is_set():
+                for f in futures:
+                    f.cancel()
+                raise RunCancelled(f"cancelled after {n_kept}/{len(futures)} ignitions")
+            sim_runtime += result["runtime"]
+            stops.update(result["stop_conditions"])
+            # keep a fire when its burn (baseline or treatment) reaches the region
+            if not result["touches"]:
+                continue
+            with timed(timings, "aggregate"):
+                y0, x0 = result["origin"]
+                h, w = result["to_crown"].shape
+                to_crown[y0 : y0 + h, x0 : x0 + w] += result["to_crown"]
+                from_crown[y0 : y0 + h, x0 : x0 + w] += result["from_crown"]
+            n_kept += 1
+
+    # pixels a kept fire never changes count as "no change", as in batched_agg bg_channel=0
+    agg = np.stack([n_kept - to_crown - from_crown, to_crown, from_crown])
+    agg /= max(n_kept, 1)
+
+    if debug:
+        print(f"[run] kept {n_kept}/{len(futures)} fires touching the region", flush=True)
+
+    with timed(timings, "write"), rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(agg)
+
+    n_sims = 2 * len(futures)
+    return {
+        "n_kept": n_kept,
+        "rows": {
+            "workers": pt_workers,
+            "sim cpu": f"{sim_runtime:7.2f}s",
+            "sim mean": f"{1000 * sim_runtime / max(n_sims, 1):7.2f}ms ({n_sims} sims)",
+            **{f"stop: {k}": v for k, v in stops.items()},
+        },
+    }
+
+
+def _run_emulator(
+    ds: Any,
+    loader: Any,
+    region: Any,
     model: dict,
-    dataset: dict,
-    dataloader: dict,
     activation: dict,
-    experiment_dir: str | Path,
-    ckpt_path: str | None = None,
-    out_path: str | Path | None = None,
-    debug: bool = False,
-    cancel: threading.Event | None = None,
-    **kwargs: Any,
-) -> dict | None:
-    timings = {} if debug else None
-    t_start = time.perf_counter() if debug else None
-
-    experiment_dir = Path(experiment_dir)
+    experiment_dir: Path,
+    ckpt_path: str | None,
+    out_path: str | Path,
+    timings: dict | None,
+    debug: bool,
+    cancel: threading.Event | None,
+) -> dict:
+    n_ignitions = len(ds)
     ckpt_path = resolve_model_checkpoint(experiment_dir, ckpt_path)
-
     model = dynamic_import(model)
     activation = dynamic_import(activation)
-
-    base_init = dataset.setdefault("init_args", {})
-    base_init.setdefault("ignitions_path", None)  # sampled from treatment_area
-    base_init.setdefault("stats_path", experiment_dir / "stats.yaml")
-    region = base_init.get("treatment_area")
-    assert region is not None, "run needs dataset.init_args.treatment_area"
-    assert len(base_init.get("fuels_paths", [])) == 2, "run needs 2 fuels_paths"
-
-    with timed(timings, "dataset caching"):
-        ds = dynamic_import(dataset)
-        loader = dynamic_import(dataloader, {"dataset": ds})
-
-    n_ignitions = len(loader.dataset)
     if debug:
         print(f"[run] loading ckpt_path: {ckpt_path}", flush=True)
-        print(f"[run] {model_name}: {n_ignitions} ignitions", flush=True)
-
-    # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
-    if out_path is None:
-        out_path = experiment_dir / f"{model_name}.tif"
 
     with timed(timings, "model load"):
         ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)
@@ -99,7 +204,7 @@ def run(
         model.to(RUN_DEVICE, dtype=RUN_DTYPE)
         model.eval()
 
-    profile = loader.dataset.profile | INF_PROFILE
+    profile = ds.profile | INF_PROFILE
     shape = (profile["height"], profile["width"])
     n_change = 3  # 0 no change | 1 non-crown -> crown | 2 crown -> non-crown
     profile.update({"count": n_change})
@@ -184,21 +289,69 @@ def run(
         with rasterio.open(out_path, "w", **profile) as dst:
             dst.write(agg)
 
+    return {"n_kept": n_kept, "rows": {}}
+
+
+def run(
+    model_name: str,
+    model: dict,
+    dataset: dict,
+    dataloader: dict,
+    activation: dict,
+    experiment_dir: str | Path,
+    ckpt_path: str | None = None,
+    out_path: str | Path | None = None,
+    debug: bool = False,
+    cancel: threading.Event | None = None,
+    pyretechnics: bool = False,
+    pt_workers: int | None = None,
+    **kwargs: Any,
+) -> dict | None:
+    timings = {} if debug else None
+    t_start = time.perf_counter() if debug else None
+
+    experiment_dir = Path(experiment_dir)
+
+    base_init = dataset.setdefault("init_args", {})
+    base_init.setdefault("ignitions_path", None)  # sampled from treatment_area
+    base_init.setdefault("stats_path", experiment_dir / "stats.yaml")
+    region = base_init.get("treatment_area")
+    assert region is not None, "run needs dataset.init_args.treatment_area"
+    assert len(base_init.get("fuels_paths", [])) == 2, "run needs 2 fuels_paths"
+
+    with timed(timings, "dataset caching"):
+        ds = dynamic_import(dataset)
+        loader = dynamic_import(dataloader, {"dataset": ds})
+
+    n_ignitions = len(ds)
+
+    # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
+    if pyretechnics:
+        out_path = pt_out_path(out_path, experiment_dir, model_name)
+        backend = "pyretechnics"
+    else:
+        out_path = out_path or experiment_dir / f"{model_name}.tif"
+        backend = f"device={RUN_DEVICE}"
+    if debug:
+        print(f"[run] {backend}: {n_ignitions} ignitions -> {out_path}", flush=True)
+
+    if pyretechnics:
+        stats = _run_pt(ds, region, out_path, pt_workers, timings, debug, cancel)
+    else:
+        stats = _run_emulator(
+            ds, loader, region, model, activation, experiment_dir, ckpt_path, out_path,
+            timings, debug, cancel,
+        )
+
     if debug:
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
-        # ru_maxrss is this process's peak resident set size (Linux reports KiB)
-        peak_rss_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
-        peak_gpu = peak_gpu_gb()
-        rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
-        gpu_row = "" if peak_gpu is None else f"\n  {'peak gpu mem':<18}: {peak_gpu:7.2f}GB"
-        print(
-            f"[run] timing  device={RUN_DEVICE}  ({n_ignitions} ignitions, {n_kept} kept)\n"
-            f"{rows}\n"
-            f"  {'total':<18}: {total:7.2f}s\n"
-            f"  {'peak cpu mem':<18}: {peak_rss_gb:7.2f}GB"
-            f"{gpu_row}",
-            flush=True,
+        timing_report(
+            "run",
+            f"{backend}  ({n_ignitions} ignitions, {stats['n_kept']} kept)",
+            timings,
+            total,
+            {**stats["rows"], **peak_memory_rows()},
         )
         return {**timings, "total": total}
 

@@ -3,7 +3,7 @@ import argparse
 from burn_emulator.bundle import bundle
 from burn_emulator.config import apply_overrides, load_configs, resolve_model_name
 from burn_emulator.constants import METHODS
-from burn_emulator.evaluate import evaluate, evaluate_iterations
+from burn_emulator.evaluate import evaluate
 from burn_emulator.run import run
 from burn_emulator.train import train
 
@@ -21,7 +21,7 @@ def main():
     parser.add_argument("-a", "--architecture", action="store")
     parser.add_argument("-dv", "--data_version", action="store")
 
-    # dataset overrides: train / evaluate / evaluate_iterations / run only
+    # dataset overrides: train / evaluate / run only
     parser.add_argument("-mp", "--fbfm_map_path", action="store")
     parser.add_argument("-bf", "--baseline_fuels", action="store")
     parser.add_argument("-lf", "--legalmax_fuels", action="store")
@@ -35,11 +35,14 @@ def main():
     parser.add_argument("-ws", "--wind_seed", action="store", type=int)
     parser.add_argument("-d", "--debug", action="store_true")
 
-    # checkpoint: train / evaluate / evaluate_iterations / run / bundle
+    # checkpoint: train / evaluate / run / bundle
     parser.add_argument("-cp", "--ckpt_path", action="store")
 
     # run only
     parser.add_argument("-o", "--out_path", action="store")
+
+    # run / evaluate: simulate with pyretechnics instead of the emulator
+    parser.add_argument("-pt", "--pyretechnics", action="store_true")
 
     # ignite only
     parser.add_argument("-ni", "--num_ignitions", action="store", type=int)
@@ -58,14 +61,13 @@ def main():
     if args.method not in ("bundle", "ignite"):
         configs = apply_overrides(configs, args)
         configs["debug"] = args.debug
+        configs["pyretechnics"] = args.pyretechnics
 
     match args.method:
         case "train":
             train(**configs)
         case "evaluate":
             evaluate(**configs)
-        case "evaluate_iterations":
-            evaluate_iterations(**configs)
         case "run":
             run(**configs)
         case "bundle":

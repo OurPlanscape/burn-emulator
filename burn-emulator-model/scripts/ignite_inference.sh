@@ -14,7 +14,7 @@ MAX_CONCURRENT=1
 
 MODEL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-source "$MODEL_DIR/.venv/bin/activate"
+source "$MODEL_DIR/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 cd "$MODEL_DIR"
 
 CONFIG_DIR=configs
@@ -38,7 +38,7 @@ run_task () {
     local N=$2
     local EVAL_CFG=$3
 
-    source "$MODEL_DIR/.venv/bin/activate"
+    source "$MODEL_DIR/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 
     local BASELINE_DIR="${SCENARIO_DIR}/${N}_baseline"
 

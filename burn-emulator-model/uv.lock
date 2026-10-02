@@ -265,6 +265,7 @@ dependencies = [
 
 [package.optional-dependencies]
 data = [
+    { name = "psutil" },
     { name = "pyretechnics" },
     { name = "ray" },
 ]
@@ -283,6 +284,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.1" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pointpats" },
+    { name = "psutil", marker = "extra == 'data'" },
     { name = "pyretechnics", marker = "extra == 'data'", specifier = "==2026.8.10" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rasterio", specifier = ">=1.4.3,<1.5" },

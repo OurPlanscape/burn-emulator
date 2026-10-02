@@ -43,7 +43,7 @@ LOG1P_KEYS = ["cbd", "cbh", "th", "gtr_ros", "gtr_fl"]
 ROLE_KEYS = ['baseline', 'treatment']
 
 # cli path constants
-METHODS = ["train", "evaluate", "evaluate_iterations", "run", "bundle", "ignite"]
+METHODS = ["train", "evaluate", "run", "bundle", "ignite"]
 OUTDIR = Path("data/outputs")
 BUNDLE_DIR = Path("data/bundles")
 CONFIG_DIR = Path("configs")
