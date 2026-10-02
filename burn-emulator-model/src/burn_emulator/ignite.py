@@ -17,11 +17,10 @@ from rasterio.windows import from_bounds
 
 from burn_emulator.config import check_data_version, inputs_version, wind_range
 from burn_emulator.constants import (
-    ASPECT_FILE,
     INPUT_KEYS,
     RAW_NO_DATA,
-    SLOPE_FILE,
     TARGET_CRS,
+    TOPO_DIR_PREFIX,
     TRAINING_DATA_DIR,
     VARLOCS_GPKG,
     WEST_FUELS_DIR_PREFIX,
@@ -220,8 +219,10 @@ def ignite(
     data_version = check_data_version(data_version)
     fuels = inputs_version(data_version)
     west_fuels_dir = TRAINING_DATA_DIR / f"{WEST_FUELS_DIR_PREFIX}_{fuels}"
-    if not west_fuels_dir.is_dir():
-        raise FileNotFoundError(f"{west_fuels_dir} not found for data_version {data_version}")
+    topo_source_dir = TRAINING_DATA_DIR / f"{TOPO_DIR_PREFIX}_{fuels}"
+    for src_dir in (west_fuels_dir, topo_source_dir):
+        if not src_dir.is_dir():
+            raise FileNotFoundError(f"{src_dir} not found for data_version {data_version}")
 
     training_data_dir = TRAINING_DATA_DIR / varloc / data_version
     if training_data_dir.exists():
@@ -253,8 +254,8 @@ def ignite(
 
     topo_dir = training_data_dir / "topo"
     topo_dir.mkdir(parents=True, exist_ok=True)
-    for name, src_path in (("aspect", ASPECT_FILE), ("slope_degrees", SLOPE_FILE)):
-        arr, profile = _read_masked_window(src_path, geom, bounds)
+    for name in ("aspect", "slope_degrees"):
+        arr, profile = _read_masked_window(topo_source_dir / f"{name}.tif", geom, bounds)
         with rio.open(topo_dir / f"{name}.tif", "w", **profile) as dst:
             dst.write(arr, 1)
 

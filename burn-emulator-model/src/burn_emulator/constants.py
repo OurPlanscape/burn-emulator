@@ -53,6 +53,4 @@ WIND_DIRECTIONS = CONFIG_DIR / "wind_directions.csv"
 # training-data generation (src/burn_emulator/ignite.py)
 WEST_FUELS_DIR_PREFIX = "West_Fuels_DN"
 VARLOCS_GPKG = TRAINING_DATA_DIR / "western_varlocs_5070_cleaned.gpkg"
-TOPO_SOURCE_DIR = TRAINING_DATA_DIR / "topo" / "LF"
-ASPECT_FILE = TOPO_SOURCE_DIR / "aspect.tif"
-SLOPE_FILE = TOPO_SOURCE_DIR / "slope_degrees.tif"
+TOPO_DIR_PREFIX = "topo"

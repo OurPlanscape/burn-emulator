@@ -93,7 +93,7 @@ publish-inputs: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUE
 	data_version="$(DATA_VERSION)"
 	[ -n "$$data_version" ] || data_version=$$($(MODEL_DIR)/scripts/data_version.sh inputs_version)
 	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/West_Fuels_DN_$$data_version)"
-	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo/LF)"
+	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo_$$data_version)"
 	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
 publish-varlocs: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs txt + gpkg of a published data_version ([VARLOCS_TXT=] [VARLOCS_GPKG=] [DATA_VERSION=], default: current)
