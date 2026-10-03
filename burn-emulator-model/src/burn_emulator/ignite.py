@@ -29,7 +29,7 @@ from burn_emulator.pt import CUBE_BANDS, DEFAULT_PT_ADJUSTMENTS, pt_inputs, simu
 
 TREATMENTS = ["baseline", "legalmax"]
 
-RAY_MEM = 4 * 1024 * 1024 * 1024
+RAY_MEM = 8 * 1024 * 1024 * 1024
 DEFAULT_MAX_DURATIONS = [8 * 60]
 
 MEM_SAMPLE_INTERVAL = 5  # seconds
@@ -108,6 +108,17 @@ def outside_buffer(fuel_model_cube, point: tuple, buffered_gdf, transform):
     points_geom = gpd.points_from_xy(x=[x], y=[y])
 
     return points_geom.within(buffered_gdf["geometry"][0])[0]  # return first element of list
+
+
+def count_allowable_cells(fuel_model_array, buffered_gdf, transform) -> int:
+    # vectorized is_burnable + outside_buffer; sampling never terminates when this is 0
+    fuel_models = np.unique(fuel_model_array)
+    burnable_models = [n for n in fuel_models if fm.fuel_model_exists(n) and not (91 <= n <= 99)]
+    burnable = np.isin(fuel_model_array, burnable_models)
+    inside = geometry_mask(
+        buffered_gdf["geometry"], out_shape=fuel_model_array.shape, transform=transform, invert=True
+    )
+    return int(np.count_nonzero(burnable & inside))
 
 
 def sample_ignited_cells_buffered(fuel_model_cube, num_ignitions, buffered_gdf, transform, seed):
@@ -225,13 +236,33 @@ def ignite(
             raise FileNotFoundError(f"{src_dir} not found for data_version {data_version}")
 
     training_data_dir = TRAINING_DATA_DIR / varloc / data_version
-    if training_data_dir.exists():
-        if not overwrite:
-            raise FileExistsError(f"{training_data_dir} already exists; pass overwrite to replace it")
-        shutil.rmtree(training_data_dir)
+    if training_data_dir.exists() and not overwrite:
+        raise FileExistsError(f"{training_data_dir} already exists; pass overwrite to replace it")
 
     geom = _load_varloc_geom(varloc)
     bounds = geom.bounds
+
+    aoi_gdf = gpd.GeoDataFrame(geometry=[geom], crs=TARGET_CRS)
+    buffered_geom = aoi_gdf.buffer(buffer_dist)  # ignitions can't be within this of the edge
+    buffered_gdf = gpd.GeoDataFrame(geometry=buffered_geom)
+
+    # checked in memory before anything is deleted or written, so a varloc with no fuels
+    # coverage fails without leaving (or wiping) a training data dir
+    fbfm_src = fuels_source_dir / TREATMENTS[0] / "fbfm.tif"
+    if not fbfm_src.is_file():
+        raise FileNotFoundError(f"{fbfm_src} not found")
+    fbfm_arr, fbfm_profile = _read_masked_window(fbfm_src, geom, bounds)
+    num_allowable = count_allowable_cells(fbfm_arr, buffered_gdf, fbfm_profile["transform"])
+    if num_allowable == 0:
+        raise ValueError(
+            f"{varloc}: no burnable cells more than {-buffer_dist} m inside the varloc boundary; "
+            f"check fuels coverage in {fuels_source_dir}"
+        )
+    print(f"{varloc}: {num_allowable} allowable ignition cells")
+    del fbfm_arr
+
+    if training_data_dir.exists():
+        shutil.rmtree(training_data_dir)
 
     fuels_files = {}
     for treatment in TREATMENTS:
@@ -260,10 +291,6 @@ def ignite(
     template_profile = dict(template_raster.profile)
 
     cube_shape = (CUBE_BANDS, template_raster.height, template_raster.width)
-
-    aoi_gdf = gpd.GeoDataFrame(geometry=[geom], crs=TARGET_CRS)
-    buffered_geom = aoi_gdf.buffer(buffer_dist)  # ignitions can't be within this of the edge
-    buffered_gdf = gpd.GeoDataFrame(geometry=buffered_geom)
 
     ignition_locations = sample_ignited_cells_buffered(
         fuel_model_cube=SpaceTimeCube(cube_shape, template_array),
