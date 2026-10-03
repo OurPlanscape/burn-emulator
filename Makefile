@@ -112,8 +112,8 @@ train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODE
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p -v $(VARLOC) $(NODES)
 
-train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([NODES=n1,n2])
-	$(MODEL_DIR)/slurm/submit_train_all.sh -p $(NODES)
+train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([EXCLUDE=v1,v2] [NODES=n1,n2])
+	$(MODEL_DIR)/slurm/submit_train_all.sh -p $(if $(EXCLUDE),-x "$(EXCLUDE)") $(NODES)
 
 inference: ## [metal] run inference for one varloc (VARLOC= OUTPUTS_ROOT=)
 	if [ -z "$(VARLOC)" ] || [ -z "$(OUTPUTS_ROOT)" ]; then
@@ -160,7 +160,8 @@ training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPU
 	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
 	burn_emulator -m ignite -vl $(VARLOC) -dv "$$dv" $(if $(NUM_IGNITIONS),-ni $(NUM_IGNITIONS)) $(if $(OVERWRITE),-ow)
 
-# skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1
+# skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1;
+# keeps going past varlocs that fail and exits nonzero listing them
 training-data-all: ## [metal|slurm] generate ignitions for every varloc in the varlocs gpkg ([INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
 	if [ -n "$(SLURM)" ]; then $(call ignitions_sbatch,); exit 0; fi
@@ -169,13 +170,19 @@ training-data-all: ## [metal|slurm] generate ignitions for every varloc in the v
 	dv="$(or $(INPUTS_VERSION),$$(scripts/data_version.sh inputs_version))_$(or $(IGNITIONS_VERSION),$$(scripts/data_version.sh ignitions_version))"
 	mapfile -t varlocs < <(scripts/gpkg_varlocs.sh)
 	echo "$${#varlocs[@]} varlocs in gpkg"
+	failed=()
 	for varloc in "$${varlocs[@]}"; do
 	    if [ -z "$(OVERWRITE)" ] && [ -f "data/training_data/$$varloc/$$dv/legalmax/outputs_table.csv" ]; then
 	        echo "skipping $$varloc: $$dv already complete"
 	        continue
 	    fi
-	    $(MAKE) -C "$(CURDIR)" training-data VARLOC="$$varloc" OVERWRITE=1 $(if $(NUM_IGNITIONS),NUM_IGNITIONS=$(NUM_IGNITIONS)) $(if $(INPUTS_VERSION),INPUTS_VERSION=$(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),IGNITIONS_VERSION=$(IGNITIONS_VERSION))
+	    # a failing varloc (e.g. no fuels coverage) doesn't stop the rest; reported at the end
+	    if ! $(MAKE) -C "$(CURDIR)" training-data VARLOC="$$varloc" OVERWRITE=1 $(if $(NUM_IGNITIONS),NUM_IGNITIONS=$(NUM_IGNITIONS)) $(if $(INPUTS_VERSION),INPUTS_VERSION=$(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),IGNITIONS_VERSION=$(IGNITIONS_VERSION)); then
+	        echo "failed $$varloc" >&2
+	        failed+=("$$varloc")
+	    fi
 	done
+	if [ $${#failed[@]} -gt 0 ]; then echo "$${#failed[@]} varlocs failed: $${failed[*]}" >&2; exit 1; fi
 
 shell: ## [metal] sync the model venv and open a shell with it activated
 	set -e
