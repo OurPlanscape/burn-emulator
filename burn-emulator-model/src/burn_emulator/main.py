@@ -13,6 +13,14 @@ from burn_emulator.run import run
 from burn_emulator.train import train
 
 
+def _str2bool(value: str) -> bool:
+    if value.lower() in ("true", "1", "yes"):
+        return True
+    if value.lower() in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError(f"expected true/false, got {value!r}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="")
 
@@ -39,6 +47,8 @@ def main():
     parser.add_argument("-wr", "--wind_range", action="store", nargs=2, type=float)
     parser.add_argument("-ws", "--wind_seed", action="store", type=int)
     parser.add_argument("-d", "--debug", action="store_true")
+    # cache burn windows in memory when burn_paths are set (training); `-cb false` with jitter
+    parser.add_argument("-cb", "--cache_burns", action="store", type=_str2bool, default=True)
 
     # checkpoint: train / evaluate / run / bundle
     parser.add_argument("-cp", "--ckpt_path", action="store")

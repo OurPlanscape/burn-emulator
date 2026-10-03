@@ -1,4 +1,5 @@
 from functools import lru_cache
+from time import perf_counter
 
 import geopandas as gpd
 import numpy as np
@@ -31,6 +32,7 @@ from burn_emulator.utils import circle_mask
 # likely will never reach either limits
 MAX_IGNITION_RESAMPLE = 42
 MAX_TARGET_IGNITIONS = 2**16
+CACHE_LOG_EVERY = 100  # burn windows between cache_burns progress lines
 
 
 def _window(src, window_bounds: tuple | None) -> Window | None:
@@ -254,6 +256,7 @@ class VarLoc(Dataset):
         circle_mask: bool = True,
         one_hot_y: bool = True,
         log1p: bool = False,  # log1p LOG1P_KEYS before standardizing
+        cache_burns: bool = True,  # hold every ignition's burn window in memory (training only)
     ) -> None:
         # fuels_paths / burn_paths / wind_ang_paths are role-keyed: baseline / treatment
         self.fuels_paths = {k: Path(p) for k, p in fuels_paths.items() if p is not None}
@@ -295,6 +298,11 @@ class VarLoc(Dataset):
         self.circle_mask = circle_mask
         self.one_hot_y = one_hot_y
         self.log1p = log1p
+        # burns only exist for training; inference (burn_paths=None) has nothing to cache
+        self.cache_burns = cache_burns and self.burn_paths is not None
+        if self.cache_burns:
+            # cached windows are fixed to each ignition's row/col, so they can't follow a jitter
+            assert jitter is None, "cache_burns cannot be used with jitter; set cache_burns: false"
 
         self._sample_gs = self._build_sampling_region(
             ignitions_path, treatment_area, treatment_buff)
@@ -326,6 +334,8 @@ class VarLoc(Dataset):
         if self.circle_mask:
             self._set_circle_mask()
 
+        self.burns = self._cache_burns() if self.cache_burns else None
+
     def __len__(self) -> int:
         if self.burn_paths is None:
             return len(self.ignitions)
@@ -356,8 +366,7 @@ class VarLoc(Dataset):
             y += np.random.randint(-(self.jitter + 1), self.jitter)
             x += np.random.randint(-(self.jitter + 1), self.jitter)
 
-        _, h, w = self.fuels[fkey]["fbfm"].shape
-        ymin, ymax, xmin, xmax, yslc, xslc = compute_bounds(y, x, h, w, self.window_size)
+        ymin, ymax, xmin, xmax, yslc, xslc = self._ignition_bounds(fkey, y, x)
         ydiff, xdiff, ypad, xpad = compute_padding(ymin, ymax, xmin, xmax, self.window_size)
 
         # stacking treated area as a secondary X
@@ -372,7 +381,11 @@ class VarLoc(Dataset):
 
         # padding information is not necessary for training
         if self.burn_paths is not None:
-            arr_y = self._build_arr_y(ignition, burn_path, yslc, xslc, ydiff, xdiff, ypad, xpad)
+            if self.burns is not None:
+                arr_y = self.burns[fkey][sidx]
+            else:
+                arr_y = self._build_arr_y_raw(ignition, burn_path, yslc, xslc)
+            arr_y = self._build_arr_y(arr_y, ydiff, xdiff, ypad, xpad)
             return {
                 "x": arr_x,
                 "y": arr_y,
@@ -389,6 +402,37 @@ class VarLoc(Dataset):
                 "bounds": (ymin, ymax, xmin, xmax),
                 "indxes": (sidx, bidx),
             }
+
+    def _ignition_bounds(
+        self, fkey: str, y: int, x: int
+    ) -> tuple[int, int, int, int, slice, slice]:
+        _, h, w = self.fuels[fkey]["fbfm"].shape
+        return compute_bounds(y, x, h, w, self.window_size)
+
+    def _cache_burns(self) -> dict[str, list[torch.Tensor]]:
+        # raw (unpadded, un-encoded) fire_type windows around each ignition, per role;
+        # encoding + padding still happen per item in _build_arr_y
+        burns = {}
+        total = len(self.ignitions) * len(self.burn_paths)
+        done, start = 0, perf_counter()
+        for fkey, burn_path in self.burn_paths.items():
+            burns[fkey] = []
+            for sidx in range(len(self.ignitions)):
+                ignition = self.ignitions.iloc[sidx]
+                y, x = int(ignition["row"].item()), int(ignition["col"].item())
+                *_, yslc, xslc = self._ignition_bounds(fkey, y, x)
+                arr = self._build_arr_y_raw(ignition, burn_path, yslc, xslc)
+                burns[fkey].append(arr.to(torch.uint8, copy=True))
+                done += 1
+                # flushed so slurm logs show caching is progressing (NFS reads can be slow)
+                if done % CACHE_LOG_EVERY == 0 or done == total:
+                    elapsed = perf_counter() - start
+                    print(
+                        f"[cache_burns] {done}/{total} windows ({fkey}) "
+                        f"{elapsed:.1f}s elapsed, {elapsed / done * 1000:.1f} ms/window",
+                        flush=True,
+                    )
+        return burns
 
     def _pad(
         self,
@@ -474,22 +518,25 @@ class VarLoc(Dataset):
         for bp in bps:
             with rasterio.open(bp) as src:
                 arr = torch.tensor(src.read())
+                nodata = src.nodata
             arr = arr[:, yslc, xslc]
+            # a nodata fill (e.g. -999) would read as unburned, or as burned once cached as uint8
+            assert 0 <= arr.min() and arr.max() < self.num_classes, (
+                f"fire_type values [{arr.min().item()}, {arr.max().item()}] out of "
+                f"[0, {self.num_classes}) in {bp}; nodata={nodata} "
+                f"present={nodata is not None and bool((arr == nodata).any())}"
+            )
             arr_y.append(arr)
         return torch.concat(arr_y)
 
     def _build_arr_y(
         self,
-        ignition: pd.Series,
-        burn_path: Path,
-        yslc: slice,
-        xslc: slice,
+        arr_y: torch.Tensor,
         ydiff: int,
         xdiff: int,
         ypad: tuple[int, int, int, int],
         xpad: tuple[int, int, int, int],
     ) -> torch.Tensor:
-        arr_y = self._build_arr_y_raw(ignition, burn_path, yslc, xslc)
         if self.one_hot_y:
             arr_y = F.one_hot(arr_y.long(), num_classes=self.num_classes)
             arr_y = arr_y.permute(0, 3, 1, 2).flatten(0, 1)
