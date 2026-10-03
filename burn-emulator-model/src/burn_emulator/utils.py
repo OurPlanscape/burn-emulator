@@ -1,4 +1,5 @@
 import heapq
+import os
 import re
 import time
 from functools import lru_cache
@@ -99,6 +100,12 @@ def circle_mask(window_size: int) -> torch.Tensor:
     return dist < min(cx, cy)
 
 
+def _atomic_save(obj: object, path: Path) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    torch.save(obj, tmp)
+    os.replace(tmp, path)
+
+
 def save_checkpoint(
     model: torch.nn.Module,
     tag: str,
@@ -114,15 +121,17 @@ def save_checkpoint(
     ckpt_name = f"{tag}_loss-{loss:.4f}_epoch-{epoch:04d}_step-{step:06d}.pt"
     ckpt_path = ckpt_dir / ckpt_name
 
-    if isinstance(model, torch._dynamo.eval_frame.OptimizedModule):
-        torch.save(model._orig_mod.state_dict(), ckpt_path)
-    else:
-        torch.save(model.state_dict(), ckpt_path)
-
+    # optimizer first: the model file is what find_latest_checkpoint discovers,
+    # so it must only appear once its optimizer state is already on disk
     if optimizer is not None:
         optim_dir = ckpt_dir / "optim"
         optim_dir.mkdir(exist_ok=True)
-        torch.save(optimizer.state_dict(), optim_dir / ckpt_path.name)
+        _atomic_save(optimizer.state_dict(), optim_dir / ckpt_path.name)
+
+    if isinstance(model, torch._dynamo.eval_frame.OptimizedModule):
+        _atomic_save(model._orig_mod.state_dict(), ckpt_path)
+    else:
+        _atomic_save(model.state_dict(), ckpt_path)
 
     heapq.heappush(heap, (-loss, epoch, step, ckpt_path.stem))
 

@@ -15,7 +15,6 @@ from burn_emulator.constants import CONFIG_DIR, OUTDIR, TARGET_CRS, WIND_DIRECTI
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
 # bare ${name} interpolations that resolve nowhere fall back to the environment,
-# then to null (so optional slots can be left unset, e.g. an unexported role).
 _INTERP_RE = re.compile(r"\$\{(\w+)\}")
 
 
@@ -117,6 +116,7 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
             ("ignition_density", args.ignition_density),
             ("wind_seed", args.wind_seed),
             ("wind_range", args.wind_range),
+            ("cache_burns", args.cache_burns),
         )
         if value is not None
     }
