@@ -17,7 +17,7 @@
 set -euo pipefail
 
 echo "Job started on $(hostname) at $(date)"
-echo "Job ID: $SLURM_JOB_ID, Array Task ID: ${SLURM_ARRAY_TASK_ID:-}, cpus: $SLURM_CPUS_ON_NODE"
+echo "Job ID: $SLURM_JOB_ID, Array: ${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_ID:-}, cpus: $SLURM_CPUS_ON_NODE"
 
 set +u
 source "$HOME/.bashrc"

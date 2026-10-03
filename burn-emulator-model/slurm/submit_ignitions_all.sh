@@ -57,6 +57,7 @@ VARLOCS_LIST=$(realpath "$MODEL_DIR/data/logs")/ignitions_varlocs_$(date +%Y%m%d
 printf '%s\n' "${SUBMIT[@]}" > "$VARLOCS_LIST"
 
 ARRAY_ID=$(sbatch --parsable --hold \
+    --output="$MODEL_DIR/data/logs/%x_%A_%a.out" --error="$MODEL_DIR/data/logs/%x_%A_%a.err" \
     --array="0-$((${#SUBMIT[@]} - 1))" \
     --export=ALL,VARLOC=,VARLOCS_LIST="$VARLOCS_LIST",DATA_VERSION="$DATA_VERSION",NUM_IGNITIONS="$NUM_IGNITIONS",OVERWRITE=1 \
     "$(dirname "$0")/ignitions.slurm")

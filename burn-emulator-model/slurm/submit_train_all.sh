@@ -1,19 +1,21 @@
 #!/bin/bash -l
 set -euo pipefail
 
-# run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-p] [-v <varloc>]... [-r <indices>] [node[,node...] ...]
-# trains every trainable varloc (-v: only these, -r: indices e.g. 0-5,9) across the given GPU nodes
+# run from the repo root: burn-emulator-model/slurm/submit_train_all.sh [-p] [-v <varloc>]... [-x <varloc[,varloc...]>]... [-r <indices>] [node[,node...] ...]
+# trains every trainable varloc (-v: only these, -x: all but these, -r: indices e.g. 0-5,9) across the given GPU nodes
 # -p also bundles + publishes each (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)
 
-usage () { echo "usage: $0 [-p] [-v <varloc>]... [-r <indices, e.g. 0-5,9>] [node[,node...] ...]" >&2; exit 1; }
+usage () { echo "usage: $0 [-p] [-v <varloc>]... [-x <varloc[,varloc...]>]... [-r <indices, e.g. 0-5,9>] [node[,node...] ...]" >&2; exit 1; }
 
 RANGE=""
 PUBLISH=""
 SELECTED=()
-while getopts "pv:r:" opt; do
+EXCLUDED=()
+while getopts "pv:x:r:" opt; do
     case "$opt" in
         p) PUBLISH=1 ;;
         v) SELECTED+=("$OPTARG") ;;
+        x) IFS=", " read -ra PARTS <<<"$OPTARG"; EXCLUDED+=("${PARTS[@]}") ;;
         r) RANGE=$OPTARG ;;
         *) usage ;;
     esac
@@ -61,6 +63,12 @@ if [ ${#SELECTED[@]} -gt 0 ]; then
 else
     VARLOCS=("${TRAINABLE[@]}")
 fi
+if [ ${#EXCLUDED[@]} -gt 0 ]; then
+    for varloc in "${EXCLUDED[@]}"; do
+        printf '%s\n' "${VARLOCS[@]}" | grep -qxF "$varloc" || echo "warning: excluded $varloc is not in the set to train" >&2
+    done
+    mapfile -t VARLOCS < <(printf '%s\n' "${VARLOCS[@]}" | { grep -vxF -f <(printf '%s\n' "${EXCLUDED[@]}") || true; })
+fi
 N_VARLOCS=${#VARLOCS[@]}
 [ "$N_VARLOCS" -gt 0 ] || { echo "no varlocs with complete training data" >&2; exit 1; }
 [ -z "$RANGE" ] && RANGE="0-$((N_VARLOCS - 1))"
@@ -95,6 +103,7 @@ submit_array () {
     shift 5
     ARRAY_ID=$(sbatch --parsable "$@" \
         --array="0-$((workers - 1))" \
+        --output=burn-emulator-model/data/logs/%x_%A_%a.out --error=burn-emulator-model/data/logs/%x_%A_%a.err \
         --job-name="train_$name" \
         --cpus-per-task="$cpus" \
         --mem="$mem" \

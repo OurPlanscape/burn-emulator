@@ -6,13 +6,13 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=10000
+#SBATCH --mem=20000
 # one varloc: sbatch --nodelist=<node> [--gres=gpu:1] --export=ALL,VARLOC=<varloc> burn-emulator-model/slurm/train.slurm
 # QUEUE=<file> (from submit_train_all.sh): trains varlocs from the queue until it is empty
 # PUBLISH=1 also bundles + publishes (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)
 
 echo "Job started on $(hostname) at $(date)"
-echo "Job ID: $SLURM_JOB_ID, Array Task ID: ${SLURM_ARRAY_TASK_ID:-}"
+echo "Job ID: $SLURM_JOB_ID, Array: ${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_ID:-}"
 
 source $HOME/.bashrc
 source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
