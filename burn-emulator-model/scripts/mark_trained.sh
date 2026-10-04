@@ -11,8 +11,9 @@ varlocs_txt=configs/varlocs/varlocs.txt
 
 exec {lock_fd}>"$varlocs_txt.lock"
 flock "$lock_fd"
+touch "$varlocs_txt"
 if ! grep -qxF "$varloc" "$varlocs_txt"; then
-    { grep -vE '^[[:space:]]*$' "$varlocs_txt"; echo "$varloc"; } | LC_ALL=C sort -u > "$varlocs_txt.tmp"
+    { grep -vE '^[[:space:]]*$' "$varlocs_txt" || true; echo "$varloc"; } | LC_ALL=C sort -u > "$varlocs_txt.tmp"
     mv "$varlocs_txt.tmp" "$varlocs_txt"
     echo "added $varloc to $varlocs_txt"
 fi

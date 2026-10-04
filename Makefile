@@ -57,6 +57,7 @@ model-bundle: ## [metal] bundle one model (VARLOC=)
 model-bundle-all: valid-varlocs ## [metal] bundle every varloc in varlocs.txt
 	set -e
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
+	if [ $${#varlocs[@]} -eq 0 ]; then echo "error: $(MODEL_DIR)/configs/varlocs/varlocs.txt lists no varlocs" >&2; exit 2; fi
 	for varloc in "$${varlocs[@]}"; do
 	    $(MAKE) model-bundle VARLOC="$$varloc"
 	done
