@@ -6,7 +6,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=20000
+#SBATCH --mem=15000
 # one varloc: sbatch --nodelist=<node> [--gres=gpu:1] --export=ALL,VARLOC=<varloc> burn-emulator-model/slurm/train.slurm
 # QUEUE=<file> (from submit_train_all.sh): trains varlocs from the queue until it is empty
 # PUBLISH=1 also bundles + publishes (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)

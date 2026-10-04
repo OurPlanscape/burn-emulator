@@ -135,6 +135,9 @@ def train(
         meta = parse_checkpoint_meta(ckpt_path)
         if meta is not None:
             start_epoch, start_step = meta[0] + 1, meta[1]
+        if start_epoch >= num_epochs:
+            print(f"Checkpoint {ckpt_path} already has epoch {start_epoch}, skipping training")
+            return
 
     dataset = dynamic_import(dataset, {"stats_path": experiment_dir / "stats.yaml"})
     optimizer = dynamic_import(optimizer, {"params": model.parameters()})

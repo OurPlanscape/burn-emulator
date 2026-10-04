@@ -17,4 +17,4 @@ criterion:
         focal_weight: .5
         label_smoothing: .05
         gamma: 2.0
-num_epochs: 1024
+num_epochs: 512
