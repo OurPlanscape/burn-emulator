@@ -1,14 +1,14 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=train
-#SBATCH --output=burn-emulator-model/data/logs/%x_%j.out
-#SBATCH --error=burn-emulator-model/data/logs/%x_%j.err
+#SBATCH --output=burn-emulator-model/data/logs/train/%x_%j.out
+#SBATCH --error=burn-emulator-model/data/logs/train/%x_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=15000
 # one varloc: sbatch --nodelist=<node> [--gres=gpu:1] --export=ALL,VARLOC=<varloc> burn-emulator-model/slurm/train.slurm
-# QUEUE=<file> (from submit_train_all.sh): trains varlocs from the queue until it is empty
+# QUEUE=<file> (from submit_train_all.sh): trains varlocs from the queue until none are pending (see queue.sh)
 # PUBLISH=1 also bundles + publishes (needs BURN_EMULATOR_MODELS_URI and BURN_EMULATOR_INPUTS_URI)
 
 echo "Job started on $(hostname) at $(date)"
@@ -17,6 +17,8 @@ echo "Job ID: $SLURM_JOB_ID, Array: ${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_I
 source $HOME/.bashrc
 source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 cd burn-emulator-model
+mkdir -p data/logs/train
+source slurm/queue.sh
 
 CONFIG_DIR=configs
 VARLOC_DIR=$CONFIG_DIR/varlocs
@@ -26,9 +28,6 @@ TRAIN_TEMPLATE=$VARLOC_DIR/templates/train.yaml
 if [ -n "${QUEUE:-}" ]; then
     [ -f "$QUEUE" ] || { echo "error: queue file $QUEUE not found" >&2; exit 2; }
     [ -n "${SLURM_ARRAY_TASK_ID:-}" ] || { echo "error: QUEUE needs an array task (SLURM_ARRAY_TASK_ID)" >&2; exit 2; }
-    CLAIM_DIR=${QUEUE%.txt}.d
-    STATUS_FILE=${QUEUE%.txt}.status
-    mkdir -p "$CLAIM_DIR"
 else
     [ -n "${VARLOC:-}" ] || { echo "error: pass VARLOC via sbatch --export=ALL,VARLOC=<varloc>" >&2; exit 2; }
 fi
@@ -87,9 +86,9 @@ fi
 if [ -n "${MONITOR:-}" ]; then
     (
         while true; do
-            free -h > data/logs/train.out
-            nvidia-smi >> data/logs/train.out
-            echo "=== $(date) ===" >> data/logs/train.out
+            free -h > data/logs/train/train.out
+            nvidia-smi >> data/logs/train/train.out
+            echo "=== $(date) ===" >> data/logs/train/train.out
             sleep 60
         done
     ) &
@@ -132,19 +131,7 @@ run_varloc () {
 
 status=0
 if [ -n "${QUEUE:-}" ]; then
-    # read the queue up front so nothing in run_varloc can consume it from stdin
-    mapfile -t QUEUED < "$QUEUE"
-    for varloc in "${QUEUED[@]}"; do
-        [ -n "$varloc" ] || continue
-        mkdir "$CLAIM_DIR/$varloc" 2>/dev/null || continue
-        echo "[queue] $varloc claimed at $(date)"
-        result=ok
-        run_varloc "$varloc" \
-            > "data/logs/train_${varloc}_${SLURM_JOB_ID}.out" \
-            2> "data/logs/train_${varloc}_${SLURM_JOB_ID}.err" || { result=failed; status=1; }
-        ( flock 9; echo "$varloc $result $SLURM_JOB_ID" >> "$STATUS_FILE" ) 9>>"$STATUS_FILE"
-        echo "[queue] $varloc $result at $(date)"
-    done
+    queue_run train/train run_varloc || status=$?
 else
     run_varloc "$VARLOC" || status=$?
 fi

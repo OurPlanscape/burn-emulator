@@ -1,22 +1,24 @@
 #!/bin/bash -l
 set -euo pipefail
 
-# run from the repo root: burn-emulator-model/slurm/submit_ignitions_all.sh [-v <varloc>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]
-# one ignitions.slurm array task per varloc in the varlocs gpkg (-v restricts to the given varlocs), skipping
-# ones whose training data is complete (legalmax outputs_table.csv) unless -o; incomplete ones are
-# regenerated from scratch. -i / -g (YYYYMMDD) default to current.yaml. the array is submitted held,
-# each task renamed to ignitions_<varloc> (so squeue and the %x log names show it), then released
+# run from the repo root: burn-emulator-model/slurm/submit_ignitions_all.sh [-v <varloc>]... [-x <varloc[,varloc...]>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]
+# queues every varloc in the varlocs gpkg (-v: only these, -x: all but these), skipping ones whose training
+# data is complete (legalmax outputs_table.csv) unless -o; incomplete ones are regenerated from scratch.
+# -i / -g (YYYYMMDD) default to current.yaml. one ignitions.slurm worker works through the queue file
+# (data/logs/ignitions/ignitions_queue_<stamp>.txt), which shows each varloc's state (see queue.sh)
 
-usage () { echo "usage: $0 [-v <varloc>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]" >&2; exit 1; }
+usage () { echo "usage: $0 [-v <varloc>]... [-x <varloc[,varloc...]>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]" >&2; exit 1; }
 
 SELECTED=()
+EXCLUDED=()
 NUM_IGNITIONS=""
 OVERWRITE=""
 INPUTS_VERSION=""
 IGNITIONS_VERSION=""
-while getopts "v:n:oi:g:" opt; do
+while getopts "v:x:n:oi:g:" opt; do
     case "$opt" in
         v) SELECTED+=("$OPTARG") ;;
+        x) IFS=", " read -ra PARTS <<<"$OPTARG"; EXCLUDED+=("${PARTS[@]}") ;;
         n) NUM_IGNITIONS=$OPTARG ;;
         o) OVERWRITE=1 ;;
         i) INPUTS_VERSION=$OPTARG ;;
@@ -38,6 +40,12 @@ else
     set -u
     mapfile -t VARLOCS < <(cd "$MODEL_DIR" && scripts/gpkg_varlocs.sh)
 fi
+if [ ${#EXCLUDED[@]} -gt 0 ]; then
+    for varloc in "${EXCLUDED[@]}"; do
+        printf '%s\n' "${VARLOCS[@]}" | grep -qxF "$varloc" || echo "warning: excluded $varloc is not in the set to generate" >&2
+    done
+    mapfile -t VARLOCS < <(printf '%s\n' "${VARLOCS[@]}" | { grep -vxF -f <(printf '%s\n' "${EXCLUDED[@]}") || true; })
+fi
 [ ${#VARLOCS[@]} -gt 0 ] || { echo "no varlocs" >&2; exit 1; }
 
 SUBMIT=()
@@ -51,21 +59,14 @@ done
 [ ${#SUBMIT[@]} -gt 0 ] || { echo "nothing to submit"; exit 0; }
 echo "data_version=$DATA_VERSION  submitting ${#SUBMIT[@]} of ${#VARLOCS[@]} varlocs"
 
-# snapshot the list the array indices refer to; tasks read it instead of recomputing
-mkdir -p "$MODEL_DIR/data/logs"
-VARLOCS_LIST=$(realpath "$MODEL_DIR/data/logs")/ignitions_varlocs_$(date +%Y%m%dT%H%M%S).txt
-printf '%s\n' "${SUBMIT[@]}" > "$VARLOCS_LIST"
+LOG_DIR=$MODEL_DIR/data/logs/ignitions
+mkdir -p "$LOG_DIR"
+QUEUE=$(realpath "$LOG_DIR")/ignitions_queue_$(date +%Y%m%dT%H%M%S).txt
+printf '%s\n' "${SUBMIT[@]}" > "$QUEUE"
 
-ARRAY_ID=$(sbatch --parsable --hold \
-    --output="$MODEL_DIR/data/logs/%x_%A_%a.out" --error="$MODEL_DIR/data/logs/%x_%A_%a.err" \
-    --array="0-$((${#SUBMIT[@]} - 1))" \
-    --export=ALL,VARLOC=,VARLOCS_LIST="$VARLOCS_LIST",DATA_VERSION="$DATA_VERSION",NUM_IGNITIONS="$NUM_IGNITIONS",OVERWRITE=1 \
+JOB_ID=$(sbatch --parsable \
+    --output="$LOG_DIR/%x_%A_%a.out" --error="$LOG_DIR/%x_%A_%a.err" \
+    --array=0 \
+    --export=ALL,VARLOC=,QUEUE="$QUEUE",DATA_VERSION="$DATA_VERSION",NUM_IGNITIONS="$NUM_IGNITIONS",OVERWRITE=1 \
     "$(dirname "$0")/ignitions.slurm")
-ARRAY_ID=${ARRAY_ID%%;*}
-
-for i in "${!SUBMIT[@]}"; do
-    scontrol update JobId="${ARRAY_ID}_$i" JobName="ignitions_${SUBMIT[$i]}" \
-        || echo "warning: could not rename ${ARRAY_ID}_$i (${SUBMIT[$i]})" >&2
-done
-scontrol release "$ARRAY_ID"
-echo "array $ARRAY_ID: $VARLOCS_LIST"
+echo "job ${JOB_ID%%;*}: $QUEUE"

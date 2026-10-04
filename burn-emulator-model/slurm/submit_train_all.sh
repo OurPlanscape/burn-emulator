@@ -30,7 +30,7 @@ fi
 
 # node's GPU count from slurm GRES, 0 if none
 node_gpus () { scontrol show node "$1" 2>/dev/null | grep -oP 'Gres=gpu:([^:,(]+:)?\K[0-9]+' || echo 0; }
-SHARED_SLOTS=8
+SHARED_SLOTS=4
 
 # nodes as args and/or comma-separated
 NODES=()
@@ -53,7 +53,7 @@ for NODE in "${NODES[@]}"; do
     esac
 done
 
-mkdir -p burn-emulator-model/data/logs
+mkdir -p burn-emulator-model/data/logs/train
 mapfile -t TRAINABLE < <(cd burn-emulator-model && scripts/trainable_varlocs.sh)
 if [ ${#SELECTED[@]} -gt 0 ]; then
     for varloc in "${SELECTED[@]}"; do
@@ -90,11 +90,10 @@ echo "${#INDICES[@]} of $N_VARLOCS varlocs across ${#NODES[@]} nodes: ${NODES[*]
 
 # every worker claims varlocs from one shared queue
 STAMP=$(date +%Y%m%dT%H%M%S)
-QUEUE=$(realpath burn-emulator-model/data/logs)/train_queue_${STAMP}.txt
+QUEUE=$(realpath burn-emulator-model/data/logs/train)/train_queue_${STAMP}.txt
 for i in "${INDICES[@]}"; do
     printf '%s\n' "${VARLOCS[$i]}"
 done > "$QUEUE"
-mkdir "${QUEUE%.txt}.d"
 echo "queue: $QUEUE"
 
 # submit_array <name> <slots> <workers> <cpus-per-task> <mem> [sbatch args...]
@@ -103,7 +102,7 @@ submit_array () {
     shift 5
     ARRAY_ID=$(sbatch --parsable "$@" \
         --array="0-$((workers - 1))" \
-        --output=burn-emulator-model/data/logs/%x_%A_%a.out --error=burn-emulator-model/data/logs/%x_%A_%a.err \
+        --output=burn-emulator-model/data/logs/train/%x_%A_%a.out --error=burn-emulator-model/data/logs/train/%x_%A_%a.err \
         --job-name="train_$name" \
         --cpus-per-task="$cpus" \
         --mem="$mem" \

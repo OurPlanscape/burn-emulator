@@ -148,8 +148,8 @@ smoke: ## [metal] run the smoke test for one varloc in debug mode (VARLOC= [WIND
 	    $(if $(PT),-pt)
 
 # INPUTS_VERSION / IGNITIONS_VERSION (YYYYMMDD) default to current.yaml; SLURM=1 runs submit_ignitions_all.sh: a
-# slurm/ignitions.slurm array (exclusive on dragon03), one task per varloc; $(1) is the varloc, empty for -all
-ignitions_sbatch = $(MODEL_DIR)/slurm/submit_ignitions_all.sh $(if $(1),-v $(1)) $(if $(NUM_IGNITIONS),-n $(NUM_IGNITIONS)) $(if $(OVERWRITE),-o) $(if $(INPUTS_VERSION),-i $(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),-g $(IGNITIONS_VERSION))
+# slurm/ignitions.slurm worker working through a queue file; $(1) is the varloc, empty for -all
+ignitions_sbatch = $(MODEL_DIR)/slurm/submit_ignitions_all.sh $(if $(1),-v $(1)) $(if $(EXCLUDE),-x "$(EXCLUDE)") $(if $(NUM_IGNITIONS),-n $(NUM_IGNITIONS)) $(if $(OVERWRITE),-o) $(if $(INPUTS_VERSION),-i $(INPUTS_VERSION)) $(if $(IGNITIONS_VERSION),-g $(IGNITIONS_VERSION))
 
 training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
@@ -162,7 +162,7 @@ training-data: ## [metal|slurm] generate ignitions for one varloc (VARLOC= [INPU
 
 # skips varlocs whose training data for the current data_version is complete (legalmax outputs_table.csv) unless OVERWRITE=1;
 # keeps going past varlocs that fail and exits nonzero listing them
-training-data-all: ## [metal|slurm] generate ignitions for every varloc in the varlocs gpkg ([INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
+training-data-all: ## [metal|slurm] generate ignitions for every varloc in the varlocs gpkg ([EXCLUDE=v1,v2 (slurm)] [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1])
 	set -e
 	if [ -n "$(SLURM)" ]; then $(call ignitions_sbatch,); exit 0; fi
 	source "$(VENV)/bin/activate"
