@@ -4,28 +4,42 @@
 #   <varloc> running <job> <node> <start>            claimed
 #   <varloc> ok|failed <job> <node> <start> <end>    finished (cut back to <varloc> to requeue)
 
-# queue_edit <varloc> <awk action> [r]: rewrite the varloc's line under the queue lock (t = now);
-# written back in place so the file keeps its inode for tail -f / editors
+queue_lock () {
+    local waited=0
+    until mkdir "$QUEUE.lockdir" 2>/dev/null; do
+        if [ "$waited" -ge 300 ]; then
+            echo "warning: breaking stale queue lock $QUEUE.lockdir" >&2
+            rmdir "$QUEUE.lockdir" 2>/dev/null || true
+            waited=0
+        fi
+        sleep 0.2
+        waited=$((waited + 1))
+    done
+}
+queue_unlock () { rmdir "$QUEUE.lockdir"; }
+
+# rewrite the queue from stdin, in place so the file keeps its inode for tail -f / editors
+queue_write () { cat > "$QUEUE.tmp" && cat "$QUEUE.tmp" > "$QUEUE" && rm -f "$QUEUE.tmp"; }
+
+# queue_edit <varloc> <awk action> [r]: rewrite the varloc's line under the queue lock (t = now)
 queue_edit () {
-    (
-        flock 9
-        awk -v v="$1" -v r="${3:-}" -v t="$(date +%FT%T)" '$1 == v && !done { done = 1; '"$2"'; next } { print }' \
-            "$QUEUE" > "$QUEUE.tmp" && cat "$QUEUE.tmp" > "$QUEUE" && rm -f "$QUEUE.tmp"
-    ) 9>>"$QUEUE.lock"
+    queue_lock
+    awk -v v="$1" -v r="${3:-}" -v t="$(date +%FT%T)" '$1 == v && !done { done = 1; '"$2"'; next } { print }' \
+        "$QUEUE" | queue_write
+    queue_unlock
 }
 
 # claim the first pending (bare) line; prints its varloc, or nothing once none are left
 queue_claim () {
-    (
-        flock 9
-        local v
-        v=$(awk 'NF == 1 { print $1; exit }' "$QUEUE")
-        [ -n "$v" ] || exit 0
+    local v
+    queue_lock
+    v=$(awk 'NF == 1 { print $1; exit }' "$QUEUE")
+    if [ -n "$v" ]; then
         awk -v v="$v" -v s="running $SLURM_JOB_ID $SLURMD_NODENAME $(date +%FT%T)" \
-            '$1 == v && NF == 1 && !done { done = 1; print v, s; next } { print }' \
-            "$QUEUE" > "$QUEUE.tmp" && cat "$QUEUE.tmp" > "$QUEUE" && rm -f "$QUEUE.tmp"
-        echo "$v"
-    ) 9>>"$QUEUE.lock"
+            '$1 == v && NF == 1 && !done { done = 1; print v, s; next } { print }' "$QUEUE" | queue_write
+    fi
+    queue_unlock
+    echo "$v"
 }
 
 # queue_finish <varloc> ok|failed
