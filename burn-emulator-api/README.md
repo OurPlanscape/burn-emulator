@@ -32,9 +32,9 @@ Go service. Validates a request, resolves the model and data versions, checks th
   "job_id": "WC711/20260829T143000Z-a1b2c3d/20260824/1a2b3c4d…",
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
-  "model_version": "20260829T143000Z-a1b2c3d", # this is from publish-model.sh in the model repo
+  "model_version": "20260829T143000Z-a1b2c3d", # this is from publish_model.sh in the model repo
   "backend": "DL",
-  "data_version": "20260824", # west fuels date (fuels + topo + varlocs), from publish-inputs in the model repo
+  "data_version": "20260824", # west fuels date (fuels + topo + varlocs), from inputs-release in the model repo
   "status": "pending",
   "varloc": "WC711",
   "cached": false,

@@ -1,4 +1,4 @@
-# Build context: the repo root (see Makefile build-api).
+# Build context: the repo root (see Makefile api-image).
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /src

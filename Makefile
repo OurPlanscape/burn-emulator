@@ -12,8 +12,8 @@ VERSION    ?= $(shell git rev-parse --short HEAD)$(shell [ -z "$$(git status --p
 
 # BURN_EMULATOR_ARTIFACT_STORE / BURN_EMULATOR_MODELS_URI / BURN_EMULATOR_INPUTS_URI
 # must be exported by the caller (see burn-emulator-api/README.md / burn-emulator-model/README.md
-# for what each points at). VERSION gets a -dirty suffix on an uncommitted tree; build-api/
-# build-runner refuse to run with that suffix when BURN_EMULATOR_ENV is production
+# for what each points at). VERSION gets a -dirty suffix on an uncommitted tree; api-image/
+# runner-image refuse to run with that suffix when BURN_EMULATOR_ENV is production
 # (unset BURN_EMULATOR_ENV does not trigger this check - dev/staging pushes get a -dirty
 # tag instead of colliding with the last clean push).
 
@@ -22,25 +22,25 @@ RUNNER_IMAGE := $(BURN_EMULATOR_ARTIFACT_STORE)/burn-emulator-runner:$(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-api push-api build-runner push-runner valid-varlocs model-bundle model-bundle-all publish-model publish-model-all publish-inputs publish-varlocs train-all train-publish train-publish-all inference inference-all smoke training-data training-data-all shell
+.PHONY: help api-image api-release runner-image runner-release valid-varlocs model-bundle model-bundle-all model-release model-release-all inputs-release varlocs-release train-all train-release train-release-all inference inference-all smoke training-data training-data-all shell
 
 help: ## show this help; [metal] runs here, [slurm] submits to the cluster, [metal|slurm] picks via SLURM=1
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build-api: ## [metal] build the API image
+api-image: ## [metal] build the API image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
 	case "$(BURN_EMULATOR_ENV)" in production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(API_DIR)/Dockerfile -t $(API_IMAGE) .
 
-push-api: build-api ## [metal] build and push the API image
+api-release: api-image ## [metal] build and push the API image
 	docker push $(API_IMAGE)
 
-build-runner: ## [metal] build the runner image
+runner-image: ## [metal] build the runner image
 	if [ -z "$(BURN_EMULATOR_ARTIFACT_STORE)" ]; then echo "error: BURN_EMULATOR_ARTIFACT_STORE is not set - export it (see README.md)" >&2; exit 2; fi
 	case "$(BURN_EMULATOR_ENV)" in production) case "$(VERSION)" in *-dirty) echo "error: refusing to build for $(BURN_EMULATOR_ENV) from a dirty git tree - commit first" >&2; exit 2 ;; esac ;; esac
 	docker build -f $(RUNNER_DIR)/Dockerfile -t $(RUNNER_IMAGE) .
 
-push-runner: build-runner ## [metal] build and push the runner image
+runner-release: runner-image ## [metal] build and push the runner image
 	docker push $(RUNNER_IMAGE)
 
 valid-varlocs: ## [metal] filter varlocs gpkg to the valid set
@@ -62,7 +62,7 @@ model-bundle-all: valid-varlocs ## [metal] bundle every varloc in varlocs.txt
 	    $(MAKE) model-bundle VARLOC="$$varloc"
 	done
 
-publish-model: ## [metal] publish one model bundle (VARLOC= [BUNDLE_DIR=])
+model-release: ## [metal] publish one model bundle (VARLOC= [BUNDLE_DIR=])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	if [ -z "$(BURN_EMULATOR_MODELS_URI)" ]; then echo "error: BURN_EMULATOR_MODELS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	if [ -n "$(BUNDLE_DIR)" ]; then
@@ -75,11 +75,11 @@ publish-model: ## [metal] publish one model bundle (VARLOC= [BUNDLE_DIR=])
 	fi
 	$(MODEL_DIR)/scripts/publish_model.sh $(VARLOC) "$$bundle_dir" $(BURN_EMULATOR_MODELS_URI)
 
-publish-model-all: ## [metal] publish every varloc in varlocs.txt
+model-release-all: ## [metal] publish every varloc in varlocs.txt
 	set -e
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(MODEL_DIR)/configs/varlocs/varlocs.txt")
 	for varloc in "$${varlocs[@]}"; do
-	    $(MAKE) publish-model VARLOC="$$varloc"
+	    $(MAKE) model-release VARLOC="$$varloc"
 	done
 
 # FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs,
@@ -88,7 +88,7 @@ publish-model-all: ## [metal] publish every varloc in varlocs.txt
 VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs_5070.gpkg
 VARLOCS_TXT  ?= $(MODEL_DIR)/configs/varlocs/varlocs.txt
 
-publish-inputs: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VARLOCS_GPKG= VARLOCS_TXT=], default: current.yaml inputs_version)
+inputs-release: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VARLOCS_GPKG= VARLOCS_TXT=], default: current.yaml inputs_version)
 	set -e
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	data_version="$(DATA_VERSION)"
@@ -97,7 +97,7 @@ publish-inputs: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUE
 	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo_$$data_version)"
 	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
 
-publish-varlocs: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs txt + gpkg of a published data_version ([VARLOCS_TXT=] [VARLOCS_GPKG=] [DATA_VERSION=], default: current)
+varlocs-release: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs txt + gpkg of a published data_version ([VARLOCS_TXT=] [VARLOCS_GPKG=] [DATA_VERSION=], default: current)
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	$(MODEL_DIR)/scripts/publish_varlocs.sh "$(VARLOCS_TXT)" "$(VARLOCS_GPKG)" "$(DATA_VERSION)" "$(BURN_EMULATOR_INPUTS_URI)"
 
@@ -109,11 +109,11 @@ train-all: ## [metal|slurm] train every varloc with complete training data; adds
 	fi
 
 # slurm: trains across the GPU nodes; each varloc is bundled + published once its training succeeds
-train-publish: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES=n1,n2])
+train-release: ## [slurm] train + bundle + publish for one varloc (VARLOC= [NODES=n1,n2])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p -v $(VARLOC) $(NODES)
 
-train-publish-all: ## [slurm] train + bundle + publish for every trainable varloc ([EXCLUDE=v1,v2] [NODES=n1,n2])
+train-release-all: ## [slurm] train + bundle + publish for every trainable varloc ([EXCLUDE=v1,v2] [NODES=n1,n2])
 	$(MODEL_DIR)/slurm/submit_train_all.sh -p $(if $(EXCLUDE),-x "$(EXCLUDE)") $(NODES)
 
 inference: ## [metal] run inference for one varloc (VARLOC= OUTPUTS_ROOT=)

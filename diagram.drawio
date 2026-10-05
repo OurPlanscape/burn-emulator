@@ -241,7 +241,7 @@
         <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;make model-bundle(-all)&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p)&lt;br&gt;burn_emulator -m bundle&lt;br&gt;-&amp;gt; data/bundles/{model_name}/&lt;br&gt;model.pt, config.yaml, stats.yaml,&lt;br&gt;bundle_meta.json" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1549.93" as="geometry" />
         </mxCell>
-        <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make publish-model(-all)&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p)&lt;br&gt;publish_model.sh&lt;br&gt;model_version = mtime + git_sha" vertex="1">
+        <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make model-release(-all)&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p)&lt;br&gt;publish_model.sh&lt;br&gt;model_version = mtime + git_sha" vertex="1">
           <mxGeometry height="80" width="240" x="-296" y="1689.93" as="geometry" />
         </mxCell>
         <mxCell id="mg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Model checkpoints, configs, stats&lt;br&gt;gs://models/{&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;varloc}/{model_version}/*&lt;/span&gt;&lt;/div&gt;" vertex="1">
@@ -250,7 +250,7 @@
         <mxCell id="ig" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Model inputs&lt;br&gt;gs://inputs/{inputs_version}/&lt;br&gt;{baseline, legalmax, topo}/*.tif&lt;br&gt;varlocs/{varlocs.txt, *.gpkg}" vertex="1">
           <mxGeometry height="100" width="240" x="777" y="1230" as="geometry" />
         </mxCell>
-        <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make publish-inputs&lt;/b&gt; [metal]&lt;br&gt;publish_inputs.sh&lt;br&gt;DATA_VERSION default: current.yaml inputs_version&lt;br&gt;baseline_*.tif + legalmax_*.tif + topo*.tif&lt;br&gt;+ varlocs gpkg + varlocs.txt&lt;br&gt;all under one data_version, then repoint current" vertex="1">
+        <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make inputs-release&lt;/b&gt; [metal]&lt;br&gt;publish_inputs.sh&lt;br&gt;DATA_VERSION default: current.yaml inputs_version&lt;br&gt;baseline_*.tif + legalmax_*.tif + topo*.tif&lt;br&gt;+ varlocs gpkg + varlocs.txt&lt;br&gt;all under one data_version, then repoint current" vertex="1">
           <mxGeometry height="110" width="312" x="-332" y="1929.93" as="geometry" />
         </mxCell>
         <mxCell id="me1" edge="1" parent="1" source="m1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="m2">
@@ -353,7 +353,7 @@
         <mxCell id="tp5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);align=center;" value="&lt;b&gt;Training data&lt;/b&gt;&lt;br&gt;data/training_data/{varloc}/{inputs_version}_{ignitions_version}/&lt;br&gt;{baseline,legalmax}_fuels/*.tif, topo/*.tif&lt;br&gt;ignition_locations.csv&lt;br&gt;{baseline,legalmax}/{i}/fire_type.tif&lt;br&gt;{baseline,legalmax}/outputs_table.csv&lt;br&gt;(-ci: cbp.tif burn probability instead)" vertex="1">
           <mxGeometry height="170" width="421" x="-1410.5" y="1907.43" as="geometry" />
         </mxCell>
-        <mxCell id="tt1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make train-all&lt;/b&gt; [metal] -&amp;gt; scripts/train_all.sh&lt;br&gt;&lt;b&gt;make train-all SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh&lt;br&gt;&lt;b&gt;make train-publish(-all)&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh -p&lt;br&gt;-&amp;gt; queue file; multi-GPU nodes: 1 pooled --gres array, 1/GPU&lt;br&gt;1-GPU nodes: array of 8 each; workers claim via mkdir&lt;br&gt;architecture + data_version from current.yaml" vertex="1">
+        <mxCell id="tt1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make train-all&lt;/b&gt; [metal] -&amp;gt; scripts/train_all.sh&lt;br&gt;&lt;b&gt;make train-all SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh&lt;br&gt;&lt;b&gt;make train-release(-all)&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh -p&lt;br&gt;-&amp;gt; queue file; multi-GPU nodes: 1 pooled --gres array, 1/GPU&lt;br&gt;1-GPU nodes: array of 8 each; workers claim via mkdir&lt;br&gt;architecture + data_version from current.yaml" vertex="1">
           <mxGeometry height="125" width="380" x="-880" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="tt2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;burn_emulator -m train&lt;/b&gt; -a ARCH -vl VARLOC -dv DV&lt;br&gt;-c circlepp/model.yaml -c circlepp/train.yaml&lt;br&gt;-c varlocs/templates/train.yaml (CLI wins, later -c wins)&lt;br&gt;resolve_model_name() -&amp;gt; {varloc}_{arch}_{dv}" vertex="1">
@@ -438,7 +438,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make publish-varlocs&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs_5070.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
+        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make varlocs-release&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs_5070.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1804.93" as="geometry" />
         </mxCell>
         <mxCell id="pve1" edge="1" parent="1" source="pv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;entryPerimeter=0;" target="ig" value="">
