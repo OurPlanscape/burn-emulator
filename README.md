@@ -25,7 +25,7 @@ Run from the repo root.
 | `model-bundle VARLOC=<varloc>` | wraps `burn_emulator -m bundle` for one varloc (in `burn-emulator-model/`) |
 | `model-release VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | uploads a bundle and repoints `current`; refuses to overwrite a published version with a different bundle unless `FORCE=1` |
 | `model-bundle-all` / `model-release-all` | same, looped over every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `model-release-all` doesn't accept `BUNDLE_DIR` |
-| `inputs-release [DATA_VERSION=<YYYYMMDD>] [FUELS_DIR=<dir>] [TOPO_DIR=<dir>] [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>]` | `DATA_VERSION` defaults to `inputs_version` in `configs/varlocs/current.yaml`, `FUELS_DIR` to `data/training_data/fuels_<DATA_VERSION>`, `TOPO_DIR` to `data/training_data/topo_<DATA_VERSION>` (what `-m ignite` clips from); uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) and the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) under one `data_version`, then repoints `current` |
+| `inputs-release [DATA_VERSION=<YYYYMMDD>] [FUELS_DIR=<dir>] [TOPO_DIR=<dir>] [VARLOCS_GPKG=<gpkg>] [VARLOCS_TXT=<txt>] [FBFM_MAP=<csv>]` | `DATA_VERSION` defaults to `inputs_version` in `configs/varlocs/current.yaml`, `FUELS_DIR` to `data/training_data/fuels_<DATA_VERSION>`, `TOPO_DIR` to `data/training_data/topo_<DATA_VERSION>` (what `-m ignite` clips from); uploads baseline/legalmax fuel tifs, topo tifs, the varlocs gpkg (default: `valid-varlocs` output) the api's varloc allow-list (default: `configs/varlocs/varlocs.txt`) and the fbfm map (default: `configs/fbfm_behavior_adjectives.csv`) under one `data_version`, then repoints `current` |
 | `varlocs-release [VARLOCS_TXT=<txt>] [VARLOCS_GPKG=<gpkg>] [DATA_VERSION=<version>]` | runs `valid-varlocs` to rebuild the gpkg from the txt, then replaces only the `varlocs/` layer (txt default: `configs/varlocs/varlocs.txt`, gpkg default: `valid-varlocs` output) under an already published `data_version` (default: the one `current` points at); skips unchanged files, prints the varlocs added/removed, never repoints `current`; the api picks up the txt within 60s |
 | `train-all [SLURM=1 [NODES=<n1>,<n2>]]` | wraps `burn-emulator-model/scripts/train_all.sh` (with `SLURM=1`, `burn-emulator-model/slurm/submit_train_all.sh` instead, spread across the GPU nodes): trains every varloc with complete training data for the current `data_version` and adds each to `configs/varlocs/varlocs.txt` only once its training succeeds |
 | `inference VARLOC=<varloc> OUTPUTS_ROOT=<dir>` | wraps `burn-emulator-model/scripts/ignite_inference.sh` |
@@ -50,7 +50,7 @@ gs://<bucket_name>/<models>/<varloc>/<model_version>/    # model.pt, stats.yaml,
 ```
 caller --POST /v1/jobs {varloc, treatment_area, treatment_area_crs, job_name}--> burn-emulator-api
   1. validate job_name
-  2. data_version  = read gs://<inputs>/current            (60s cache; fuels + topo + varlocs)
+  2. data_version  = read gs://<inputs>/current            (60s cache; fuels + topo + varlocs + fbfm map)
      varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400  (60s cache)
      model_version = read gs://<models>/<varloc>/current  (60s cache)
      hash          = sha256(varloc + "|" + treatment_area + "|" + treatment_area_crs [+ "|" + ignition_density])
@@ -58,10 +58,10 @@ caller --POST /v1/jobs {varloc, treatment_area, treatment_area_crs, job_name}-->
   3. out_path exists?                                             -> 200 cached
      _claims/<varloc>/<model_version>/<data_version>/<hash> running?  -> 202 pending + Location
      else claim it (or reclaim a failed/stale one), then:
-        --trigger a burn-emulator-runner job execution with {varloc, model_version, treatment_area, treatment_area_crs, hash, out_path, report_path, claim_generation, fuels/topo paths (from data_version) [, ignition_density]} as env overrides-->
+        --trigger a burn-emulator-runner job execution with {varloc, model_version, treatment_area, treatment_area_crs, hash, out_path, report_path, claim_generation, fuels/topo/fbfm map paths (from data_version) [, ignition_density]} as env overrides-->
      <-- 202 pending, Location: /v1/jobs/<varloc>/<model_version>/<data_version>/<hash>
           a. read the bundle's config.yaml from the FUSE-mounted registry
-          b. inject treatment_area + fuels/topo paths + a local temp out_path into the config
+          b. inject treatment_area + fuels/topo/fbfm map paths + a local temp out_path into the config
           c. run burn_emulator.run.run(**config), then upload the tif to <out_path>/<model_name>.tif
           d. write gs://<out>/_reports/... report {status: completed|failed, claim_generation, error}
   4. GCS OBJECT_FINALIZE on _reports/ -> Pub/Sub push -> burn-emulator-api POST /internal/pubsub/run-reports

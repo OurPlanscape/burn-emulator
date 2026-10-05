@@ -72,12 +72,13 @@ def _run_config(
     init = cfg.setdefault("dataset", {}).setdefault("init_args", {})
     # TODO: warn user if treatment area does not align with varloc
     init["treatment_area"] = load_treatment_area(treatment_area, treatment_area_crs)
-    # injecting fuels and topo from api env vars
+    # injecting fuels, topo and fbfm map from api env vars
     init["fuels_paths"] = {
         "baseline": os.environ["BURN_EMULATOR_BASELINE_FUELS"],
         "treatment": os.environ["BURN_EMULATOR_LEGALMAX_FUELS"],
     }
     init["topo_path"] = os.environ["BURN_EMULATOR_TOPO_PATH"]
+    init["fbfm_map_path"] = os.environ["BURN_EMULATOR_FBFM_MAP_PATH"]
     init["ignitions_path"] = None
     if ignition_density is not None:
         if ignition_density <= 0:

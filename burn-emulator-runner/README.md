@@ -27,6 +27,7 @@ Per-execution, set by `burn-emulator-api` as job execution overrides:
 | `BURN_EMULATOR_BASELINE_FUELS` | baseline fuels, `/inputs/<data_version>/baseline` on the GCS-FUSE-mounted inputs bucket |
 | `BURN_EMULATOR_LEGALMAX_FUELS` | treatment fuels, `/inputs/<data_version>/legalmax` |
 | `BURN_EMULATOR_TOPO_PATH` | topo (aspect/slope), `/inputs/<data_version>/topo` |
+| `BURN_EMULATOR_FBFM_MAP_PATH` | FBFM code -> behaviour lookup, `/inputs/<data_version>/fbfm/fbfm_behavior_adjectives.csv` |
 | `BURN_EMULATOR_IGNITION_DENSITY` | optional; omit to use the value baked into the model bundle's `config.yaml` |
 
 ## Model bundle
@@ -36,7 +37,6 @@ Per-execution, set by `burn-emulator-api` as job execution overrides:
 <MODELS_DIR>/<varloc>/<model_version>/
 ├── model.pt                     # checkpoint
 ├── stats.yaml                   # normalization stats
-├── fbfm_behavior_adjectives.csv # FBFM code -> behaviour lookup
 ├── config.yaml                  # model + activation + dataset + dataloader + model_name
 └── bundle_meta.json             # model-repo git sha + model_class_path + model_code_sha256
 ```
@@ -48,7 +48,7 @@ On each execution the runner compares `bundle_meta.json`'s `model_code_sha256` a
 ```
 1. read <MODELS_DIR>/<varloc>/<model_version>/config.yaml (bundle dir = experiment_dir)
 2. warn if bundle_meta.json model_code_sha256 != this image's architecture module hash
-3. inject treatment_area, fuels_paths, topo_path, out_path into config
+3. inject treatment_area, fuels_paths, topo_path, fbfm_map_path, out_path into config
 4. run(**config) -> writes a local temp <model_name>.tif (DL) or model_<VARLOC>_pt_<data_version>.tif (PT)
 5. upload it to <output_path>/<that file name> (the object only appears once the upload completes)
 6. write the empty <report_path> report with metadata {status: completed|failed, claim_generation, error}

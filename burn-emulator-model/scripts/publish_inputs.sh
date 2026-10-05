@@ -7,14 +7,15 @@ fuels_dir="${2:-}"
 topo_dir="${3:-}"
 varlocs_gpkg="${4:-}"
 varlocs_txt="${5:-}"
-inputs_uri="${6:-${BURN_EMULATOR_INPUTS_URI:-}}"
+fbfm_map="${6:-}"
+inputs_uri="${7:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
-if [[ -z "$data_version_raw" || -z "$fuels_dir" || -z "$topo_dir" || -z "$varlocs_gpkg" || -z "$varlocs_txt" ]]; then
-    echo "usage: $0 <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> [inputs_uri]" >&2
+if [[ -z "$data_version_raw" || -z "$fuels_dir" || -z "$topo_dir" || -z "$varlocs_gpkg" || -z "$varlocs_txt" || -z "$fbfm_map" ]]; then
+    echo "usage: $0 <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> <fbfm_map> [inputs_uri]" >&2
     exit 2
 fi
 if [[ -z "$inputs_uri" ]]; then
-    echo "error: pass inputs_uri as arg 6, or set BURN_EMULATOR_INPUTS_URI" >&2
+    echo "error: pass inputs_uri as arg 7, or set BURN_EMULATOR_INPUTS_URI" >&2
     exit 2
 fi
 
@@ -43,6 +44,10 @@ if [[ ! -f "$varlocs_gpkg" || "$varlocs_gpkg" != *.gpkg ]]; then
 fi
 if ! grep -qvE '^[[:space:]]*$' "$varlocs_txt" 2>/dev/null; then
     echo "error: $varlocs_txt is missing or lists no varlocs" >&2
+    exit 1
+fi
+if [[ ! -f "$fbfm_map" || "$(basename "$fbfm_map")" != fbfm_behavior_adjectives.csv ]]; then
+    echo "error: $fbfm_map is not a fbfm_behavior_adjectives.csv file" >&2
     exit 1
 fi
 
@@ -86,6 +91,7 @@ publish_layer baseline "$fuels_dir"/baseline/*.tif
 publish_layer legalmax "$fuels_dir"/legalmax/*.tif
 publish_layer topo "$topo_dir"/*.tif
 publish_layer varlocs "$varlocs_gpkg" "$varlocs_txt"
+publish_layer fbfm "$fbfm_map"
 
 # only repoint once every layer of this data_version is up (set -e stops earlier on failure)
 printf '%s' "$data_version" | gcloud storage cp - "${inputs_uri%/}/current"

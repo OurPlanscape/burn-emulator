@@ -87,15 +87,16 @@ model-release-all: ## [metal] publish every varloc in varlocs.txt
 # (YYYYMMDD); defaults follow current.yaml's inputs_version and the dirs -m ignite clips from
 VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs_5070.gpkg
 VARLOCS_TXT  ?= $(MODEL_DIR)/configs/varlocs/varlocs.txt
+FBFM_MAP     ?= $(MODEL_DIR)/configs/fbfm_behavior_adjectives.csv
 
-inputs-release: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VARLOCS_GPKG= VARLOCS_TXT=], default: current.yaml inputs_version)
+inputs-release: ## [metal] publish input rasters + varlocs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VARLOCS_GPKG= VARLOCS_TXT=] [FBFM_MAP=], default: current.yaml inputs_version)
 	set -e
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	data_version="$(DATA_VERSION)"
 	[ -n "$$data_version" ] || data_version=$$($(MODEL_DIR)/scripts/data_version.sh inputs_version)
 	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/fuels_$$data_version)"
 	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo_$$data_version)"
-	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(BURN_EMULATOR_INPUTS_URI)
+	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VARLOCS_GPKG) $(VARLOCS_TXT) $(FBFM_MAP) $(BURN_EMULATOR_INPUTS_URI)
 
 varlocs-release: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs txt + gpkg of a published data_version ([VARLOCS_TXT=] [VARLOCS_GPKG=] [DATA_VERSION=], default: current)
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi

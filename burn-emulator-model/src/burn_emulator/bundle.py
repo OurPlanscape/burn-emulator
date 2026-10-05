@@ -19,6 +19,7 @@ _RUNTIME_DATASET_KEYS = (
     "ignitions_path",
     "burn_paths",
     "wind_ang_paths",
+    "fbfm_map_path",
 )
 
 
@@ -35,7 +36,6 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
     experiment_dir = Path(config["experiment_dir"])
     ckpt = resolve_model_checkpoint(experiment_dir, ckpt_path)
     stats = _resolve_stats(config["dataset"], experiment_dir)
-    fbfm_map = _resolve_fbfm_map(config["dataset"])
 
     dst = BUNDLE_DIR / model_name
     shutil.rmtree(dst, ignore_errors=True)
@@ -47,11 +47,9 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
         if k not in _RUNTIME_DATASET_KEYS
     }
     init["stats_path"] = "stats.yaml"
-    init["fbfm_map_path"] = fbfm_map.name
 
     shutil.copy2(ckpt, dst / "model.pt")
     shutil.copy2(stats, dst / "stats.yaml")
-    shutil.copy2(fbfm_map, dst / fbfm_map.name)
 
     out_config = {
         "model_name": model_name,
@@ -89,10 +87,3 @@ def _resolve_stats(dataset: dict, experiment_dir: Path) -> Path:
     if (experiment_dir / "stats.yaml").is_file():
         return experiment_dir / "stats.yaml"
     raise ValueError(f"no stats file: expected {experiment_dir / 'stats.yaml'}")
-
-
-def _resolve_fbfm_map(dataset: dict) -> Path:
-    cfg = (dataset.get("init_args") or {}).get("fbfm_map_path")
-    if cfg and Path(cfg).is_file():
-        return Path(cfg)
-    raise ValueError(f"no fbfm map file: expected dataset.init_args.fbfm_map_path, got {cfg!r}")

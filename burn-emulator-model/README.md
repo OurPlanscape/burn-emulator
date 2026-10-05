@@ -110,18 +110,19 @@ scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
 
 `-m bundle` resolves `<varloc>` against `configs/varlocs/current.yaml`'s architecture/data_version and writes the bundle to `data/bundles/<model_name>/`. `publish_model.sh` uploads that bundle to `<models_uri>` and repoints `current`; `<models_uri>` can also come from `BURN_EMULATOR_MODELS_URI` instead of the third argument.
 
-## Publish inputs (fuels + topo + varlocs)
+## Publish inputs (fuels + topo + varlocs + fbfm map)
 
 ```bash
-scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> [inputs_uri]
+scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> <fbfm_map> [inputs_uri]
 # <data_version>  the west fuels date, YYYYMMDD (make inputs-release defaults it to current.yaml's inputs_version)
 # <fuels_dir>     {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, e.g. data/training_data/fuels_20260824
 # <topo_dir>      all topo tifs, uploaded as-is
 # <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg from `make valid-varlocs`
 # <varlocs_txt>   the api's varloc allow-list, e.g. configs/varlocs/varlocs.txt
+# <fbfm_map>      FBFM code -> behaviour lookup, configs/fbfm_behavior_adjectives.csv
 ```
 
-Fuels, topo and varlocs are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` uploads `<fuels_dir>/{baseline,legalmax}/<layer>.tif` as-is to `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. To change only the varlocs layer (e.g. after training a new varloc), `scripts/publish_varlocs.sh <varlocs_txt> <varlocs_gpkg> [data_version] [inputs_uri]` (`make varlocs-release`) overwrites `varlocs/varlocs.txt` and the gpkg under an already published `data_version`, defaulting to `current`, and leaves `current` alone. It refuses a gpkg whose name differs from the published one. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the sixth argument; the script aborts if neither is set.
+Fuels, topo, varlocs and the fbfm map are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` uploads `<fuels_dir>/{baseline,legalmax}/<layer>.tif` as-is to `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/` and `<fbfm_map>` to `fbfm/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. To change only the varlocs layer (e.g. after training a new varloc), `scripts/publish_varlocs.sh <varlocs_txt> <varlocs_gpkg> [data_version] [inputs_uri]` (`make varlocs-release`) overwrites `varlocs/varlocs.txt` and the gpkg under an already published `data_version`, defaulting to `current`, and leaves `current` alone. It refuses a gpkg whose name differs from the published one. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the seventh argument; the script aborts if neither is set.
 
 Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outputs already cached under it; publish changed inputs under a new `data_version`.
 
@@ -131,10 +132,9 @@ Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outp
 | --- | --- |
 | `model.pt` | `-p`, else the lowest-loss checkpoint under `data/outputs/<model_name>/checkpoints` |
 | `stats.yaml` | the same training dir |
-| `fbfm_behavior_adjectives.csv` | `dataset.init_args.fbfm_map_path` |
 | `config.yaml` | the `-c` config with runtime-injected fields removed |
 | `bundle_meta.json` | `model_repo_sha` (+ dirty flag), `model_class_path`, and `model_code_sha256` (sha256 of that architecture module `.py`) |
 
 `bundle_meta.json` lets the runner warn when its architecture code no longer matches what this checkpoint was trained on but currently doesn't do anything YET! See [`burn-emulator-runner`](../burn-emulator-runner). `publish_model.sh` refuses a bundle that lacks it.
 
-`publish_model.sh` uploads it to `gs://<models>/<varloc>/<model_version>/` (`<model_version>` = `<model.pt mtime>-<model_repo_sha from bundle_meta.json>`, plus `-dirty` if bundled from a dirty tree) and repoints `current`. It checks that every file `config.yaml` points at is in the bundle. If that version is already published, an identical bundle just repoints `current`; a different bundle is refused unless `FORCE=1`, and forcing does not invalidate outputs already cached under that version. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `ignitions_path` at request time.
+`publish_model.sh` uploads it to `gs://<models>/<varloc>/<model_version>/` (`<model_version>` = `<model.pt mtime>-<model_repo_sha from bundle_meta.json>`, plus `-dirty` if bundled from a dirty tree) and repoints `current`. It checks that every file `config.yaml` points at is in the bundle. If that version is already published, an identical bundle just repoints `current`; a different bundle is refused unless `FORCE=1`, and forcing does not invalidate outputs already cached under that version. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `fbfm_map_path` / `ignitions_path` at request time.

@@ -23,11 +23,6 @@ for f in model.pt config.yaml stats.yaml bundle_meta.json; do
         exit 1
     fi
 done
-fbfm_map="$(grep -oP '^[[:space:]]*fbfm_map_path:[[:space:]]*\K\S+' "$bundle_dir/config.yaml" || true)"
-if [[ -z "$fbfm_map" || ! -f "$bundle_dir/$fbfm_map" ]]; then
-    echo "error: $bundle_dir is missing the fbfm map '${fbfm_map:-unset}' named in config.yaml" >&2
-    exit 1
-fi
 
 model_name="$(grep -oP '^model_name:[[:space:]]*\K\S+' "$bundle_dir/config.yaml" || true)"
 if [[ "$model_name" != "${varloc}_"* ]]; then

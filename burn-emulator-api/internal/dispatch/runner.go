@@ -61,6 +61,7 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 		{Name: "BURN_EMULATOR_BASELINE_FUELS", Value: fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.DataVersion)},
 		{Name: "BURN_EMULATOR_LEGALMAX_FUELS", Value: fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.DataVersion)},
 		{Name: "BURN_EMULATOR_TOPO_PATH", Value: fmt.Sprintf("%s/%s/topo", inputsMountPath, req.DataVersion)},
+		{Name: "BURN_EMULATOR_FBFM_MAP_PATH", Value: fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.DataVersion)},
 	}
 	if req.IgnitionDensity != nil {
 		env = append(env, &run.GoogleCloudRunV2EnvVar{
