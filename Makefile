@@ -102,9 +102,11 @@ varlocs-release: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then r
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	$(MODEL_DIR)/scripts/publish_varlocs.sh "$(VARLOCS_TXT)" "$(VARLOCS_GPKG)" "$(DATA_VERSION)" "$(BURN_EMULATOR_INPUTS_URI)"
 
-train-all: ## [metal|slurm] train every varloc with complete training data; adds each to varlocs.txt once trained ([SLURM=1 [NODES=n1,n2]])
+train-all: ## [metal|slurm] train every varloc with complete training data; adds each to varlocs.txt once trained ([SLURM=1 [EXCLUDE=v1,v2] [NODES=n1,n2]])
 	if [ -n "$(SLURM)" ]; then
-	    $(MODEL_DIR)/slurm/submit_train_all.sh $(NODES)
+	    $(MODEL_DIR)/slurm/submit_train_all.sh $(if $(EXCLUDE),-x "$(EXCLUDE)") $(NODES)
+	elif [ -n "$(EXCLUDE)" ]; then
+	    echo "error: EXCLUDE needs SLURM=1" >&2; exit 2
 	else
 	    $(MODEL_DIR)/scripts/train_all.sh
 	fi
