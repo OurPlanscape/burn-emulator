@@ -4,137 +4,149 @@ Model library + CLI. `burn_emulator.run.run()` is the inference entry point that
 
 ## Modelling
 
-The default model is an archetypal CNN with one major adjustment: [circular kernels](https://arxiv.org/pdf/2107.02451). The ignition point is fixed at the center pixel of the CNN context window, so the model only has to learn the mapping from local input connectivities (fuels, etc.) to a spread shape from that point (i.e it doesn't need to know *where* a burn will occur, just a fuzzy approximation of what it will look like). That approximation is then stamped across the landscape in parallel to compute conditional burn probability.
+The default model is a CNN with [circular kernels](https://arxiv.org/pdf/2107.02451). The ignition point is fixed at the center pixel of the context window, so the model learns the spread shape from local inputs (fuels, topo, wind) around that point, not where a burn occurs. At inference that prediction is stamped across the landscape in parallel to compute conditional burn probability.
 
 ## Install
 
 ```bash
-uv sync && uv pip install -e burn-emulator-model
-uv sync --extra data     # for scripts/ (training-data generation from Pyretechnics)
+make shell   # from the repo root: syncs burn-emulator-model/.venv-<arch> (with the data extra) and activates it
 ```
 
-`burn-emulator-model/`  scripts are intended to be run within the repo.
+or, from `burn-emulator-model/`:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync              # library + CLI
+UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync --extra data # + pyretechnics/ray for -m ignite and PT runs
+```
+
+Run `scripts/` from `burn-emulator-model/`.
+
+## CLI
+
+`burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins) and CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version` in a config) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<model_name>/`. `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
+
+## Training data
+
+```bash
+burn_emulator -m ignite -vl <varloc> -dv <data_version> [-ni <num_ignitions>] [-ow]
+```
+
+Clips fuels and topo for the varloc and simulates burns with pyretechnics into `data/training_data/<varloc>/<data_version>/`. A varloc is complete once `legalmax/outputs_table.csv` exists. See `make training-data` / `training-data-all`.
 
 ## Train
 
-All configs are composable, with priority going to CLI flags then the latest config entered.
 ```bash
-burn_emulator -m train -c <model.yaml> -c <train.yaml> -c <data.yaml>
+burn_emulator -m train -a <architecture> -vl <varloc> -dv <data_version> \
+              -c configs/<architecture>/model.yaml -c configs/<architecture>/train.yaml -c configs/varlocs/templates/train.yaml
 ```
 
-Output: `data/outputs/<model_name>/` ; `checkpoints/`, `stats.yaml`, `train_log.csv`.
+Output: `data/outputs/<model_name>/`: `checkpoints/`, `stats.yaml`, `train_log.csv`. Resumes from the latest checkpoint if one exists. See `make train-all`.
 
 ## Evaluate
 
 ```bash
-# evaluate will only run inference on a set of ignitions
-# since evaluation evolves constantly in various scripts
-# those tasks are not implemented and left for the DS to do
-burn_emulator -m evaluate \
-              -a "$ARCHITECTURE" \
-              -vl "$VARLOC" \
-              -dv "$DATA_VERSION" \
-              -c <model.yaml> -c <eval_data.yaml>
+burn_emulator -m evaluate -a <architecture> -vl <varloc> -dv <data_version> -c <model.yaml> -c <eval_data.yaml>
 ```
 
-Output: `data/outputs/<model_name>/inference/` ; per-ignition prediction GeoTIFFs, `throughput.csv`.
+Runs inference on a set of ignitions; it does not compute metrics. Output: `data/outputs/<model_name>/inference/`: per-ignition prediction GeoTIFFs and `throughput.csv`.
 
 To evaluate every ignition scenario (baseline + legalmax) under a directory:
+
 ```bash
 scripts/ignite_inference.sh <varloc> <outputs_root>
 ```
-`<outputs_root>` holds one subdirectory per scenario, each with `<N>_baseline` / `<N>_legalmax` ignition sets. Resolves `$ARCHITECTURE` / `$DATA_VERSION` from `configs/varlocs/current.yaml`.
+
+`<outputs_root>` holds one subdirectory per scenario, each with `<N>_baseline` / `<N>_legalmax` ignition sets. Architecture and data version come from `configs/varlocs/current.yaml`.
 
 ## Run
 
 ```bash
-burn_emulator -m run \
-              -c <model.yaml> \
-              -c <data.yaml> \
-              -bf <baseline_fuels> \
-              -lf <legalmax_fuels> \
-              -tp <topo> \
-              -ta <treatment_area> \
-              -o <output_path>
+burn_emulator -m run -vl <varloc> \
+              -c configs/varlocs/current.yaml -c configs/<architecture>/model.yaml -c <data.yaml> \
+              -bf <baseline_fuels> -lf <legalmax_fuels> -tp <topo> -mp <fbfm_map> \
+              -ta <treatment_area> [-tc <crs>] [-id <ignition_density>] [-cp <checkpoint>] [-o <out.tif>] [-pt]
 ```
 
 ```
-1. merge -c YAMLs + CLI overrides
-2. build the VarLoc dataset: sample seeded ignitions across the buffered treatment_area,
+1. merge -c configs + CLI overrides
+2. build the VarLoc dataset: sample seeded ignitions over the buffered treatment_area,
    one window per ignition (baseline + collated-treatment fuels, wind, circular mask)
-3. load the checkpoint if exists (-p, else lowest-loss in <dir>/checkpoints)
+3. load the checkpoint (-cp, else the lowest-loss one in <experiment_dir>/checkpoints)
 4. per batch: forward baseline + treatment -> activation -> argmax -> fire_type per pixel
-5. per fire:
-    keep the center-connected burn (NN outputs have minor speckling)
-    classify crown change, drop fires that
-    miss the treatment region
-6. aggregate kept fires onto the full raster (fp32) -> per-pixel change probabilities
-7. write <dir>/<model_name>.tif   (3-band float32 GeoTIFF)
+5. per fire: keep the center-connected burn, classify crown change,
+   drop fires that don't reach the treatment area
+6. average kept fires onto the full raster (fp32) -> per-pixel change probabilities
+7. write a 3-band float32 GeoTIFF (no change | to crown | from crown)
 ```
 
-`<dir>` is `-o` if given, else `data/outputs/<model_name>`.
+Output: `-o` if given, else `data/outputs/<model_name>/<model_name>.tif`. `make smoke` runs this against a sample treatment area. A run is capped at 2**16 ignitions.
 
-Env: `RUN_DEVICE` (`cuda` | `XLA` | `cpu`), `RUN_DTYPE` (`bfloat16`), `USE_CLOUD_PATHS` (`1` for `gs://`), `BURN_EMULATOR_BACKEND` (`DL` | `PT`; `PT` runs pyretechnics and writes `model_<VARLOC>_pt_<data_version>.tif`, same as `-pt`).
+Env: `RUN_DEVICE` (`cuda` default, `XLA`, `cpu`), `RUN_DTYPE` (default `bfloat16`), `USE_CLOUD_PATHS` (set for `gs://` paths), `BURN_EMULATOR_BACKEND` (`DL` default, `PT`). `PT` (or `-pt`) runs pyretechnics instead of the emulator and writes `model_<VARLOC>_pt_<data_version>.tif`.
 
 ## Inputs
 
 ```
-ignitions_path/        # ignition points (or sampled from treatment_area)
 topo_path/             # tifs: aspect / slope
-baseline_fuels_path/   # tifs: baseline fuels ("cbd", "cbh", "cc", "fbfm", "th")
-legalmax_fuels_path/   # tifs: treatment fuels ("cbd", "cbh", "cc", "fbfm", "th")
-burn_paths/{ignition_number}/fire_type.tif # only for training
+baseline_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
+legalmax_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
+fbfm_map_path          # FBFM code -> behaviour lookup csv
+ignitions_path         # ignition points; null samples them from treatment_area
+burn_paths/{ignition_number}/fire_type.tif # training only
 ```
 
 ## Datasets
 
-`VarLoc` (`burn_emulator.datasets.varloc`) is the only dataset. It reads the fuel layers listed above (`"cbd", "cbh", "cc", "fbfm", "th"`), windows one context per ignition, and yields a dict keyed by the model contract:
+`VarLoc` (`burn_emulator.datasets.varloc`) is the dataset all configs use. It reads the fuel layers above, windows one context per ignition and yields:
 
 | key | meaning |
 | --- | --- |
 | `x` | stacked input channels (topo + fuels + FBFM one-hots) |
-| `y` | per-pixel `fire_type` target ; train only |
+| `y` | per-pixel `fire_type` target; train only |
 | `wind` | ignition wind direction (degrees) |
 | `mask` | burnable / circular-window mask |
 
-Inference samples additionally carry `pdiffs` / `bounds` / `indxes` for stamping inference back onto the full raster.
+Inference samples also carry `pdiffs` / `bounds` / `indxes` for stamping predictions back onto the full raster.
 
-If a new fuel product ships different layers (renamed, added/dropped, or different semantics/resolution), add a new `Dataset` rather than messing with `VarLoc`. Keep the same output contract [`x`, `y`, `wind`, `mask`] so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
+A fuel product with different layers gets a new `Dataset` class with the same `x` / `y` / `wind` / `mask` contract, so `train` / `evaluate` / `run` and `model.forward(x, wind)` work unchanged.
 
 ## Publish a model
 
 ```bash
-burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc>
-scripts/publish_model.sh <varloc> <bundle_dir> <models_uri>
+burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc> [-cp <checkpoint>]   # make model-bundle
+scripts/publish_model.sh <varloc> <bundle_dir> [models_uri]                               # make model-release
 ```
-
-`-m bundle` resolves `<varloc>` against `configs/varlocs/current.yaml`'s architecture/data_version and writes the bundle to `data/bundles/<model_name>/`. `publish_model.sh` uploads that bundle to `<models_uri>` and repoints `current`; `<models_uri>` can also come from `BURN_EMULATOR_MODELS_URI` instead of the third argument.
-
-## Publish inputs (fuels + topo + varlocs + fbfm map)
-
-```bash
-scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> <fbfm_map> [inputs_uri]
-# <data_version>  the west fuels date, YYYYMMDD (make inputs-release defaults it to current.yaml's inputs_version)
-# <fuels_dir>     {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, e.g. data/training_data/fuels_20260824
-# <topo_dir>      all topo tifs, uploaded as-is
-# <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg from `make valid-varlocs`
-# <varlocs_txt>   the api's varloc allow-list, e.g. configs/varlocs/varlocs.txt
-# <fbfm_map>      FBFM code -> behaviour lookup, configs/fbfm_behavior_adjectives.csv
-```
-
-Fuels, topo, varlocs and the fbfm map are published together under one `data_version`, matching how the training data pairs them: `publish_inputs.sh` uploads `<fuels_dir>/{baseline,legalmax}/<layer>.tif` as-is to `baseline/` and `legalmax/`, uploads `<topo_dir>` wholesale to `topo/` and `<varlocs_gpkg>` + `<varlocs_txt>` to `varlocs/` and `<fbfm_map>` to `fbfm/`, all under `${inputs_uri}/<data_version>/`, and only then repoints `${inputs_uri}/current` (a failed upload leaves `current` on the previous version). Re-running skips a layer that's already published unless `FORCE=1`. To change only the varlocs layer (e.g. after training a new varloc), `scripts/publish_varlocs.sh <varlocs_txt> <varlocs_gpkg> [data_version] [inputs_uri]` (`make varlocs-release`) overwrites `varlocs/varlocs.txt` and the gpkg under an already published `data_version`, defaulting to `current`, and leaves `current` alone. It refuses a gpkg whose name differs from the published one. `<inputs_uri>` can also come from `BURN_EMULATOR_INPUTS_URI` instead of the seventh argument; the script aborts if neither is set.
-
-Re-publishing an existing `data_version` with `FORCE=1` does not invalidate outputs already cached under it; publish changed inputs under a new `data_version`.
 
 `-m bundle` writes `data/bundles/<model_name>/`:
 
 | file | from |
 | --- | --- |
-| `model.pt` | `-p`, else the lowest-loss checkpoint under `data/outputs/<model_name>/checkpoints` |
-| `stats.yaml` | the same training dir |
-| `config.yaml` | the `-c` config with runtime-injected fields removed |
-| `bundle_meta.json` | `model_repo_sha` (+ dirty flag), `model_class_path`, and `model_code_sha256` (sha256 of that architecture module `.py`) |
+| `model.pt` | `-cp`, else the lowest-loss checkpoint in `data/outputs/<model_name>/checkpoints` |
+| `stats.yaml` | the same experiment dir |
+| `config.yaml` | the merged config without runtime fields (treatment area, fuels, topo, fbfm map, ignitions, burns) |
+| `bundle_meta.json` | `model_repo_sha`, `model_repo_dirty`, `model_class_path`, `model_code_sha256` (sha256 of the architecture module) |
 
-`bundle_meta.json` lets the runner warn when its architecture code no longer matches what this checkpoint was trained on but currently doesn't do anything YET! See [`burn-emulator-runner`](../burn-emulator-runner). `publish_model.sh` refuses a bundle that lacks it.
+`publish_model.sh` checks that all four files exist and that `model_name` matches `<varloc>`, then uploads to `<models_uri>/<varloc>/<model_version>/` and repoints `current`. `<model_version>` = `<model.pt mtime, YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`. If that version is already published, a matching bundle only repoints `current`; a different one is refused unless `FORCE=1`. Forcing does not invalidate outputs cached under that version. `models_uri` defaults to `BURN_EMULATOR_MODELS_URI`.
 
-`publish_model.sh` uploads it to `gs://<models>/<varloc>/<model_version>/` (`<model_version>` = `<model.pt mtime>-<model_repo_sha from bundle_meta.json>`, plus `-dirty` if bundled from a dirty tree) and repoints `current`. It checks that every file `config.yaml` points at is in the bundle. If that version is already published, an identical bundle just repoints `current`; a different bundle is refused unless `FORCE=1`, and forcing does not invalidate outputs already cached under that version. The runner injects `treatment_area` / `fuels_paths` / `topo_path` / `fbfm_map_path` / `ignitions_path` at request time.
+The runner uses `bundle_meta.json` to warn when its architecture code differs from the bundle's; see [`burn-emulator-runner`](../burn-emulator-runner).
+
+## Publish inputs (fuels + topo + varlocs + fbfm map)
+
+```bash
+scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <varlocs_txt> <fbfm_map> [inputs_uri]   # make inputs-release
+# <data_version>  fuels date, YYYYMMDD (make default: current.yaml inputs_version)
+# <fuels_dir>     {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, e.g. data/training_data/fuels_20260824
+# <topo_dir>      topo tifs
+# <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg (make valid-varlocs)
+# <varlocs_txt>   the api's varloc allow-list, configs/varlocs/varlocs.txt
+# <fbfm_map>      configs/fbfm_behavior_adjectives.csv
+```
+
+Uploads to `<inputs_uri>/<data_version>/`: `baseline/`, `legalmax/`, `topo/`, `varlocs/` (gpkg + txt) and `fbfm/`, then repoints `<inputs_uri>/current`. A failed upload leaves `current` unchanged. Layers already published are skipped unless `FORCE=1`. Republishing with `FORCE=1` does not invalidate cached outputs; publish changed inputs under a new `data_version`. `inputs_uri` defaults to `BURN_EMULATOR_INPUTS_URI`.
+
+To update only the varlocs layer (e.g. after training a new varloc):
+
+```bash
+scripts/publish_varlocs.sh <varlocs_txt> <varlocs_gpkg> [data_version] [inputs_uri]   # make varlocs-release
+```
+
+Overwrites `varlocs/varlocs.txt` and the gpkg under a published `data_version` (default: `current`) and leaves `current` alone. The local gpkg name must match the published one.
