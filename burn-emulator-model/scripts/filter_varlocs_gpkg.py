@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", type=Path, default=VARLOCS_GPKG)
     parser.add_argument("-v", "--varlocs", type=Path, default=VARLOCS_TXT)
-    parser.add_argument("-o", "--output", type=Path, default=OUTDIR / "valid_varlocs_5070.gpkg")
+    parser.add_argument("-o", "--output", type=Path, default=OUTDIR / "valid_varlocs.gpkg")
     args = parser.parse_args()
 
     varlocs = [line.strip() for line in args.varlocs.read_text().splitlines() if line.strip()]

@@ -438,7 +438,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make varlocs-release&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs_5070.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
+        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make varlocs-release&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1804.93" as="geometry" />
         </mxCell>
         <mxCell id="pve1" edge="1" parent="1" source="pv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;entryPerimeter=0;" target="ig" value="">

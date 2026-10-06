@@ -85,7 +85,7 @@ model-release-all: ## [metal] publish every varloc in varlocs.txt
 # FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs,
 # VARLOCS_GPKG the valid-varlocs output and VARLOCS_TXT the api allow-list; all land under one DATA_VERSION
 # (YYYYMMDD); defaults follow current.yaml's inputs_version and the dirs -m ignite clips from
-VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs_5070.gpkg
+VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs.gpkg
 VARLOCS_TXT  ?= $(MODEL_DIR)/configs/varlocs/varlocs.txt
 FBFM_MAP     ?= $(MODEL_DIR)/configs/fbfm_behavior_adjectives.csv
 

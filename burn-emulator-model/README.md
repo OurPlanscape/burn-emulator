@@ -136,7 +136,7 @@ scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <varlocs_gpkg> <
 # <data_version>  fuels date, YYYYMMDD (make default: current.yaml inputs_version)
 # <fuels_dir>     {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, e.g. data/training_data/fuels_20260824
 # <topo_dir>      topo tifs
-# <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs_5070.gpkg (make valid-varlocs)
+# <varlocs_gpkg>  varloc polygons, e.g. data/outputs/valid_varlocs.gpkg (make valid-varlocs)
 # <varlocs_txt>   the api's varloc allow-list, configs/varlocs/varlocs.txt
 # <fbfm_map>      configs/fbfm_behavior_adjectives.csv
 ```

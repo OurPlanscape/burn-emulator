@@ -22,7 +22,7 @@ Run from the repo root. `make help` lists every target; `[metal]` runs locally, 
 | --- | --- |
 | `api-image` / `api-release` | build / build + push `<BURN_EMULATOR_ARTIFACT_STORE>/burn-emulator-api:<git-sha>[-dirty]`; refuses a dirty tree when `BURN_EMULATOR_ENV=production` |
 | `runner-image` / `runner-release` | same, for `burn-emulator-runner` |
-| `valid-varlocs [VARLOCS_TXT=<txt>] [VARLOCS_GPKG=<gpkg>]` | filters the varlocs gpkg to the varlocs in `configs/varlocs/varlocs.txt`, writes `data/outputs/valid_varlocs_5070.gpkg` |
+| `valid-varlocs [VARLOCS_TXT=<txt>] [VARLOCS_GPKG=<gpkg>]` | filters the varlocs gpkg to the varlocs in `configs/varlocs/varlocs.txt`, writes `data/outputs/valid_varlocs.gpkg` |
 | `model-bundle VARLOC=<varloc>` | `burn_emulator -m bundle` for one varloc, writes `data/bundles/<model_name>/` |
 | `model-release VARLOC=<varloc> [BUNDLE_DIR=<path>] [FORCE=1]` | `scripts/publish_model.sh`: uploads the bundle and repoints `current`; a different bundle under an already published version is refused unless `FORCE=1` |
 | `model-bundle-all` / `model-release-all` | the above for every varloc in `configs/varlocs/varlocs.txt`, stopping at the first failure; `model-bundle-all` runs `valid-varlocs` first and errors on an empty list |
