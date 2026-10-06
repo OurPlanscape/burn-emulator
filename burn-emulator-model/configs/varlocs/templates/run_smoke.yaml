@@ -1,7 +1,7 @@
 dataset:
     class_path: burn_emulator.datasets.varloc.VarLoc
     init_args:
-        treatment_area: data/training_data/${varloc}/sample.geojson
+        treatment_area: data/training_data/${varloc}/sample_pa.geojson
         fuels_paths:
             baseline: data/training_data/${varloc}/${data_version}/baseline_fuels
             treatment: data/training_data/${varloc}/${data_version}/legalmax_fuels

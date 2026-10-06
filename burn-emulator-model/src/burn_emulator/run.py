@@ -82,7 +82,7 @@ def peak_memory_rows() -> dict:
 def pt_model_name(model_name: str) -> str:
     # model_name is {VARLOC}_{architecture}_{data_version}, see config.resolve_model_name
     varloc, _, data_version = model_name.split("_", 2)
-    return f"model_{varloc}_pt_{data_version}"
+    return f"{varloc}_pt_{data_version}"
 
 
 def pt_out_path(out_path: str | Path | None, experiment_dir: Path, model_name: str) -> str | Path:
