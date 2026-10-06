@@ -19,7 +19,6 @@ Per-execution, set by `burn-emulator-api` as job execution overrides:
 | `BURN_EMULATOR_VARLOC` | varloc name |
 | `BURN_EMULATOR_MODEL_VERSION` | model version |
 | `BURN_EMULATOR_TREATMENT_AREA` | geojson treatment area |
-| `BURN_EMULATOR_TREATMENT_AREA_CRS` | treatment area CRS |
 | `BURN_EMULATOR_HASH` | cache key for this request |
 | `BURN_EMULATOR_BACKEND` | `DL` (deep learning emulator, GPU job) or `PT` (pyretechnics, CPU-only job) |
 | `BURN_EMULATOR_OUTPUT_PATH` | `gs://` output prefix |

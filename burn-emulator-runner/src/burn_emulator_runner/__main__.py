@@ -64,14 +64,13 @@ def _run_config(
     spec: dict,
     varloc: str,
     treatment_area: str,
-    treatment_area_crs: str,
     ignition_density: float | None,
     out_dir: str,
 ) -> dict:
     cfg = deepcopy(spec)
     init = cfg.setdefault("dataset", {}).setdefault("init_args", {})
     # TODO: warn user if treatment area does not align with varloc
-    init["treatment_area"] = load_treatment_area(treatment_area, treatment_area_crs)
+    init["treatment_area"] = load_treatment_area(treatment_area)
     # injecting fuels, topo and fbfm map from api env vars
     init["fuels_paths"] = {
         "baseline": os.environ["BURN_EMULATOR_BASELINE_FUELS"],
@@ -96,7 +95,6 @@ def main() -> None:
         varloc = os.environ["BURN_EMULATOR_VARLOC"]
         model_version = os.environ["BURN_EMULATOR_MODEL_VERSION"]
         treatment_area = os.environ["BURN_EMULATOR_TREATMENT_AREA"]
-        treatment_area_crs = os.environ["BURN_EMULATOR_TREATMENT_AREA_CRS"]
         run_hash = os.environ["BURN_EMULATOR_HASH"]
         output_path = os.environ["BURN_EMULATOR_OUTPUT_PATH"]
         ignition_density_raw = os.environ.get("BURN_EMULATOR_IGNITION_DENSITY")
@@ -135,9 +133,7 @@ def main() -> None:
         # TODO: test memory limits on the largest varlocs; /tmp is in-memory on Cloud
         # Run, so the raster counts against burn_emulator_runner_{gpu,cpu}_ram on top of the run.
         with tempfile.TemporaryDirectory() as local_dir:
-            cfg = _run_config(
-                spec, varloc, treatment_area, treatment_area_crs, ignition_density, local_dir
-            )
+            cfg = _run_config(spec, varloc, treatment_area, ignition_density, local_dir)
 
             log.info(
                 "run start varloc=%s model_version=%s backend=%s hash=%s",

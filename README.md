@@ -52,12 +52,12 @@ gs://<models>/<varloc>/<model_version>/         # model.pt, stats.yaml, config.y
 ## Request flow
 
 ```
-caller --POST /v1/jobs {varloc, treatment_area, treatment_area_crs, job_name [, ignition_density, backend]}--> burn-emulator-api
+caller --POST /v1/jobs {varloc, treatment_area, job_name [, ignition_density, backend]}--> burn-emulator-api
   1. validate the request
   2. data_version  = read gs://<inputs>/current                                  (60s cache)
      varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400        (60s cache)
      model_version = read gs://<models>/<varloc>/current                         (60s cache)
-     hash          = sha256(varloc|treatment_area|treatment_area_crs[|ignition_density]) + 0 (DL) | 1 (PT)
+     hash          = sha256(varloc|treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
      out_path      = gs://<out>/<varloc>/<model_version>/<data_version>/<hash>
   3. output exists?                                                     -> 200 cached
      _claims/<varloc>/<model_version>/<data_version>/<hash> running?    -> 202 pending + Location

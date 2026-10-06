@@ -28,17 +28,16 @@ func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient,
 
 // a single inference request, passed to the job execution as env var overrides.
 type inferRequest struct {
-	VarLoc           string
-	ModelVersion     string
-	DataVersion      string
-	TreatmentArea    string
-	TreatmentAreaCRS string
-	IgnitionDensity  *float64
-	Backend          string
-	Hash             string
-	OutputPath       string
-	ReportPath       string // gs:// path of the _reports/ report the runner writes when it finishes
-	ClaimGeneration  int64
+	VarLoc          string
+	ModelVersion    string
+	DataVersion     string
+	TreatmentArea   string
+	IgnitionDensity *float64
+	Backend         string
+	Hash            string
+	OutputPath      string
+	ReportPath      string // gs:// path of the _reports/ report the runner writes when it finishes
+	ClaimGeneration int64
 }
 
 // start a runner job execution without waiting on it; the runner reports
@@ -52,7 +51,6 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 		{Name: "BURN_EMULATOR_VARLOC", Value: req.VarLoc},
 		{Name: "BURN_EMULATOR_MODEL_VERSION", Value: req.ModelVersion},
 		{Name: "BURN_EMULATOR_TREATMENT_AREA", Value: req.TreatmentArea},
-		{Name: "BURN_EMULATOR_TREATMENT_AREA_CRS", Value: req.TreatmentAreaCRS},
 		{Name: "BURN_EMULATOR_HASH", Value: req.Hash},
 		{Name: "BURN_EMULATOR_BACKEND", Value: req.Backend},
 		{Name: "BURN_EMULATOR_OUTPUT_PATH", Value: req.OutputPath},

@@ -30,12 +30,11 @@ const (
 )
 
 type JobRequest struct {
-	TreatmentArea    string
-	TreatmentAreaCRS string
-	VarLoc           string
-	JobName          string
-	IgnitionDensity  *float64
-	Backend          string // BackendDL | BackendPT
+	TreatmentArea   string
+	VarLoc          string
+	JobName         string
+	IgnitionDensity *float64
+	Backend         string // BackendDL | BackendPT
 }
 
 type JobID struct {
@@ -130,17 +129,16 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 	}
 
 	err = c.runner.Trigger(detachedCtx, inferRequest{
-		VarLoc:           req.VarLoc,
-		ModelVersion:     modelVersion,
-		DataVersion:      dataVersion,
-		TreatmentArea:    req.TreatmentArea,
-		TreatmentAreaCRS: req.TreatmentAreaCRS,
-		IgnitionDensity:  req.IgnitionDensity,
-		Backend:          req.Backend,
-		Hash:             id.Hash,
-		OutputPath:       outPath,
-		ReportPath:       reportPath,
-		ClaimGeneration:  rec.Generation,
+		VarLoc:          req.VarLoc,
+		ModelVersion:    modelVersion,
+		DataVersion:     dataVersion,
+		TreatmentArea:   req.TreatmentArea,
+		IgnitionDensity: req.IgnitionDensity,
+		Backend:         req.Backend,
+		Hash:            id.Hash,
+		OutputPath:      outPath,
+		ReportPath:      reportPath,
+		ClaimGeneration: rec.Generation,
 	})
 	if err != nil {
 		if isRejected(err) {

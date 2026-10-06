@@ -25,7 +25,7 @@
         <mxCell id="hD" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF,#1A3300);fontColor=light-dark(#000000,#FFFFFF);strokeColor=default;strokeWidth=2;" value="burn-emulator-runner (Cloud Run Job)" vertex="1">
           <mxGeometry height="40" width="434" x="1139" y="10" as="geometry" />
         </mxCell>
-        <mxCell id="n1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client&lt;br&gt;POST /v1/jobs&lt;br&gt;{treatment_area, treatment_area_crs,&lt;br&gt;varloc, job_name, ignition_density?}&lt;div&gt;(varloc must be upper)&lt;/div&gt;" vertex="1">
+        <mxCell id="n1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client&lt;br&gt;POST /v1/jobs&lt;br&gt;{treatment_area,&lt;br&gt;varloc, job_name, ignition_density?}&lt;div&gt;(varloc must be upper)&lt;/div&gt;" vertex="1">
           <mxGeometry height="90" width="270" x="-251" y="80" as="geometry" />
         </mxCell>
         <mxCell id="n2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="JobsHandler.Create&lt;br&gt;POST /v1/jobs&lt;br&gt;(jobs.go)" vertex="1">

@@ -1,5 +1,6 @@
 import argparse
 import importlib
+import io
 import json
 import os
 import re
@@ -121,9 +122,6 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
         if value is not None
     }
 
-    if args.treatment_area_crs is not None:
-        dataset_overrides["treatment_area_crs"] = args.treatment_area_crs
-
     if dataset_overrides:
         if OmegaConf.select(configs, "dataset.init_args") is None:
             raise ValueError(
@@ -136,7 +134,6 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
     configs = OmegaConf.to_container(configs, resolve=True)
 
     init_args = configs.get("dataset", {}).get("init_args") or {}
-    treatment_area_crs = init_args.pop("treatment_area_crs", None)
 
     if args.fbfm_map_path:
         init_args["fbfm_map_path"] = args.fbfm_map_path
@@ -153,9 +150,7 @@ def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
         init_args["topo_path"] = args.topo_path
 
     if init_args.get("treatment_area") is not None:
-        init_args["treatment_area"] = load_treatment_area(
-            init_args["treatment_area"], treatment_area_crs
-        )
+        init_args["treatment_area"] = load_treatment_area(init_args["treatment_area"])
     elif init_args.get("treatment_buff") is not None:
         raise ValueError("treatment_buff requires treatment_area")
 
@@ -188,43 +183,18 @@ def dynamic_import(loader: dict, kwargs: dict | None = None) -> Any:
     return loader_cls(**init_args)
 
 
-def load_treatment_area(
-    value: str | dict | BaseGeometry | None, crs: str | None = None
-) -> BaseGeometry | None:
+def load_treatment_area(value: str | dict | BaseGeometry | None) -> BaseGeometry | None:
     if value is None:
         return None
-
-    from shapely.geometry import shape
-
     if isinstance(value, BaseGeometry):
-        if not crs:
-            return value  # caller's contract: already in TARGET_CRS
-        geoms = [value]
-    else:
-        obj = value if isinstance(value, dict) else None
-        if obj is None and isinstance(value, str) and value.lstrip().startswith(("{", "[")):
-            obj = json.loads(value)
+        return value  # caller's contract: already in TARGET_CRS
 
-        if obj is None:
-            geom = gpd.read_file(value).to_crs(TARGET_CRS).union_all()
-            _assert_plausible_bounds(geom)
-            return geom
-
-        if not crs:
-            raise ValueError("treatment_area is inline geometry but no crs was given")
-        kind = obj.get("type")
-        if kind == "FeatureCollection":
-            geoms = [shape(f["geometry"]) for f in obj["features"]]
-        elif kind == "Feature":
-            geoms = [shape(obj["geometry"])]
-        else:
-            geoms = [shape(obj)]
-
-    try:
-        geom = gpd.GeoSeries(geoms, crs=crs).to_crs(TARGET_CRS).union_all()
-    except Exception as e:
-        raise ValueError(f"invalid treatment_area_crs {crs!r}: {e}") from e
-
+    # crs comes from the geojson itself; GDAL reads one without a crs member as EPSG:4326
+    if isinstance(value, dict):
+        value = json.dumps(value)
+    if value.lstrip().startswith("{"):
+        value = io.BytesIO(value.encode())
+    geom = gpd.read_file(value).to_crs(TARGET_CRS).union_all()
     _assert_plausible_bounds(geom)
     return geom
 
@@ -234,5 +204,5 @@ def _assert_plausible_bounds(geom: BaseGeometry) -> None:
     if not (-3e6 < minx < 3e6 and -3e6 < miny < 3e6):
         raise ValueError(
             f"treatment_area implausible after reprojection to {TARGET_CRS}: "
-            f"{geom.bounds}; check treatment_area_crs"
+            f"{geom.bounds}; check the treatment_area crs"
         )

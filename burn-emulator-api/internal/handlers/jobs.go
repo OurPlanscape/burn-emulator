@@ -31,12 +31,11 @@ const (
 var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
 type jobRequestBody struct {
-	TreatmentArea    string   `json:"treatment_area"`
-	TreatmentAreaCRS string   `json:"treatment_area_crs"`
-	VarLoc           string   `json:"varloc"`
-	JobName          string   `json:"job_name"`
-	IgnitionDensity  *float64 `json:"ignition_density,omitempty"`
-	Backend          string   `json:"backend,omitempty"`
+	TreatmentArea   string   `json:"treatment_area"`
+	VarLoc          string   `json:"varloc"`
+	JobName         string   `json:"job_name"`
+	IgnitionDensity *float64 `json:"ignition_density,omitempty"`
+	Backend         string   `json:"backend,omitempty"`
 }
 
 type jobResponseBody struct {
@@ -88,12 +87,11 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	result, err := h.Dispatch.CreateJob(ctx, dispatch.JobRequest{
-		TreatmentArea:    body.TreatmentArea,
-		TreatmentAreaCRS: body.TreatmentAreaCRS,
-		VarLoc:           body.VarLoc,
-		JobName:          body.JobName,
-		IgnitionDensity:  body.IgnitionDensity,
-		Backend:          body.Backend,
+		TreatmentArea:   body.TreatmentArea,
+		VarLoc:          body.VarLoc,
+		JobName:         body.JobName,
+		IgnitionDensity: body.IgnitionDensity,
+		Backend:         body.Backend,
 	})
 	if errors.Is(err, dispatch.ErrUnknownVarLoc) {
 		http.Error(w, "invalid 'varloc': not in the published allow-list", http.StatusBadRequest)
@@ -177,11 +175,6 @@ func validate(body jobRequestBody) error {
 	if strings.TrimSpace(body.TreatmentArea) == "" {
 		return errors.New(
 			"missing 'treatment_area'",
-		)
-	}
-	if strings.TrimSpace(body.TreatmentAreaCRS) == "" {
-		return errors.New(
-			"missing 'treatment_area_crs'",
 		)
 	}
 	if body.IgnitionDensity != nil && *body.IgnitionDensity <= 0 {

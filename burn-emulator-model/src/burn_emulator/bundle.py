@@ -13,7 +13,6 @@ from burn_emulator.utils import resolve_model_checkpoint
 # dataset.init_args keys the runner / deployment fills in - never bundle them.
 _RUNTIME_DATASET_KEYS = (
     "treatment_area",
-    "treatment_area_crs",
     "fuels_paths",
     "topo_path",
     "ignitions_path",

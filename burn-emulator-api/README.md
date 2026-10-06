@@ -20,7 +20,6 @@ All are required; the server exits on startup if one is missing.
 {
   "varloc": "WC711",
   "treatment_area": "<geojson>",
-  "treatment_area_crs": "EPSG:5070",
   "job_name": "my-run-01",
   "ignition_density": 20,
   "backend": "DL"
@@ -30,13 +29,12 @@ All are required; the server exits on startup if one is missing.
 | field | |
 | --- | --- |
 | `varloc` | required; must be in `gs://<inputs>/<data_version>/varlocs/varlocs.txt` for the current `data_version`, else 400 |
-| `treatment_area` | required; geojson, reprojected to EPSG:5070 by the runner |
-| `treatment_area_crs` | required; CRS of `treatment_area` |
+| `treatment_area` | required; geojson, reprojected to EPSG:5070 by the runner. Its CRS comes from the geojson `crs` member, e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`; without one it is read as EPSG:4326 |
 | `job_name` | required; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; logged and stored on the claim, not part of the hash |
 | `ignition_density` | optional; ignitions per km², > 0; omit to use the bundle's `config.yaml` value (20). A run is capped at 2**16 ignitions, checked by the runner |
 | `backend` | optional; `DL` (emulator, GPU job, default) or `PT` (pyretechnics, CPU-only job) |
 
-`hash` = sha256 hex of `varloc|treatment_area|treatment_area_crs[|ignition_density]`, plus a trailing `0` (DL) or `1` (PT).
+`hash` = sha256 hex of `varloc|treatment_area[|ignition_density]`, plus a trailing `0` (DL) or `1` (PT).
 
 ```json
 {
@@ -90,7 +88,7 @@ Pub/Sub push endpoint. Receives GCS `OBJECT_FINALIZE` notifications for `gs://<o
 2. data_version  = gs://<inputs>/current                                   (60s cache)
    varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400     (60s cache)
    model_version = gs://<models>/<varloc>/current                          (60s cache)
-   hash          = sha256(varloc|treatment_area|treatment_area_crs[|ignition_density]) + 0 (DL) | 1 (PT)
+   hash          = sha256(varloc|treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
    out_path      = gs://<out>/<varloc>/<model_version>/<data_version>/<hash>
 3. out_path exists?                                               -> 200 cached
    _claims/<varloc>/<model_version>/<data_version>/<hash> running?   -> 202 pending

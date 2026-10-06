@@ -38,7 +38,7 @@ type claimRecord struct {
 
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s", req.VarLoc, req.TreatmentArea, req.TreatmentAreaCRS)
+	fmt.Fprintf(h, "%s|%s", req.VarLoc, req.TreatmentArea)
 	if req.IgnitionDensity != nil {
 		fmt.Fprintf(h, "|%g", *req.IgnitionDensity)
 	}
