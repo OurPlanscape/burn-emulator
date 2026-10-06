@@ -82,7 +82,7 @@ model-release-all: ## [metal] publish every varloc in varlocs.txt
 	    $(MAKE) model-release VARLOC="$$varloc"
 	done
 
-# FUELS_DIR holds both baseline_*.tif and legalmax_*.tif, TOPO_DIR the topo tifs,
+# FUELS_DIR holds {baseline,legalmax}/<layer>.tif, TOPO_DIR the topo tifs,
 # VARLOCS_GPKG the valid-varlocs output and VARLOCS_TXT the api allow-list; all land under one DATA_VERSION
 # (YYYYMMDD); defaults follow current.yaml's inputs_version and the dirs -m ignite clips from
 VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs.gpkg

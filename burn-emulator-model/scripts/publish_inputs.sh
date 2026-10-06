@@ -32,11 +32,11 @@ for dir in "$fuels_dir" "$topo_dir"; do
         echo "error: $dir is not a directory" >&2
         exit 1
     fi
-    if ! compgen -G "$dir/*.tif" >/dev/null; then
-        echo "error: $dir has no *.tif layers" >&2
-        exit 1
-    fi
 done
+if ! compgen -G "$topo_dir/*.tif" >/dev/null; then
+    echo "error: $topo_dir has no *.tif layers" >&2
+    exit 1
+fi
 
 if [[ ! -f "$varlocs_gpkg" || "$varlocs_gpkg" != *.gpkg ]]; then
     echo "error: $varlocs_gpkg is not a .gpkg file" >&2
