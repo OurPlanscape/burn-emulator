@@ -22,13 +22,12 @@ def build_radial_graph(
     H = W = grid_size
     N = H * W
 
-    # get coordinates
     ys = torch.arange(H, dtype=torch.float)
     xs = torch.arange(W, dtype=torch.float)
     grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
     pos = torch.stack([grid_x.reshape(-1), grid_y.reshape(-1)], dim=1)  # (N, 2)
 
-    # assign rings to coords
+    # ring index per coord
     cx = cy = (grid_size - 1) / 2.0
     max_dist = (cx**2 + cy**2) ** 0.5
     dist = ((pos[:, 0] - cx) ** 2 + (pos[:, 1] - cy) ** 2).sqrt()
@@ -41,7 +40,7 @@ def build_radial_graph(
     new_idx = torch.full((N,), -1, dtype=torch.long)
     new_idx[keep_mask] = torch.arange(int(keep_mask.sum()))
 
-    # get normalized ring dist from center
+    # normalized distance from center
     norm_r = ring_id.float() / num_rings
     norm_dx = (pos[:, 0] - cx) / max_dist
     norm_dy = (pos[:, 1] - cy) / max_dist
@@ -130,21 +129,19 @@ class GNNBranch(nn.Module):
         self.lateral_edge_dropout = lateral_edge_dropout
         self.outward_edge_dropout = outward_edge_dropout
 
-        # building graph with edge filter rules
         graph, num_rings = build_radial_graph(
             grid_size=grid_size,
             ring_width=ring_width,
         )
         self.num_rings = num_rings
 
-        # is this even necessary?
         self.register_buffer("same_edge_index", graph.same_edge_index)
         self.register_buffer("out_edge_index", graph.out_edge_index)
         self.register_buffer("ring_id", graph.ring_id)
         self.register_buffer("pos", graph.pos)
         self.register_buffer("pos_feat", graph.x)
 
-        # pre-tile edge index and node features for train_batch_size
+        # pre-tiled for train_batch_size
         N = graph.pos.shape[0]
         ei_single = torch.cat([graph.same_edge_index, graph.out_edge_index], dim=1)
         ei_batched = batch_edge_index(ei_single, N, train_batch_size)
@@ -155,7 +152,7 @@ class GNNBranch(nn.Module):
         )
         self.register_buffer("pos_feat_batched", pos_feat_batched)
 
-        # pre-compute normalised edge direction vectors (fixed per graph)
+        # normalized edge direction vectors
         src, dst = ei_single
         edge_dx = graph.pos[dst, 0] - graph.pos[src, 0]
         edge_dy = graph.pos[dst, 1] - graph.pos[src, 1]
@@ -195,7 +192,7 @@ class GNNBranch(nn.Module):
         N = self.pos.shape[0]
         dtype = feats_flat.dtype
 
-        # use pre-tiled buffers if B matches train_batch_size, else compute on the fly
+        # pre-tiled buffers when B == train_batch_size
         if self.train_batch_size == B:
             ei_batch = self.ei_batched
             pos_feat_t = self.pos_feat_batched.to(dtype)
@@ -204,14 +201,14 @@ class GNNBranch(nn.Module):
             ei_batch = batch_edge_index(ei_single, N, B)
             pos_feat_t = self.pos_feat.unsqueeze(0).expand(B, -1, -1).reshape(B * N, -1).to(dtype)
 
-        # filter edges touching missing pixels
+        # drops edges touching missing pixels
         src, dst = ei_batch
         valid = ~missing_flat[src] & ~missing_flat[dst]
         ei_batch = ei_batch[:, valid]
 
         E_single = self.edge_dx_norm.shape[0]
 
-        # edge dropout (training only) — separate rates for lateral and outward edges
+        # edge dropout (training only), separate lateral and outward rates
         if self.training and (self.lateral_edge_dropout > 0 or self.outward_edge_dropout > 0):
             E_same = self.same_edge_index.shape[1]
             is_lateral = (ei_batch[0] % E_single) < E_same
@@ -223,7 +220,6 @@ class GNNBranch(nn.Module):
                 self.training,
             )
 
-        # terrain/wind alignment using pre-computed unit direction vectors
         src_v = ei_batch[0]
         dst_v = ei_batch[1]
         edge_local = src_v % E_single
@@ -234,13 +230,11 @@ class GNNBranch(nn.Module):
         fx_dst = feats_flat[dst_v, 0].float()
         fy_dst = feats_flat[dst_v, 1].float()
 
-        # t_align_src/dst: how much the edge is going/arriving uphill from
-        # the src/dst node's perspective
+        # uphill alignment at the src / dst node
         t_align_src = edge_alignment(fx_src, fy_src, edge_dx_norm, edge_dy_norm).to(dtype)
         t_align_dst = edge_alignment(fx_dst, fy_dst, edge_dx_norm, edge_dy_norm).to(dtype)
 
-        # wind alignment: how much this edge points along
-        # the (per-sample, global) wind direction
+        # alignment with the per-sample wind direction
         batch_idx = src_v // N
         w_align = edge_alignment(
             wind_dx[batch_idx], wind_dy[batch_idx], edge_dx_norm, edge_dy_norm
@@ -249,7 +243,6 @@ class GNNBranch(nn.Module):
         # ring_id tiled to (B*N,) for use in layer forward
         ring_id_long = self.ring_id.unsqueeze(0).expand(B, -1).reshape(-1).to(dtype)
 
-        # projecting continuous variables and one-hot variables separately
         h = self.projector(torch.cat([feats_flat[:, :-13], pos_feat_t], dim=1), feats_flat[:, -13:])
 
         for layer in self.layers:
@@ -347,7 +340,7 @@ class RadialGNN(nn.Module):
         feats_flat = img_feats.reshape(B * N, -1)
         missing_flat = feats_flat[:, 0] < -0.8
 
-        # branches are independent — run concurrently on separate CUDA streams
+        # branches run on separate CUDA streams
         branch_outputs = run_branches_concurrently(
             self.branches,
             lambda branch: branch(feats_flat, B, missing_flat, wind_dx, wind_dy),

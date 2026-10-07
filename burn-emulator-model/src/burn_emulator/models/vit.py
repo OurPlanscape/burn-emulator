@@ -153,17 +153,10 @@ class PixelViT(nn.Module):
     ):
         super().__init__()
         assert embed_dim % num_heads == 0, "embed_dim must be divisible by num_heads"
-        # ys, xs, mask = circular_mask_indices(img_size, img_size, radius)
-        # self.register_buffer("ys", ys)
-        # self.register_buffer("xs", xs)
-        # self.register_buffer("mask", mask)  # (H, W)
-        # self.register_buffer("flat_idx", ys * img_size + xs)
-
         self.img_size = img_size
         self.in_chans = in_chans
         self.num_classes = num_classes
         self.num_pixels = self.img_size**2
-        # self.num_pixels = ys.numel()
 
         self.pixel_embed = nn.Linear(in_chans, embed_dim)
 
@@ -217,8 +210,6 @@ class PixelViT(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
-        # pix = self.extract_pixels(x)              # (B, N, C)
-        # tokens = self.pixel_embed(pix)             # (B, N, D)
         tokens = self.pixel_embed(x.reshape(B, C, H * W).permute(0, 2, 1))
 
         cls = self.cls_token.expand(B, -1, -1)  # (B, 1, D)
@@ -233,8 +224,5 @@ class PixelViT(nn.Module):
         pixel_tokens = tokens[:, 1:]  # (B, N, D) drop CLS
         logits = self.head(pixel_tokens)  # (B, N, num_classes)
 
-        # out = logits.new_zeros(B, self.num_classes, self.img_size * self.img_size)
-        # out.index_copy_(2, self.flat_idx, logits.permute(0, 2, 1))
-        # (B, num_classes, N) -> flat scatter
         out = logits.view(B, self.num_classes, self.img_size, self.img_size)
         return out

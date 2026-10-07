@@ -67,8 +67,7 @@ def batched_agg(
 
     out = torch.zeros(C, H, W, dtype=pred.dtype, device=pred.device)
     if bg_channel is not None:
-        # every sample votes into bg_channel everywhere its window doesn't reach
-        # NOTE: this is quite fragile if the aggregation later in run.py doesn't fit
+        # every sample counts as background outside its own window
         out[bg_channel] += B
 
     for b in range(B):
@@ -80,7 +79,7 @@ def batched_agg(
             continue
         out[:, y0:y1, x0:x1] += pred[b, :, ys : ys + h, xs : xs + w]
         if bg_channel is not None:
-            out[bg_channel, y0:y1, x0:x1] -= 1  # ...except inside its own window
+            out[bg_channel, y0:y1, x0:x1] -= 1
 
     return out
 
@@ -88,8 +87,7 @@ def batched_agg(
 @lru_cache(maxsize=8)
 def circle_mask(window_size: int) -> torch.Tensor:
     h = w = window_size
-    # assume an odd window size for
-    # radius 1 less than window size // 2
+    # odd window size; radius = window_size // 2 - 1
     cy, cx = (h - 1) / 2, (w - 1) / 2
     yy, xx = torch.meshgrid(
         torch.arange(h, dtype=torch.float32),
@@ -121,8 +119,7 @@ def save_checkpoint(
     ckpt_name = f"{tag}_loss-{loss:.4f}_epoch-{epoch:04d}_step-{step:06d}.pt"
     ckpt_path = ckpt_dir / ckpt_name
 
-    # optimizer first: the model file is what find_latest_checkpoint discovers,
-    # so it must only appear once its optimizer state is already on disk
+    # optimizer state is written before the model file find_latest_checkpoint looks for
     if optimizer is not None:
         optim_dir = ckpt_dir / "optim"
         optim_dir.mkdir(exist_ok=True)

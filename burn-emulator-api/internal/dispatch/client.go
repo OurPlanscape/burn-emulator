@@ -1,5 +1,4 @@
-// Package dispatch runs POST /v1/jobs: resolve model + data versions, GCS
-// cache + claim, then call the runner.
+// Package dispatch serves /v1/jobs: varloc selection, GCS cache and claim, runner trigger.
 package dispatch
 
 import (
@@ -10,20 +9,20 @@ import (
 )
 
 type Config struct {
-	ModelsURI    string // gs://<bucket>[/<prefix>] root of the model registry
-	InputsURI    string // gs://<bucket> root of the fuels/topo/varlocs inputs (reads current -> data_version)
+	ModelsURI    string // gs://<bucket>[/<prefix>] root of the model registry (reads <varloc>/current -> model_version)
+	InputsURI    string // gs://<bucket> root of the fuels/topo/varlocs inputs (reads current -> inputs_version)
 	OutputBucket string // gs://<bucket> for outputs + the claim
 	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*
 	RunnerCPUJob string // fully-qualified CPU-only burn-emulator-runner job name (PT)
 }
 
 type Client struct {
-	storage       *storage.Service
-	modelVersions *versionResolver
-	dataVersions  *versionResolver
-	varLocs       *varLocsResolver
-	runner        *runnerClient
-	cfg           Config
+	storage        *storage.Service
+	inputsVersions *versionResolver
+	modelVersions  *versionResolver
+	varLocs        *varLocsResolver
+	runner         *runnerClient
+	cfg            Config
 }
 
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
@@ -31,11 +30,11 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating storage client: %w", err)
 	}
-	modelVersions, err := newVersionResolver(storageSvc, cfg.ModelsURI)
+	inputsVersions, err := newVersionResolver(storageSvc, cfg.InputsURI)
 	if err != nil {
 		return nil, err
 	}
-	dataVersions, err := newVersionResolver(storageSvc, cfg.InputsURI)
+	modelVersions, err := newVersionResolver(storageSvc, cfg.ModelsURI)
 	if err != nil {
 		return nil, err
 	}
@@ -47,5 +46,5 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{storage: storageSvc, modelVersions: modelVersions, dataVersions: dataVersions, varLocs: varLocs, runner: runner, cfg: cfg}, nil
+	return &Client{storage: storageSvc, inputsVersions: inputsVersions, modelVersions: modelVersions, varLocs: varLocs, runner: runner, cfg: cfg}, nil
 }

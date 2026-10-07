@@ -29,7 +29,6 @@ from burn_emulator.datasets.utils import compute_bounds, compute_padding
 from burn_emulator.types import IgnitionMethod
 from burn_emulator.utils import circle_mask
 
-# likely will never reach either limits
 MAX_IGNITION_RESAMPLE = 42
 MAX_TARGET_IGNITIONS = 2**16
 CACHE_LOG_EVERY = 100  # burn windows between cache_burns progress lines
@@ -64,8 +63,7 @@ def _remap_fbfm(dat: torch.Tensor, mapping: dict, dtype: torch.dtype) -> torch.T
 def _one_hot_channels(dat: torch.Tensor, mapping: dict, num_classes: int) -> torch.Tensor:
     idx = _remap_fbfm(dat, mapping, dat.dtype)
     oh = F.one_hot(idx.long(), num_classes=num_classes + 1)
-     # drop the unmapped/no-data channel which is computed 
-     # previously in _read_fuel_dir as mask = dat != src.nodata
+    # drops channel 0 (unmapped / no data)
     return oh.squeeze(0).permute(2, 0, 1)[1:].to(DEFAULT_DTYPE)
 
 
@@ -110,7 +108,6 @@ def _read_fuel_dir(
     sample_region: Polygon | None,
     window_size: int,
 ) -> tuple[dict, torch.Tensor | None, dict | None, tuple | None]:
-    # TODO: convert to zarr and/or icechunk inputs
     layer, mask, profile = {}, None, None
     for name in INPUT_KEYS:
         with rasterio.open(fuels_path / f"{name}.tif") as src:
@@ -188,8 +185,7 @@ def _load_topos(topo_path: Path, window_bounds: tuple | None) -> dict:
     aspect_rad = torch.deg2rad(aspect)
     slope[missing] = torch.nan
 
-    # sin/cos are already bounded and not standardized, so the sentinel goes in directly;
-    # slope is raw here and standardized (+ NaN->sentinel) via NORM_KEYS in _normalize_inputs
+    # slope is standardized later via NORM_KEYS; sin/cos are not
     return {
         "sin_aspect": torch.sin(aspect_rad).masked_fill(missing, NO_DATA),
         "cos_aspect": torch.cos(aspect_rad).masked_fill(missing, NO_DATA),
@@ -243,7 +239,7 @@ class VarLoc(Dataset):
         wind_ang_paths: dict[str, str | Path] | None,
         topo_path: str | Path,
         stats_path: str | Path,
-        burn_times: list[int] | None = None, # NOTE(burn_times): unused for v1
+        burn_times: list[int] | None = None,  # unused
         treatment_area: Polygon | None = None,
         treatment_buff: float = 960,  # metres to buffer treatment_area by
         treatment_seed: int = 42,
@@ -282,7 +278,6 @@ class VarLoc(Dataset):
         self.topo_path = Path(topo_path)
         self.stats_path = Path(stats_path)
 
-        # NOTE(burn_times): unused for v1 but leaving for future development
         self.burn_times = [str(bt) for bt in burn_times] if burn_times else burn_times
         self.window_size = window_size
         self.jitter = jitter
@@ -298,10 +293,9 @@ class VarLoc(Dataset):
         self.circle_mask = circle_mask
         self.one_hot_y = one_hot_y
         self.log1p = log1p
-        # burns only exist for training; inference (burn_paths=None) has nothing to cache
+        # no burns to cache for inference
         self.cache_burns = cache_burns and self.burn_paths is not None
         if self.cache_burns:
-            # cached windows are fixed to each ignition's row/col, so they can't follow a jitter
             assert jitter is None, "cache_burns cannot be used with jitter; set cache_burns: false"
 
         self._sample_gs = self._build_sampling_region(
@@ -323,7 +317,7 @@ class VarLoc(Dataset):
             ignitions_path, treatment_seed, ignition_density, ignition_method
         )
 
-        # sampled ignitions carry only geometry; derive raster row/col from the profile
+        # sampled ignitions: row/col from the profile
         if "row" not in self.ignitions.columns:
             self._locate_ignitions()
 
@@ -361,7 +355,7 @@ class VarLoc(Dataset):
         if self.wind_angles is not None:
             wind = self.wind_angles[fkey].iloc[sidx]
 
-        # only to be used for training
+        # training only
         if self.jitter is not None:
             y += np.random.randint(-(self.jitter + 1), self.jitter)
             x += np.random.randint(-(self.jitter + 1), self.jitter)
@@ -369,7 +363,7 @@ class VarLoc(Dataset):
         ymin, ymax, xmin, xmax, yslc, xslc = self._ignition_bounds(fkey, y, x)
         ydiff, xdiff, ypad, xpad = compute_padding(ymin, ymax, xmin, xmax, self.window_size)
 
-        # stacking treated area as a secondary X
+        # baseline and collated treatment stacked
         mask = self._build_mask(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
         if self.treatment_area is not None:
             arr_x = torch.stack([
@@ -379,7 +373,7 @@ class VarLoc(Dataset):
         else:
             arr_x = self._build_arr_x(fkey, yslc, xslc, ydiff, xdiff, ypad, xpad)
 
-        # padding information is not necessary for training
+        # training: x and y
         if self.burn_paths is not None:
             if self.burns is not None:
                 arr_y = self.burns[fkey][sidx]
@@ -392,7 +386,7 @@ class VarLoc(Dataset):
                 "wind": wind,
                 "mask": mask,
             }
-        # burns are not necessary for inference
+        # inference: x only
         else:
             return {
                 "x": arr_x,
@@ -410,8 +404,7 @@ class VarLoc(Dataset):
         return compute_bounds(y, x, h, w, self.window_size)
 
     def _cache_burns(self) -> dict[str, list[torch.Tensor]]:
-        # raw (unpadded, un-encoded) fire_type windows around each ignition, per role;
-        # encoding + padding still happen per item in _build_arr_y
+        # raw fire_type windows per ignition and role; encoded + padded in _build_arr_y
         burns = {}
         total = len(self.ignitions) * len(self.burn_paths)
         done, start = 0, perf_counter()
@@ -424,7 +417,6 @@ class VarLoc(Dataset):
                 arr = self._build_arr_y_raw(ignition, burn_path, yslc, xslc)
                 burns[fkey].append(arr.to(torch.uint8, copy=True))
                 done += 1
-                # flushed so slurm logs show caching is progressing (NFS reads can be slow)
                 if done % CACHE_LOG_EVERY == 0 or done == total:
                     elapsed = perf_counter() - start
                     print(
@@ -459,7 +451,6 @@ class VarLoc(Dataset):
         ypad: tuple[int, int, int, int],
         xpad: tuple[int, int, int, int],
     ) -> torch.Tensor:
-        # the mask is fbfm shaped. see utils.cache_intputs
         mask = self.masks[fkey][:, yslc, xslc]
         mask = self._pad(mask, ydiff, xdiff, ypad, xpad, value=0)
         if self.circle_mask:
@@ -483,7 +474,7 @@ class VarLoc(Dataset):
             arr = self._pad(arr, ydiff, xdiff, ypad, xpad, value=NO_DATA)
             arr_x.append(arr)
 
-        # one hots should be padded with 0 not -1
+        # one-hots padded with 0
         for key, values in self.fuels[fkey].items():
             arr = values[:, yslc, xslc]
             no_data = 0 if key == "fbfm" else NO_DATA
@@ -510,7 +501,6 @@ class VarLoc(Dataset):
         # raw fire_type class per pixel: 0 unburned | 1 surface | 2 passive crown | 3 active crown
         arr_y = []
         igd = burn_path / str(int(ignition["ignition_number"].item()))
-        # NOTE(burn_times): unused for v1
         if self.burn_times:
             bps = [igd / bt / "fire_type.tif" for bt in self.burn_times]
         else:
@@ -520,7 +510,6 @@ class VarLoc(Dataset):
                 arr = torch.tensor(src.read())
                 nodata = src.nodata
             arr = arr[:, yslc, xslc]
-            # a nodata fill (e.g. -999) would read as unburned, or as burned once cached as uint8
             assert 0 <= arr.min() and arr.max() < self.num_classes, (
                 f"fire_type values [{arr.min().item()}, {arr.max().item()}] out of "
                 f"[0, {self.num_classes}) in {bp}; nodata={nodata} "
@@ -610,8 +599,6 @@ class VarLoc(Dataset):
                 self.wind_angles[fkey] = pd.Series(wind_angle, name="upwind_direction")
 
     def _set_circle_mask(self) -> None:
-        # NOTE: partial window masking to avoid edge effects
-        #       marginal in benefit but cheap to apply
         self.cmask = circle_mask(self.window_size)
 
     def _select_burnable(self, points: gpd.GeoSeries) -> np.ndarray:
@@ -623,7 +610,7 @@ class VarLoc(Dataset):
             inbounds = (rows >= 0) & (rows < h) & (cols >= 0) & (cols < w)
             r, c = np.clip(rows, 0, h - 1), np.clip(cols, 0, w - 1)
             ros = self.fuels[fkey]["fbfm"][: len(ROS_FL_CLASSES), r, c].float()
-            # N class (0 and 91-99), or a code missing from the fbfm map (nodata: -999 clipped, NaN published)
+            # N class (0, 91-99), or a code missing from the fbfm map
             nonburn = ((ros[ROS_FL_CLASSES.index("N")] > 0) | (ros.sum(0) == 0)).numpy()
             burnable &= inbounds & ~nonburn
         return burnable
@@ -639,9 +626,6 @@ class VarLoc(Dataset):
         sampled = gs.sample_points(size=n_points, method=method, rng=treatment_seed)
         sampled = sampled.explode(index_parts=False).reset_index(drop=True)
 
-        # TODO: for method="uniform" this could be a single vectorized draw over the
-        #       cached burnable pixel grid instead of a rejection loop; however, speed-up is
-        #       probably marginal at best (i.e ~ 10ms difference per batch)...
         target = len(sampled)
         if target > MAX_TARGET_IGNITIONS:
             raise ValueError(

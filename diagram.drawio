@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram name="API Runner + Model Run" id="0">
-    <mxGraphModel dx="5547" dy="1932" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
+    <mxGraphModel dx="7248" dy="2760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -25,25 +25,25 @@
         <mxCell id="hD" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#FFFFFF,#1A3300);fontColor=light-dark(#000000,#FFFFFF);strokeColor=default;strokeWidth=2;" value="burn-emulator-runner (Cloud Run Job)" vertex="1">
           <mxGeometry height="40" width="434" x="1139" y="10" as="geometry" />
         </mxCell>
-        <mxCell id="n1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client&lt;br&gt;POST /v1/jobs&lt;br&gt;{treatment_area,&lt;br&gt;varloc, job_name, ignition_density?}&lt;div&gt;(varloc must be upper)&lt;/div&gt;" vertex="1">
+        <mxCell id="n1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Client&lt;/b&gt;&lt;br&gt;POST /v1/jobs&lt;br&gt;{treatment_area, varloc?, job_name?,&lt;br&gt;ignition_density?, backend?}" vertex="1">
           <mxGeometry height="90" width="270" x="-251" y="80" as="geometry" />
         </mxCell>
         <mxCell id="n2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="JobsHandler.Create&lt;br&gt;POST /v1/jobs&lt;br&gt;(jobs.go)" vertex="1">
           <mxGeometry height="70" width="280" x="249" y="90" as="geometry" />
         </mxCell>
-        <mxCell id="n3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="validate()&lt;br&gt;varloc in allow-list; valid job_name;&lt;br&gt;treatment_area/crs present; ignition_density &amp;gt; 0&lt;div&gt;(jobs.go)&lt;/div&gt;" vertex="1">
+        <mxCell id="n3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;validate()&lt;/b&gt; + normalizeGeoJSON()&lt;br&gt;varloc alphanumeric; valid job_name;&lt;br&gt;treatment_area present; ignition_density &amp;gt; 0;&lt;br&gt;backend DL | PT (jobs.go)" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="210" as="geometry" />
         </mxCell>
-        <mxCell id="n4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="versionResolver.resolve()&lt;br&gt;(model_version / data_version, 60s cache)&lt;div&gt;&lt;div&gt;(versions.go, *publish Make targets)&lt;/div&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="n4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;selectVarLoc()&lt;/b&gt; (varlocs.go)&lt;br&gt;varloc: requested or largest overlap&lt;br&gt;in all_varlocs.gpkg; none -&amp;gt; 400&lt;br&gt;DL if trained + has current, else PT" vertex="1">
           <mxGeometry height="70" width="280" x="249" y="330" as="geometry" />
         </mxCell>
-        <mxCell id="n5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="current pointers&lt;br&gt;gs://models/&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255)); background-color: transparent;&quot;&gt;{&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;varloc}&lt;/span&gt;/current&lt;br&gt;gs://inputs/{current data_version}" vertex="1">
-          <mxGeometry height="110" width="200" x="797" y="310" as="geometry" />
+        <mxCell id="n5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="&lt;b&gt;pointers + gpkgs&lt;/b&gt;&lt;br&gt;gs://inputs/current&lt;br&gt;gs://models/{varloc}/current&lt;br&gt;gs://inputs/{inputs_version}/&lt;br&gt;varlocs/{valid,all}_varlocs.gpkg" vertex="1">
+          <mxGeometry height="110" width="251.5" x="777" y="310" as="geometry" />
         </mxCell>
-        <mxCell id="n6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="hash = sha256(varloc|area|crs|ignition)&lt;br&gt;job_id = JobID.Path() =&lt;br&gt;{varloc}/{model_version}/{data_version}/{hash}&lt;div&gt;(dispatch.go, cache.go)&lt;/div&gt;" vertex="1">
+        <mxCell id="n6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="hash = sha256(treatment_area|ignition_density) + 0 DL | 1 PT&lt;br&gt;job_id = {inputs_version}/{varloc}/{model_version | pt}/{hash}&lt;br&gt;(dispatch.go, cache.go)" vertex="1">
           <mxGeometry height="80" width="370" x="204" y="450" as="geometry" />
         </mxCell>
-        <mxCell id="n7" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="outputExists()?&#xa;(cache.go)" vertex="1">
+        <mxCell id="n7" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="&lt;b&gt;outputExists()?&lt;/b&gt;&lt;br&gt;*.tif under job_id&lt;br&gt;(cache.go)" vertex="1">
           <mxGeometry height="100" width="200" x="289" y="560" as="geometry" />
         </mxCell>
         <mxCell id="n7r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="200 cached&lt;br&gt;{job_id, output_path}&lt;br&gt;(clears a leftover running claim)" vertex="1">
@@ -58,22 +58,22 @@
         <mxCell id="n8r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="202 pending {job_id}&lt;br&gt;Location: /v1/jobs/{job_id}&lt;br&gt;(new run, or identical run in flight)" vertex="1">
           <mxGeometry height="70" width="240" x="-236" y="740" as="geometry" />
         </mxCell>
-        <mxCell id="n9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="runner.Trigger()&lt;br&gt;Cloud Run Admin API -&amp;gt; Jobs.Run(), no waiting&lt;br&gt;claim + trigger detached, 90s&lt;br&gt;error -&amp;gt; POST 500: 4xx releases claim, timeout/5xx keeps it" vertex="1">
+        <mxCell id="n9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;runner.Trigger()&lt;/b&gt;: GPU (DL) | CPU (PT) job&lt;br&gt;after writing treatment_area.geojson&lt;br&gt;Jobs.Run(), no waiting; detached, 90s&lt;br&gt;4xx releases claim, timeout/5xx keeps it" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="885" as="geometry" />
         </mxCell>
-        <mxCell id="n10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Cloud Run Job execution starts&lt;br&gt;&lt;br&gt;&lt;div&gt;injected env:&lt;/div&gt;&lt;div&gt;varloc, model_version, inputs, treatment_area, crs, hash, output_path, report_path, claim_generation&lt;/div&gt;" vertex="1">
+        <mxCell id="n10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;Cloud Run Job execution starts&lt;/b&gt;&lt;br&gt;env: varloc, backend, model_version (DL),&lt;br&gt;inputs_version, treatment_area_path, hash,&lt;br&gt;output_path, report_path, claim_generation,&lt;br&gt;fuels / topo / fbfm paths" vertex="1">
           <mxGeometry height="100" width="300" x="1206" y="885" as="geometry" />
         </mxCell>
-        <mxCell id="n11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="__main__.main()&lt;br&gt;SIGTERM -&amp;gt; failure until run() returns&lt;br&gt;warm_gpu() fail fast if no CUDA for SPEEEEEED&lt;br&gt;(will need to make small adjustments for XLA library)" vertex="1">
+        <mxCell id="n11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;__main__.main()&lt;/b&gt;&lt;br&gt;SIGTERM -&amp;gt; failure until run() returns&lt;br&gt;warm_gpu(): fails fast without CUDA" vertex="1">
           <mxGeometry height="70" width="300" x="1206" y="1020" as="geometry" />
         </mxCell>
-        <mxCell id="n12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Load model bundle&#xa;artifacts.bundle_dir + load_spec&#xa;(model.pt, config.yaml) + provenance check" vertex="1">
+        <mxCell id="n12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;DL&lt;/b&gt;: load bundle&lt;br&gt;artifacts.bundle_dir + load_spec&lt;br&gt;(model.pt, config.yaml) + provenance check&lt;br&gt;&lt;b&gt;PT&lt;/b&gt;: pt_spec(), no bundle&lt;br&gt;(wind_range from wind_directions.csv)" vertex="1">
           <mxGeometry height="90" width="300" x="1206" y="1120" as="geometry" />
         </mxCell>
-        <mxCell id="n13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="_run_config()&lt;br&gt;parse/reproject treatment_area, ignition_density?&lt;br&gt;fuels_paths, topo_path (env), out_path = local temp dir" vertex="1">
+        <mxCell id="n13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;_run_config()&lt;/b&gt;&lt;br&gt;treatment_area from GCS, ignition_density?&lt;br&gt;fuels / topo / fbfm paths from env&lt;br&gt;out_path = local temp dir" vertex="1">
           <mxGeometry height="80" width="300" x="1206" y="1240" as="geometry" />
         </mxCell>
-        <mxCell id="n14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="burn_emulator.run.run() (run.py)&lt;br&gt;model / dataset instantiation + load checkpoin&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;t from FUSE&lt;/span&gt;" vertex="1">
+        <mxCell id="n14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;burn_emulator.run.run()&lt;/b&gt; (run.py)&lt;br&gt;DL: dataset + model, checkpoint from FUSE&lt;br&gt;PT: pyretechnics" vertex="1">
           <mxGeometry height="80" width="300" x="1206" y="1350" as="geometry" />
         </mxCell>
         <mxCell id="n15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Per ignition sample:&lt;div&gt;1. baseline + treatment collation&lt;br&gt;2. forward pass + activation + argmax&lt;br&gt;(unburned | surface | passive | active)&lt;/div&gt;" vertex="1">
@@ -88,7 +88,7 @@
         <mxCell id="n18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Write GeoTIFF to local temp (/tmp, in-memory)&lt;br&gt;SIGTERM ignored from here&lt;br&gt;_upload_output(): atomic GCS upload" vertex="1">
           <mxGeometry height="80" width="300" x="1206" y="1800" as="geometry" />
         </mxCell>
-        <mxCell id="n18g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="output object&lt;br&gt;gs://{output_bucket}/{job_id}/{model_name}.tif&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;model_name={varloc}_{architecture}_{inputs_version}_{ignitions_version}&lt;br&gt;(training data_version from current.yaml, not the inputs data_version)&lt;br&gt;(redundant I know but too much effort to fix&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;)&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;There should only be one tif in the hash dir&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="n18g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="&lt;b&gt;output object&lt;/b&gt;&lt;br&gt;gs://{output_bucket}/{job_id}/{name}.tif&lt;br&gt;DL: {varloc}_{architecture}_{data_version}.tif&lt;br&gt;PT: {varloc}_pt_{inputs_version}.tif&lt;br&gt;one tif per job_id" vertex="1">
           <mxGeometry height="225" width="312" x="741" y="1727.5" as="geometry" />
         </mxCell>
         <mxCell id="n19" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1f2f1e);strokeColor=light-dark(#D79B00,#446E2C);" value="exception?&lt;br&gt;(SIGTERM ignored&lt;br&gt;in except)" vertex="1">
@@ -118,7 +118,7 @@
         <mxCell id="n20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="POST /internal/pubsub/run-reports&lt;br&gt;ReportHandler -&amp;gt; HandleReport()&lt;br&gt;re-read report @ notified generation&lt;br&gt;completed: releaseRun(claim_generation)&lt;br&gt;failed: ownsClaim -&amp;gt; deleteOutput + failRun&lt;br&gt;then delete report&lt;div&gt;(handlers/report.go, dispatch/report.go)&lt;/div&gt;" vertex="1">
           <mxGeometry height="130" width="280" x="249" y="2305" as="geometry" />
         </mxCell>
-        <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="JobsHandler.Get -&amp;gt; GetJob()&lt;br&gt;GET /v1/jobs/{job_id}&lt;br&gt;cached | pending | failed | 404&lt;br&gt;(stale running claim &amp;gt;25m -&amp;gt; failed)" vertex="1">
+        <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;JobsHandler.Get -&amp;gt; GetJob()&lt;/b&gt;&lt;br&gt;GET /v1/jobs/{job_id}&lt;br&gt;cached | pending | failed | 404&lt;br&gt;(stale running claim &amp;gt;25m -&amp;gt; failed)" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="2475" as="geometry" />
         </mxCell>
         <mxCell id="n21r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client polls GET Location&lt;br&gt;until cached or failed" vertex="1">
@@ -235,22 +235,22 @@
         <mxCell id="e27" edge="1" parent="1" source="n9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="n8r" value="triggered">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="m1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="Training outputs&lt;br&gt;data/outputs/{varloc}_{architecture}_{data_version}/&lt;br&gt;checkpoints/ (top-3 by loss) + optim/,&lt;br&gt;stats.yaml, train_log.csv" vertex="1">
+        <mxCell id="m1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;Training outputs&lt;/b&gt;&lt;br&gt;data/outputs/{varloc}_{arch}_{data_version}/&lt;br&gt;checkpoints/ (top-3 + last) + optim/&lt;br&gt;stats.yaml, train_log.csv" vertex="1">
           <mxGeometry height="80" width="320" x="-336" y="1444.93" as="geometry" />
         </mxCell>
-        <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;make model-bundle(-all)&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p)&lt;br&gt;burn_emulator -m bundle&lt;br&gt;-&amp;gt; data/bundles/{model_name}/&lt;br&gt;model.pt, config.yaml, stats.yaml,&lt;br&gt;bundle_meta.json" vertex="1">
+        <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;make model-bundle(-all)&lt;/b&gt; [metal]&lt;br&gt;-all: update-mark-trained first&lt;br&gt;(or train.slurm with -p)&lt;br&gt;burn_emulator -m bundle&lt;br&gt;-&amp;gt; data/bundles/{model_name}/&lt;br&gt;model.pt, config, stats, bundle_meta" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1549.93" as="geometry" />
         </mxCell>
-        <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make model-release(-all)&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p)&lt;br&gt;publish_model.sh&lt;br&gt;model_version = mtime + git_sha" vertex="1">
+        <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make model-release(-all)&lt;/b&gt; [metal]&lt;br&gt;publish_model.sh: upload bundles,&lt;br&gt;then repoint {varloc}/current&lt;br&gt;model_version = mtime + git_sha" vertex="1">
           <mxGeometry height="80" width="240" x="-296" y="1689.93" as="geometry" />
         </mxCell>
-        <mxCell id="mg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Model checkpoints, configs, stats&lt;br&gt;gs://models/{&lt;/span&gt;&lt;span style=&quot;background-color: transparent;&quot;&gt;varloc}/{model_version}/*&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="mg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Model bundles&lt;/b&gt;&lt;br&gt;gs://models/{varloc}/{model_version}/*&lt;br&gt;gs://models/{varloc}/current" vertex="1">
           <mxGeometry height="90" width="240" x="777" y="1120" as="geometry" />
         </mxCell>
-        <mxCell id="ig" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="Model inputs&lt;br&gt;gs://inputs/{inputs_version}/&lt;br&gt;{baseline, legalmax, topo}/*.tif&lt;br&gt;varlocs/{varlocs.txt, *.gpkg}" vertex="1">
+        <mxCell id="ig" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Model inputs&lt;/b&gt;&lt;br&gt;gs://inputs/{inputs_version}/&lt;br&gt;{baseline, legalmax, topo}/*.tif, fbfm/&lt;br&gt;varlocs/{valid_varlocs, all_varlocs}.gpkg" vertex="1">
           <mxGeometry height="100" width="240" x="777" y="1230" as="geometry" />
         </mxCell>
-        <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make inputs-release&lt;/b&gt; [metal]&lt;br&gt;publish_inputs.sh&lt;br&gt;DATA_VERSION default: current.yaml inputs_version&lt;br&gt;baseline_*.tif + legalmax_*.tif + topo*.tif&lt;br&gt;+ varlocs gpkg + varlocs.txt&lt;br&gt;all under one data_version, then repoint current" vertex="1">
+        <mxCell id="i1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make inputs-release&lt;/b&gt; [metal]&lt;br&gt;publish_inputs.sh (current.yaml inputs_version)&lt;br&gt;fuels, topo, fbfm map,&lt;br&gt;valid_varlocs.gpkg + all_varlocs.gpkg&lt;br&gt;under one inputs_version, then repoint current" vertex="1">
           <mxGeometry height="110" width="312" x="-332" y="1929.93" as="geometry" />
         </mxCell>
         <mxCell id="me1" edge="1" parent="1" source="m1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="m2">
@@ -294,11 +294,12 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="djURoE4mO61NqgrSBAHh-4" edge="1" parent="1" source="i1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;dashed=1;dashPattern=1 1;" target="n5">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry relative="1" x="0.0003" as="geometry">
             <Array as="points">
+              <mxPoint x="-20" y="2005" />
               <mxPoint x="720" y="2005" />
               <mxPoint x="720" y="480" />
-              <mxPoint x="897" y="480" />
+              <mxPoint x="902.8" y="480" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -317,13 +318,13 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;align=center;" value="Raw inputs from DS on Dragon Cluster&lt;br&gt;data/training_data/&lt;br&gt;fuels_{inputs_version}/{baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif&lt;br&gt;topo_{inputs_version}/{aspect, slope_degrees}.tif&lt;br&gt;varlocs.gpkg" vertex="1">
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;align=center;" value="&lt;b&gt;Raw inputs from DS on Dragon Cluster&lt;/b&gt;&lt;br&gt;data/training_data/&lt;br&gt;fuels_{inputs_version}/{baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif&lt;br&gt;topo_{inputs_version}/{aspect, slope_degrees}.tif&lt;br&gt;varlocs.gpkg (every varloc, source)" vertex="1">
           <mxGeometry height="170" width="370" x="-1810" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="DRsQ0ycy17QCxkV9Jszo-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=22;fontStyle=1" value="Offline training and publishing model.&lt;br&gt;&lt;br&gt;Left to right: Pyretechnics training data, PyTorch training, bundle + publish." vertex="1">
           <mxGeometry height="150" width="451.5" x="-787.5" y="1952.5" as="geometry" />
         </mxCell>
-        <mxCell id="tg1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make training-data(-all)&lt;/b&gt; [metal]&lt;br&gt;&lt;b&gt;SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_ignitions_all.sh -&amp;gt; ignitions.slurm array, 1 task per varloc&lt;br&gt;-&amp;gt; burn_emulator -m ignite -vl VARLOC -dv DV [-ni 5000] [-ci]&lt;br&gt;(ignite.py; uv sync --extra data: pyretechnics + ray)" vertex="1">
+        <mxCell id="tg1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make training-data(-all)&lt;/b&gt; [metal|slurm]&lt;br&gt;burn_emulator -m ignite -vl VARLOC -dv DV&lt;br&gt;SLURM=1: ignitions.slurm queue worker&lt;br&gt;(ignite.py; --extra data: pyretechnics + ray)&lt;br&gt;-all then: all-varlocs copies varlocs.gpkg" vertex="1">
           <mxGeometry height="100" width="300" x="-1775" y="1374.93" as="geometry" />
         </mxCell>
         <mxCell id="tg2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Clip per varloc&lt;/b&gt;&lt;br&gt;_load_varloc_geom() from gpkg&lt;br&gt;_read_masked_window(): window to varloc bounds,&lt;br&gt;outside geom / NaN -&amp;gt; -999, int16&lt;br&gt;-&amp;gt; {baseline,legalmax}_fuels/{layer}.tif, topo/" vertex="1">
@@ -332,13 +333,13 @@
         <mxCell id="tg3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;sample_ignited_cells_buffered()&lt;/b&gt;&lt;br&gt;N random cells (seed 42) that are:&lt;br&gt;burnable FBFM (exists, not 91-99) and&lt;br&gt;inside varloc buffered by -2000 m&lt;br&gt;-&amp;gt; ignition_locations.csv (row, col, x, y)" vertex="1">
           <mxGeometry height="100" width="300" x="-1775" y="1614.93" as="geometry" />
         </mxCell>
-        <mxCell id="tg4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Wind per ignition&lt;/b&gt;&lt;br&gt;upwind_direction ~ U[225, 270) deg&lt;br&gt;same draw for baseline and legalmax" vertex="1">
+        <mxCell id="tg4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Wind per ignition&lt;/b&gt;&lt;br&gt;upwind_direction ~ U[low, high) deg&lt;br&gt;from configs/wind_directions.csv&lt;br&gt;same draw for baseline and legalmax" vertex="1">
           <mxGeometry height="70" width="300" x="-1775" y="1744.93" as="geometry" />
         </mxCell>
         <mxCell id="tg5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Convert to Pyretechnics units&lt;/b&gt;&lt;br&gt;cc /100 (0-1), cbd /100 (kg/m3), cbh, th /10 (m)&lt;br&gt;slope tan(deg) rise/run, fbfm nodata|0 -&amp;gt; 91&lt;br&gt;&lt;b&gt;Constant weather:&lt;/b&gt; wind 10 km/h&lt;br&gt;moisture 1h .05, 10h .10, 100h .15,&lt;br&gt;LH .90, LW .60, FMC .90; spread adj 1.0" vertex="1">
           <mxGeometry height="120" width="300" x="-1775" y="1844.93" as="geometry" />
         </mxCell>
-        <mxCell id="tp1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#fad9c1, #5c2a0e);strokeColor=light-dark(#c75b12,#e07b39);align=center;spacingLeft=6;" value="&lt;b&gt;ignite(): Ray fan-out&lt;/b&gt; (ignite.py)&lt;br&gt;per treatment&lt;br&gt;in {baseline, legalmax}:&lt;br&gt;ray.put() shared arrays&lt;br&gt;N x run_ignition_ray.remote() (4 GiB each)&lt;br&gt;ray.wait() all before next treatment" vertex="1">
+        <mxCell id="tp1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#fad9c1, #5c2a0e);strokeColor=light-dark(#c75b12,#e07b39);align=center;spacingLeft=6;" value="&lt;b&gt;ignite(): Ray fan-out&lt;/b&gt; (ignite.py)&lt;br&gt;per treatment&lt;br&gt;in {baseline, legalmax}:&lt;br&gt;ray.put() shared arrays&lt;br&gt;N x run_ignition_ray.remote() (8 GiB each)&lt;br&gt;ray.wait() all before next treatment" vertex="1">
           <mxGeometry height="110" width="320" x="-1360" y="1319.93" as="geometry" />
         </mxCell>
         <mxCell id="tp2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#fad9c1, #5c2a0e);strokeColor=light-dark(#c75b12,#e07b39);align=center;spacingLeft=6;" value="&lt;b&gt;run_ignition_ray()&lt;/b&gt; (ignite.py)&lt;br&gt;SpaceTimeCube per layer&lt;br&gt;shape (96 hourly bands, rows, cols)&lt;br&gt;resolution 60 min x 30 m x 30 m&lt;br&gt;SpreadState(cube_shape).ignite_cell(point)" vertex="1">
@@ -353,7 +354,7 @@
         <mxCell id="tp5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);align=center;" value="&lt;b&gt;Training data&lt;/b&gt;&lt;br&gt;data/training_data/{varloc}/{inputs_version}_{ignitions_version}/&lt;br&gt;{baseline,legalmax}_fuels/*.tif, topo/*.tif&lt;br&gt;ignition_locations.csv&lt;br&gt;{baseline,legalmax}/{i}/fire_type.tif&lt;br&gt;{baseline,legalmax}/outputs_table.csv&lt;br&gt;(-ci: cbp.tif burn probability instead)" vertex="1">
           <mxGeometry height="170" width="421" x="-1410.5" y="1907.43" as="geometry" />
         </mxCell>
-        <mxCell id="tt1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make train-all&lt;/b&gt; [metal] -&amp;gt; scripts/train_all.sh&lt;br&gt;&lt;b&gt;make train-all SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh&lt;br&gt;&lt;b&gt;make train-release(-all)&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh -p&lt;br&gt;-&amp;gt; queue file; multi-GPU nodes: 1 pooled --gres array, 1/GPU&lt;br&gt;1-GPU nodes: array of 8 each; workers claim via mkdir&lt;br&gt;architecture + data_version from current.yaml" vertex="1">
+        <mxCell id="tt1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;make train-all&lt;/b&gt; [metal] -&amp;gt; scripts/train_all.sh&lt;br&gt;&lt;b&gt;make train-all SLURM=1&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh&lt;br&gt;&lt;b&gt;make train-release(-all)&lt;/b&gt; [slurm] -&amp;gt; submit_train_all.sh -p&lt;br&gt;-&amp;gt; queue file; multi-GPU nodes: 1 pooled --gres array, 1/GPU&lt;br&gt;1-GPU nodes: array of 4 each; workers claim via mkdir&lt;br&gt;architecture + data_version from current.yaml" vertex="1">
           <mxGeometry height="125" width="380" x="-880" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="tt2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;burn_emulator -m train&lt;/b&gt; -a ARCH -vl VARLOC -dv DV&lt;br&gt;-c circlepp/model.yaml -c circlepp/train.yaml&lt;br&gt;-c varlocs/templates/train.yaml (CLI wins, later -c wins)&lt;br&gt;resolve_model_name() -&amp;gt; {varloc}_{arch}_{dv}" vertex="1">
@@ -365,10 +366,10 @@
         <mxCell id="tt4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;CirclePP&lt;/b&gt; (models/circlepp.py)&lt;br&gt;UNet++ with circular 3x3 kernels&lt;br&gt;FiLM conditioning on wind (sin, cos)&lt;br&gt;23 in -&amp;gt; 4 out (fire_type logits)" vertex="1">
           <mxGeometry height="80" width="380" x="-880" y="1584.93" as="geometry" />
         </mxCell>
-        <mxCell id="tt5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;train_model()&lt;/b&gt; (train.py)&lt;br&gt;AdamW lr 3e-4, batch 32, shuffle, 1024 epochs&lt;br&gt;loss = DiceFocalLoss(Y_hat * M, Y * M)&lt;br&gt;(dice .5 + focal .5, gamma 2, label smoothing .05)&lt;br&gt;bfloat16 + torch.compile&lt;br&gt;resumes from latest ckpt + optimizer state" vertex="1">
+        <mxCell id="tt5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;train_model()&lt;/b&gt; (train.py)&lt;br&gt;AdamW lr 3e-4, batch 32, shuffle, 512 epochs&lt;br&gt;loss = DiceFocalLoss(Y_hat * M, Y * M)&lt;br&gt;(dice .5 + focal .5, gamma 2, label smoothing .05)&lt;br&gt;bfloat16 + torch.compile&lt;br&gt;resumes from latest ckpt + optimizer state" vertex="1">
           <mxGeometry height="110" width="380" x="-880" y="1694.93" as="geometry" />
         </mxCell>
-        <mxCell id="tt6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Per epoch&lt;/b&gt;&lt;br&gt;save_checkpoint(): keep top-3 lowest loss&lt;br&gt;append train_log.csv&lt;br&gt;no validation loop: accuracy checked post-hoc&lt;br&gt;via -m evaluate / scripts/ignite_inference.sh" vertex="1">
+        <mxCell id="tt6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;align=center;spacingLeft=6;" value="&lt;b&gt;Per epoch&lt;/b&gt;&lt;br&gt;save_checkpoint(): keep top-3 lowest loss&lt;br&gt;(+ last epoch at the end)&lt;br&gt;append train_log.csv&lt;br&gt;accuracy checked post-hoc via -m evaluate /&lt;br&gt;scripts/ignite_inference.sh" vertex="1">
           <mxGeometry height="100" width="380" x="-880" y="1834.93" as="geometry" />
         </mxCell>
         <mxCell id="tge0" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;align=center;" target="tg1" value="">
@@ -438,7 +439,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make varlocs-release&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm with -p, under varlocs.txt.lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs.gpkg&lt;br&gt;publish_varlocs.sh: replace varlocs.txt + gpkg&lt;br&gt;of the current data_version (no repoint)" vertex="1">
+        <mxCell id="pv" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make varlocs-release&lt;/b&gt; [metal]&lt;br&gt;(or train.slurm -p, under lock)&lt;br&gt;valid-varlocs -&amp;gt; valid_varlocs.gpkg&lt;br&gt;publish_varlocs.sh: replace both&lt;br&gt;gpkgs of current inputs_version" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1804.93" as="geometry" />
         </mxCell>
         <mxCell id="pve1" edge="1" parent="1" source="pv" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;entryPerimeter=0;" target="ig" value="">

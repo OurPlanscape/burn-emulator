@@ -46,8 +46,6 @@ def train_model(
             W = sample["wind"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
             M = sample["mask"].to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
 
-            # TODO: no OOD validation loop in favor of post-training
-            #       evaluation of approximation accuracy in eval script
             optimizer.zero_grad()
             Y_hat = model(X, W)
             train_loss = criterion(Y_hat * M, Y * M)

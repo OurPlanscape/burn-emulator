@@ -12,8 +12,7 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// how long a resolved varloc -> version mapping is reused before the pointer
-// is re-read. A model bump is picked up within this window.
+// pointer re-read interval
 const versionCacheTTL = 60 * time.Second
 
 // versions must be usable as a single GCS path segment.
@@ -24,7 +23,7 @@ type cachedVersion struct {
 	at      time.Time
 }
 
-// resolve and cache a version from a `<key>/current` written by publish_inputs.sh
+// reads and caches [<key>/]current
 type versionResolver struct {
 	storage *storage.Service
 	bucket  string
@@ -90,7 +89,6 @@ func parseGSRoot(uri string) (bucket, prefix string, err error) {
 	return bucket, strings.Trim(prefix, "/"), nil
 }
 
-// join non-empty path segments with "/".
 func joinPath(parts ...string) string {
 	var kept []string
 	for _, p := range parts {

@@ -43,8 +43,7 @@ run_task () {
     local BASELINE_DIR="${SCENARIO_DIR}/${N}_baseline"
 
     export scenario="$(basename "$SCENARIO_DIR")_${EVAL_CFG}"
-    # ignitions_path stays a *_ignitions_locations.csv file so VarLoc skips the
-    # geojson/gpkg windowing path and reads fuels at their full raster extent
+    # a *_ignitions_locations.csv reads fuels at full raster extent
     export ignitions_path="${SCENARIO_DIR}/${N}_${EVAL_CFG}/${N}_ignitions_locations.csv"
     if [ "$EVAL_CFG" = "legalmax" ]; then
         export treatment_fuels_path="${SCENARIO_DIR}/${N}_legalmax"

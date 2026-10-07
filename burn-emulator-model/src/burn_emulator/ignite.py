@@ -103,15 +103,15 @@ def is_burnable(fuel_model_cube, y, x):
 
 
 def outside_buffer(fuel_model_cube, point: tuple, buffered_gdf, transform):
-    #  single point = (row, col)
+    # point = (row, col)
     x, y = rio.transform.xy(transform=transform, rows=point[0], cols=point[1])
     points_geom = gpd.points_from_xy(x=[x], y=[y])
 
-    return points_geom.within(buffered_gdf["geometry"][0])[0]  # return first element of list
+    return points_geom.within(buffered_gdf["geometry"][0])[0]
 
 
 def count_allowable_cells(fuel_model_array, buffered_gdf, transform) -> int:
-    # vectorized is_burnable + outside_buffer; sampling never terminates when this is 0
+    # vectorized is_burnable + outside_buffer
     fuel_models = np.unique(fuel_model_array)
     burnable_models = [n for n in fuel_models if fm.fuel_model_exists(n) and not (91 <= n <= 99)]
     burnable = np.isin(fuel_model_array, burnable_models)
@@ -186,7 +186,7 @@ def run_ignition_ray(
     simulation_runtime = sim["runtime"]  # seconds
     runtime_per_burned_cell = (
         1000.0 * simulation_runtime / num_burned_cells if num_burned_cells > 0 else 0.0
-    )  # ms/cell; some FBFMs at short burn periods might not burn anything
+    )  # ms/cell
 
     print("   Acres Burned: " + str(acres_burned))
     print("   Total Runtime: " + str(simulation_runtime) + " seconds")
@@ -222,7 +222,6 @@ def ignite(
     pt_adjustments: dict = DEFAULT_PT_ADJUSTMENTS,
     **kwargs,
 ) -> None:
-    # resolved before anything is deleted or written; must match the range bundles bake in
     if upwind_direction_quadrant is None:
         upwind_direction_quadrant = wind_range(varloc)
     print(f"{varloc}: upwind directions {upwind_direction_quadrant}")
@@ -246,8 +245,7 @@ def ignite(
     buffered_geom = aoi_gdf.buffer(buffer_dist)  # ignitions can't be within this of the edge
     buffered_gdf = gpd.GeoDataFrame(geometry=buffered_geom)
 
-    # checked in memory before anything is deleted or written, so a varloc with no fuels
-    # coverage fails without leaving (or wiping) a training data dir
+    # checked before anything is deleted or written
     fbfm_src = fuels_source_dir / TREATMENTS[0] / "fbfm.tif"
     if not fbfm_src.is_file():
         raise FileNotFoundError(f"{fbfm_src} not found")

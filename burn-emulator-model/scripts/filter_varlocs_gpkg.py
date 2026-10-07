@@ -4,9 +4,9 @@ import sys
 import geopandas as gpd
 import pyogrio
 
-from burn_emulator.constants import CONFIG_DIR, OUTDIR, VARLOCS_GPKG, Path
+from burn_emulator.constants import OUTDIR, VARLOCS_GPKG, Path
 
-VARLOCS_TXT = CONFIG_DIR / "varlocs" / "varlocs.txt"
+VARLOCS_TXT = OUTDIR / "varlocs.txt"
 
 
 def main():

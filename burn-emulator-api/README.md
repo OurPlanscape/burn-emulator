@@ -1,25 +1,25 @@
 # burn-emulator-api
 
-Go service. Validates a request, resolves the model and data versions, checks the GCS output cache and claim, and on a miss triggers a [`burn-emulator-runner`](../burn-emulator-runner) Cloud Run Job execution and returns `202 pending` with a `Location` to poll. The runner writes a `_reports/` report, which a GCS Pub/Sub notification pushes to `POST /internal/pubsub/run-reports`. Callers are authenticated by Cloud Run IAM (`roles/run.invoker`).
+Go service. Validates or picks the varloc, then picks the backend and model version for a request, checks the GCS output cache and claim, and on a miss triggers a [`burn-emulator-runner`](../burn-emulator-runner) job and returns `202 pending` with a `Location` to poll. Runner reports arrive through a GCS Pub/Sub notification on `POST /internal/pubsub/run-reports`. Callers are authenticated by Cloud Run IAM (`roles/run.invoker`). Request flow: [root README](../README.md#request-flow).
 
 ## Config
 
+All required; the server exits on startup if one is missing.
+
 | Variable | Purpose |
 | --- | --- |
-| `BURN_EMULATOR_MODELS_URI` | `gs://` root of the model registry (reads `<varloc>/current`) |
-| `BURN_EMULATOR_INPUTS_URI` | `gs://` root of the inputs (reads `current` for the `data_version`) |
+| `BURN_EMULATOR_MODELS_URI` | `gs://` model registry root; reads `<varloc>/current` |
+| `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs root; reads `current` and `<inputs_version>/varlocs/*.gpkg` |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
-| `BURN_EMULATOR_RUNNER_GPU_JOB` | GPU runner job, used for `DL`: `projects/*/locations/*/jobs/*` |
-| `BURN_EMULATOR_RUNNER_CPU_JOB` | CPU-only runner job, used for `PT` |
-
-All are required; the server exits on startup if one is missing.
+| `BURN_EMULATOR_RUNNER_GPU_JOB` | `DL` runner job, `projects/*/locations/*/jobs/*` |
+| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job |
 
 ## `POST /v1/jobs`
 
 ```json
 {
-  "varloc": "WC711",
   "treatment_area": "<geojson>",
+  "varloc": "WC711",
   "job_name": "my-run-01",
   "ignition_density": 20,
   "backend": "DL"
@@ -28,117 +28,118 @@ All are required; the server exits on startup if one is missing.
 
 | field | |
 | --- | --- |
-| `varloc` | required; must be in `gs://<inputs>/<data_version>/varlocs/varlocs.txt` for the current `data_version`, else 400 |
-| `treatment_area` | required; geojson, reprojected to EPSG:5070 by the runner. Its CRS comes from the geojson `crs` member, e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`; without one it is read as EPSG:4326 |
-| `job_name` | required; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; logged and stored on the claim, not part of the hash |
-| `ignition_density` | optional; ignitions per km², > 0; omit to use the bundle's `config.yaml` value (20). A run is capped at 2**16 ignitions, checked by the runner |
-| `backend` | optional; `DL` (emulator, GPU job, default) or `PT` (pyretechnics, CPU-only job) |
+| `treatment_area` | required; `Polygon` / `MultiPolygon` GeoJSON, bare or in a `Feature` / `FeatureCollection`. CRS from the `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), EPSG:4326 without one |
+| `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
+| `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
+| `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value (DL) or 20 (PT). Capped at 2**16 ignitions per run, checked by the runner |
+| `backend` | optional; `DL` (default) or `PT`. `DL` becomes `PT` when the varloc has no model (see Varloc selection); the response `backend` is what runs |
 
-`hash` = sha256 hex of `varloc|treatment_area[|ignition_density]`, plus a trailing `0` (DL) or `1` (PT).
+`hash` = sha256 hex of `treatment_area[|ignition_density]` + `0` (DL) or `1` (PT). `treatment_area` is re-encoded first (sorted keys, no whitespace); the runner gets the re-encoded copy.
 
 ```json
 {
-  "job_id": "WC711/20260829T143000Z-a1b2c3d/20260824/1a2b3c4d…",
+  "job_id": "20260824/WC711/20260829T143000Z-a1b2c3d/1a2b3c4d…",
   "job_name": "my-run-01",
   "hash": "1a2b3c4d…",
-  "model_version": "20260829T143000Z-a1b2c3d",
   "backend": "DL",
-  "data_version": "20260824",
-  "status": "pending",
+  "inputs_version": "20260824",
+  "status": "cached",
+  "cached": true,
   "varloc": "WC711",
-  "cached": false,
-  "attempts": 1,
-  "output_path": "gs://<bucket>/WC711/<model_version>/<data_version>/<hash>"
+  "model_version": "20260829T143000Z-a1b2c3d",
+  "output_path": "gs://<bucket>/<inputs_version>/<varloc>/<model_version>/<hash>"
 }
 ```
 
-`model_version` is set by `model-release`, `data_version` (the fuels date) by `inputs-release`. `attempts` is omitted when 0; `error` is set when `status` is `failed`.
+`model_version` is omitted for PT (`pt` in the job id). `attempts` is omitted when 0; `error` is set when `status` is `failed`.
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `model_<VARLOC>_pt_<data_version>.tif` (PT) exists |
-| `pending` | 202 | run triggered by this request, or an identical run already in flight; `Location: /v1/jobs/<job_id>` |
+| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `<VARLOC>_pt_<inputs_version>.tif` (PT) exists |
+| `pending` | 202 | run triggered, or an identical run in flight; `Location: /v1/jobs/<job_id>` |
 
-POST is idempotent: an identical body dedupes onto the same run. A previously `failed` run is retried.
+An identical body dedupes onto the same run; a `failed` run is retried.
 
-Errors are plain text: `400` invalid JSON, field or varloc, `413` body over 1 MiB, `500` if version resolution, a GCS call or the runner trigger fails.
+Errors (plain text): `400` invalid JSON or field, unsupported `crs`, unknown `varloc`, or `treatment_area` outside the requested varloc / every varloc; `413` body over 1 MiB; `500` version resolution, GCS or runner trigger failure.
 
-## `GET /v1/jobs/{varloc}/{model_version}/{data_version}/{hash}`
+## `GET /v1/jobs/{inputs_version}/{varloc}/{model_version}/{hash}`
 
-Read-only status of the run named by `job_id` (the `Location` from the POST). The id pins the model and data versions. Same body as above.
+Status of the run named by `job_id`. Same body as POST.
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `model_<VARLOC>_pt_<data_version>.tif` (PT) exists (same status as POST) |
+| `cached` | 200 | output exists |
 | `pending` | 200 | run in flight |
-| `failed` | 200 | the run failed (`error` is set), or its claim went stale without it reporting back; re-POST to retry |
+| `failed` | 200 | the run failed (`error` is set) or its claim went stale; re-POST to retry |
 | - | 404 | unknown id, or no output and no claim |
-| - | 500 | a GCS lookup failed |
+| - | 500 | GCS lookup failed |
 
 ## `POST /internal/pubsub/run-reports`
 
-Pub/Sub push endpoint. Receives GCS `OBJECT_FINALIZE` notifications for `gs://<out>/_reports/...`. The report's `status` and `claim_generation` metadata are re-read from GCS: `completed` releases the claim, `failed` deletes any partial output and marks the claim `failed`. 2xx acks, 5xx makes Pub/Sub redeliver.
+Pub/Sub push endpoint for GCS `OBJECT_FINALIZE` on `gs://<out>/_reports/`. Re-reads the report's `status` and `claim_generation` from GCS: `completed` releases the claim, `failed` deletes partial output and marks the claim `failed`. 2xx acks, 5xx redelivers.
 
 ## `GET /healthz` -> `200 ok`
 
-## Flow
+## Varloc selection
 
-```
-1. validate the request
-2. data_version  = gs://<inputs>/current                                   (60s cache)
-   varloc in gs://<inputs>/<data_version>/varlocs/varlocs.txt, else 400     (60s cache)
-   model_version = gs://<models>/<varloc>/current                          (60s cache)
-   hash          = sha256(varloc|treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
-   out_path      = gs://<out>/<varloc>/<model_version>/<data_version>/<hash>
-3. out_path exists?                                               -> 200 cached
-   _claims/<varloc>/<model_version>/<data_version>/<hash> running?   -> 202 pending
-   else: claim it (or reclaim a failed/stale one), trigger the GPU (DL) or CPU (PT) runner job -> 202 pending
-4. runner writes _reports/<varloc>/<model_version>/<data_version>/<hash>
-   -> GCS notification -> Pub/Sub push -> POST /internal/pubsub/run-reports -> release or fail the claim
-5. caller polls GET /v1/jobs/<job_id> until cached or failed
-```
+`dispatch.selectVarLoc`, before the cache check:
 
-The claim is a zero-byte GCS object written with a generation precondition, so identical concurrent requests share one run. Its generation is passed to the runner and echoed on the report; a report for an older generation does not touch a newer claim. A claim with no report is reclaimed after 25 min (`dispatch.runStaleAfter`). If the trigger fails with a 4xx the claim is released; on a timeout, network error or 5xx it is kept (POST returns 500, GET shows `pending`) and goes stale after 25 min.
+Varloc, from `all_varlocs.gpkg`:
+
+| request | varloc |
+| --- | --- |
+| `varloc` given, intersects `treatment_area` | that varloc |
+| `varloc` given, not in the gpkg / no intersection | 400 |
+| no `varloc` | largest overlap; none -> 400 |
+
+Backend:
+
+| `backend` | varloc in `valid_varlocs.gpkg` | `<models>/<varloc>/current` | runs |
+| --- | --- | --- | --- |
+| `DL` | yes | yes | DL with that `model_version` |
+| `DL` | yes | no | PT (warning) |
+| `DL` | no | - | PT (warning) |
+| `PT` | - | - | PT |
+
+Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite`, unprojected from EPSG:5070 with `wroge/wgs84` and intersected with S2 (`golang/geo`). Overlap is scored on up to 512 S2 cells; ties go to the first varloc name. Accepted `crs`: EPSG:4326 / CRS84, 4269, 5070, or any code in `wgs84.EPSG()`.
+
+## Claims
+
+A claim is a zero-byte GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report goes stale after 25 min (`dispatch.runStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
 
 ## Output bucket layout
 
-All three object kinds share the suffix `<varloc>/<model_version>/<data_version>/<hash>` (`dispatch.JobID.Path`, also the `job_id` in GET URLs).
+All objects share the suffix `<inputs_version>/<varloc>/<model_version | pt>/<hash>` (`dispatch.JobID.Path`, the `job_id`).
 
 ```
 gs://<out>/
-├── <varloc>/<model_version>/<data_version>/<hash>/<model_name>.tif   # output (PT: model_<VARLOC>_pt_<data_version>.tif)
-├── _claims/<varloc>/<model_version>/<data_version>/<hash>               # claim
-└── _reports/<varloc>/<model_version>/<data_version>/<hash>               # runner report
+├── <job_id>/<model_name>.tif         # output (PT: <VARLOC>_pt_<inputs_version>.tif)
+├── <job_id>/treatment_area.geojson   # runner input
+├── _claims/<job_id>                  # claim
+└── _reports/<job_id>                 # runner report
 ```
 
 | Prefix | Written by | Metadata | Lifetime |
 | --- | --- | --- | --- |
-| `<varloc>/...` | runner (upload after `run()`) | none | permanent; its existence is the cache hit |
-| `_claims/` | api (`claimRun`, `failRun`) | `status` (`running` \| `failed`), `job_name`, `attempts`, `updated_at`, `error` | deleted on success (by the notification, or by the next POST/GET cache hit if the completed report was lost); a `failed` claim stays as a record until the next POST reclaims it |
-| `_reports/` | runner (`_write_report`) | `status` (`completed` \| `failed`), `claim_generation`, `error` | seconds; deleted by the api once the notification is handled |
+| `<job_id>/*.tif` | runner | none | permanent; its existence is the cache hit |
+| `<job_id>/treatment_area.geojson` | api, before the trigger | none | deleted with the output on failure, rewritten on retry |
+| `_claims/` | api | `status` (`running` \| `failed`), `job_name`, `attempts`, `updated_at`, `error` | deleted on success; a `failed` claim stays until the next POST reclaims it |
+| `_reports/` | runner | `status` (`completed` \| `failed`), `claim_generation`, `error` | deleted once handled |
 
-Only `_reports/` triggers the Pub/Sub notification (`object_name_prefix` in infrastructure).
+Only `_reports/` triggers the notification (`object_name_prefix` in infrastructure).
 
 ## Timeouts
 
-Each layer is the sum of what it wraps plus a margin. The Go values are derived in code; the Cloud Run and Pub/Sub values are set in infrastructure and must be updated by hand.
-
-| Layer | Value | Built from |
+| Rule | Values | Set in |
 | --- | --- | --- |
-| `dispatch.releaseTimeout` | 10 s | one detached GCS cleanup call (claim release/check, output delete) |
-| `dispatch.claimTriggerTimeout` | 90 s | claim + runner job trigger, detached from the caller |
-| `dispatch.DetachedBudget` | 1m40s | `claimTriggerTimeout` + `releaseTimeout` (release after a failed trigger) |
-| `handlers.requestTimeout` | 2 min | caller-attached steps: version resolution + cache check (POST), output + claim lookup (GET) |
-| `handlers.MaxHandlerDuration` | 3m40s | `requestTimeout` + `DetachedBudget` |
-| `main.go` `http.Server.WriteTimeout` | 4 min | `MaxHandlerDuration` + 20 s |
-| `burn_emulator_api_timeout` (Cloud Run) | 300 s | `WriteTimeout` + 60 s |
-| `handlers.reportTimeout` | 90 s | `POST /internal/pubsub/run-reports`; worst case ~110 s with 2 x `releaseTimeout` |
-| `ack_deadline_seconds` (Pub/Sub) | 120 s | above the report worst case |
-| `burn_emulator_runner_timeout` (Cloud Run) | 20 min | bounds each runner job execution; keep below `dispatch.runStaleAfter` (25 min) |
+| runner timeout < claim stale age | 20 min < 25 min | `burn_emulator_runner_timeout` (infra), `dispatch.runStaleAfter` |
+| runner retries = 0 | 0 | `burn_emulator_runner_max_retries` (infra) |
+| report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, `ack_deadline_seconds` (infra) |
+| handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, `burn_emulator_api_timeout` (infra) |
 
 ## Build
 
 ```bash
 go build -o burn-emulator-api ./cmd/server   # Go 1.26+
-docker build -t burn-emulator-api .
+docker build -f burn-emulator-api/Dockerfile -t burn-emulator-api .   # from the repo root
 ```

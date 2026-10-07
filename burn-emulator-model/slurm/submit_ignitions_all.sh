@@ -2,10 +2,8 @@
 set -euo pipefail
 
 # run from the repo root: burn-emulator-model/slurm/submit_ignitions_all.sh [-v <varloc>]... [-x <varloc[,varloc...]>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]
-# queues every varloc in the varlocs gpkg (-v: only these, -x: all but these), skipping ones whose training
-# data is complete (legalmax outputs_table.csv) unless -o; incomplete ones are regenerated from scratch.
-# -i / -g (YYYYMMDD) default to current.yaml. one ignitions.slurm worker works through the queue file
-# (data/logs/ignitions/ignitions_queue_<stamp>.txt), which shows each varloc's state (see queue.sh)
+# queues gpkg varlocs (-v only these, -x all but these), skipping complete ones unless -o.
+# -i / -g default to current.yaml. queue: data/logs/ignitions/ignitions_queue_<stamp>.txt (see queue.sh)
 
 usage () { echo "usage: $0 [-v <varloc>]... [-x <varloc[,varloc...]>]... [-n <num_ignitions>] [-o] [-i <inputs_version>] [-g <ignitions_version>]" >&2; exit 1; }
 

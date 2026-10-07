@@ -19,6 +19,6 @@ COPY burn-emulator-model/ ./burn-emulator-model/
 COPY burn-emulator-runner/ ./burn-emulator-runner/
 
 WORKDIR /app/burn-emulator-runner
-RUN uv sync --no-cache
+RUN uv sync --locked --no-cache
 
 ENTRYPOINT ["uv", "run", "--no-sync", "burn-emulator-runner"]

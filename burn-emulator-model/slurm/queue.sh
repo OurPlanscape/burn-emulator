@@ -18,7 +18,7 @@ queue_lock () {
 }
 queue_unlock () { rmdir "$QUEUE.lockdir"; }
 
-# rewrite the queue from stdin, in place so the file keeps its inode for tail -f / editors
+# rewrites the queue from stdin in place (same inode)
 queue_write () { cat > "$QUEUE.tmp" && cat "$QUEUE.tmp" > "$QUEUE" && rm -f "$QUEUE.tmp"; }
 
 # queue_edit <varloc> <awk action> [r]: rewrite the varloc's line under the queue lock (t = now)

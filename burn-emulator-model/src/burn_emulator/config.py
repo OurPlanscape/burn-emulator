@@ -15,7 +15,7 @@ from shapely.geometry.base import BaseGeometry
 from burn_emulator.constants import CONFIG_DIR, OUTDIR, TARGET_CRS, WIND_DIRECTIONS, Path
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
-# bare ${name} interpolations that resolve nowhere fall back to the environment,
+# unresolved ${name} interpolations fall back to the environment
 _INTERP_RE = re.compile(r"\$\{(\w+)\}")
 
 
@@ -174,7 +174,6 @@ def dynamic_import(loader: dict, kwargs: dict | None = None) -> Any:
     if not class_path or "." not in class_path:
         raise ValueError(f"loader needs a dotted 'class_path', got {class_path!r}")
 
-    # build a fresh dict so the caller's loader config is never mutated
     init_args = {**(loader.get("init_args") or {}), **(kwargs or {})}
 
     module_path, class_name = class_path.rsplit(".", 1)
@@ -187,9 +186,9 @@ def load_treatment_area(value: str | dict | BaseGeometry | None) -> BaseGeometry
     if value is None:
         return None
     if isinstance(value, BaseGeometry):
-        return value  # caller's contract: already in TARGET_CRS
+        return value  # already in TARGET_CRS
 
-    # crs comes from the geojson itself; GDAL reads one without a crs member as EPSG:4326
+    # no crs member reads as EPSG:4326
     if isinstance(value, dict):
         value = json.dumps(value)
     if value.lstrip().startswith("{"):

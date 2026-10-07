@@ -15,7 +15,7 @@ const (
 	reportFailed    = "failed"
 )
 
-// handle a runner's report on a run, named by a Pub/Sub storage notification.
+// handles a runner report named by a Pub/Sub storage notification
 func (c *Client) HandleReport(ctx context.Context, bucket, object string, generation int64) error {
 	outBucket, err := c.outputBucketName()
 	if err != nil {
@@ -26,7 +26,7 @@ func (c *Client) HandleReport(ctx context.Context, bucket, object string, genera
 		slog.Warn("ignoring notification for unexpected object", "bucket", bucket, "object", object)
 		return nil
 	}
-	// <varloc>/<model_version>/<data_version>/<hash>, see JobID.Path
+	// <inputs_version>/<varloc>/<model_version>/<hash>, see JobID.Path
 	if strings.Count(runObject, "/") != 3 || strings.Contains(runObject, "//") {
 		slog.Warn("ignoring malformed report", "object", object)
 		return nil

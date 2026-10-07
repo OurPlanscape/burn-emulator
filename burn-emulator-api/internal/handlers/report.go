@@ -11,9 +11,7 @@ import (
 	"burn-emulator-api/internal/dispatch"
 )
 
-// HandleReport's detached claim calls (ownsClaim + deleteOutput, or releaseRun)
-// can add up to 2x dispatch's releaseTimeout (10s) on top, so the worst case is
-// ~110s; keep the Pub/Sub subscription's ack_deadline_seconds (120s) above that.
+// plus up to 2x dispatch.releaseTimeout; must stay below ack_deadline_seconds (120s) in infrastructure
 const reportTimeout = 90 * time.Second
 
 type pushEnvelope struct {
@@ -23,8 +21,7 @@ type pushEnvelope struct {
 	} `json:"message"`
 }
 
-// serve POST /internal/pubsub/run-reports
-// NOTE: Any run.invoker can reach this route but should only do so for legit reports
+// POST /internal/pubsub/run-reports; reachable by any run.invoker
 type ReportHandler struct {
 	Dispatch *dispatch.Client
 }
@@ -32,7 +29,7 @@ type ReportHandler struct {
 func (h *ReportHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-	// malformed or irrelevant deliveries are acked so they are not redelivered.
+	// malformed or irrelevant deliveries are acked
 	var env pushEnvelope
 	if err := json.NewDecoder(r.Body).Decode(&env); err != nil {
 		slog.Warn("dropping malformed push delivery", "error", err)

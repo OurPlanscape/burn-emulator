@@ -43,7 +43,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/jobs", jobsHandler.Create)
-	mux.HandleFunc("GET /v1/jobs/{varloc}/{model_version}/{data_version}/{hash}", jobsHandler.Get)
+	mux.HandleFunc("GET /v1/jobs/{inputs_version}/{varloc}/{model_version}/{hash}", jobsHandler.Get)
 	// must match the Pub/Sub push_endpoint in Terraform
 	mux.Handle("POST /internal/pubsub/run-reports", &handlers.ReportHandler{Dispatch: client})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +56,7 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// handlers.MaxHandlerDuration (3m40s) + margin; burn_emulator_api_timeout
-		// in infrastructure is built on top of this.
+		// burn_emulator_api_timeout in infrastructure builds on this
 		WriteTimeout: handlers.MaxHandlerDuration + 20*time.Second,
 	}
 

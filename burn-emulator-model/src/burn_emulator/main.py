@@ -46,7 +46,7 @@ def main():
     parser.add_argument("-wr", "--wind_range", action="store", nargs=2, type=float)
     parser.add_argument("-ws", "--wind_seed", action="store", type=int)
     parser.add_argument("-d", "--debug", action="store_true")
-    # cache burn windows in memory when burn_paths are set (training); `-cb false` with jitter
+    # cache burn windows in memory (training); `-cb false` with jitter
     parser.add_argument("-cb", "--cache_burns", action="store", type=_str2bool, default=True)
 
     # checkpoint: train / evaluate / run / bundle
@@ -55,7 +55,7 @@ def main():
     # run only
     parser.add_argument("-o", "--out_path", action="store")
 
-    # run / evaluate: simulate with pyretechnics instead of the emulator (run: BURN_EMULATOR_BACKEND=PT)
+    # run / evaluate: pyretechnics instead of the emulator
     parser.add_argument("-pt", "--pyretechnics", action="store_true")
 
     # ignite only
@@ -67,11 +67,9 @@ def main():
 
     configs = load_configs(args.config_dir, args.config)
 
-    # ignite generates training data from a varloc string, not a model/dataset config
     if args.method != "ignite":
         resolve_model_name(configs, args.varloc, args.architecture, args.data_version)
 
-    # bundle assembles its own config from the DictConfig; ignite has no config at all
     if args.method not in ("bundle", "ignite"):
         configs = apply_overrides(configs, args)
         configs["debug"] = args.debug
@@ -89,7 +87,7 @@ def main():
         case "bundle":
             bundle(configs, ckpt_path=args.ckpt_path)
         case "ignite":
-            # deferred: pyretechnics/ray are optional deps (pyproject.toml [data] extra)
+            # optional [data] extra
             from burn_emulator.ignite import ignite
 
             ignite_kwargs = {

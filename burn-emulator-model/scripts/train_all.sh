@@ -21,7 +21,7 @@ DATA_VERSION=$(scripts/data_version.sh)
 MODEL_YAML="$CONFIG_DIR/$ARCHITECTURE/model.yaml"
 TRAIN_YAML="$CONFIG_DIR/$ARCHITECTURE/train.yaml"
 
-# varlocs with complete training data; each is added to varlocs.txt once its training succeeds
+# varlocs with complete training data
 mapfile -t VARLOCS < <(scripts/trainable_varlocs.sh)
 
 echo "architecture=$ARCHITECTURE  data_version=$DATA_VERSION  varlocs=${#VARLOCS[@]}"

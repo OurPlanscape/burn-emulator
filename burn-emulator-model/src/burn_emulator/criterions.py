@@ -149,8 +149,7 @@ class FocalLoss(nn.Module):
             loss = (1 - pt) ** self.gamma * ce
             if self.alpha is not None:
                 alpha = self.alpha.to(targets.device)
-                # targets are one-hot (b,c,w,h); select each pixel's
-                # true-class alpha, mirroring the binary branch's alpha_t
+                # one-hot targets (b,c,w,h): per-pixel true-class alpha
                 alpha_t = einsum("bcwh,c->bwh", targets, alpha) if alpha.ndim > 0 else alpha
                 loss = alpha_t * loss
         else:

@@ -182,13 +182,12 @@ class GNNBranch(nn.Module):
         ei = data.edge_index
         is_lateral = data.is_lateral
 
-        # edge dropout (training only) — separate rates for lateral and outward edges
+        # edge dropout (training only), separate lateral and outward rates
         ei = apply_edge_dropout(
             ei, is_lateral, self.lateral_edge_dropout, self.outward_edge_dropout, self.training
         )
 
-        # direction vectors: computed per batch since which side is src/dst
-        # is data-dependent (flips per sample)
+        # direction vectors per batch: src/dst sides flip per sample
         src, dst = ei
         pos = data.pos
         edge_dx = pos[dst, 0] - pos[src, 0]
@@ -203,7 +202,7 @@ class GNNBranch(nn.Module):
         t_align_src = edge_alignment(fx_src, fy_src, edge_dx_norm, edge_dy_norm).to(dtype)
         t_align_dst = edge_alignment(fx_dst, fy_dst, edge_dx_norm, edge_dy_norm).to(dtype)
 
-        # wind alignment: how much this edge points along the (per-sample) wind direction
+        # alignment with the per-sample wind direction
         edge_sample = data.batch[src]
         w_align = edge_alignment(
             wind_dx[edge_sample], wind_dy[edge_sample], edge_dx_norm, edge_dy_norm
@@ -221,11 +220,7 @@ class GNNBranch(nn.Module):
 
 
 class PixelDecoder(nn.Module):
-    """Reconstructs each sample at its own resolution. Since the refine stack
-    is all 1x1 convs (equivalently, a per-pixel MLP), it's applied directly
-    on flat node features and only reshaped into an image per sample at the
-    end — no shared canvas needed.
-    """
+    # 1x1 refine stack on flat node features, reshaped per sample at the end
 
     def __init__(self, hidden_ch: int, out_ch: int = 3, refine_ch: int = 32):
         super().__init__()
@@ -307,15 +302,14 @@ class BoundaryGNN(nn.Module):
     ) -> list:
         wind_dx, wind_dy = wind_deg_to_unit(wind_deg, images[0].dtype)
 
-        # branches are independent — run concurrently on separate CUDA streams
+        # branches run on separate CUDA streams
         branch_outputs = run_branches_concurrently(
             self.branches,
             lambda branch: branch(images, boundary_masks, wind_dx, wind_dy),
             use_streams=images[0].is_cuda,
         )
 
-        # branches share node layout per sample (same max_distance cutoff),
-        # so pos/batch from any branch describe all of them
+        # all branches share the per-sample node layout
         pos, batch = branch_outputs[0][1], branch_outputs[0][2]
         h = torch.cat([out for out, _, _ in branch_outputs], dim=1)
         h = F.relu(self.scale_proj(h))

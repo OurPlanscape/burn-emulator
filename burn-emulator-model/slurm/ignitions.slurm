@@ -13,7 +13,7 @@
 # sbatch --export=ALL,VARLOC=<varloc>[,DATA_VERSION=<inputs>_<ignitions>,NUM_IGNITIONS=<n>,OVERWRITE=1] burn-emulator-model/slurm/ignitions.slurm
 # or QUEUE=<file> (from submit_ignitions_all.sh): generates varlocs from the queue until none are pending (see queue.sh)
 # DATA_VERSION defaults to current.yaml
-# ray.init() claims every visible cpu, hence --exclusive on the cpu-only node
+# --exclusive: ray.init() claims every visible cpu
 
 set -euo pipefail
 

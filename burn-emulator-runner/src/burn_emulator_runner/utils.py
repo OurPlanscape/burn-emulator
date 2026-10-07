@@ -4,7 +4,6 @@ _TRUTHY = ("1", "true", "yes", "on")
 
 
 def env_flag(name: str) -> bool:
-    """Read a boolean env var, treating only 1/true/yes/on (any case) as true."""
     return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 

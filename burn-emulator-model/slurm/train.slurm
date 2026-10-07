@@ -118,8 +118,7 @@ run_varloc () {
         echo "[publish] $VARLOC"
         make -C .. model-release VARLOC="$VARLOC" BUNDLE_DIR= || status=$?
     fi
-    # with PUBLISH the varloc joins the allow-list only after its model is live; the txt update,
-    # gpkg rebuild and upload share one lock so concurrent finishes each publish the full list
+    # txt update, gpkg rebuild and upload under one lock
     if [ "$status" -eq 0 ] && [ -n "${PUBLISH:-}" ]; then
         echo "[varlocs-release] $VARLOC"
         scripts/mark_trained.sh "$VARLOC" make -C .. varlocs-release DATA_VERSION= || status=$?

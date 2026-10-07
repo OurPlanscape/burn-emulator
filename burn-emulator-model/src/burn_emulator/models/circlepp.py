@@ -169,7 +169,6 @@ class CircleConv3x3(CircleLayerBase):
             w_transform_matrix: Tensor = self.get_w_transform_matrix()
             self.register_buffer("w_transform_matrix", w_transform_matrix)
 
-            # this saves 3ms per forward pass for B=32 inference
             if not self.training:
                 self.weight = self.weight.view(-1, self.kernel_size * self.kernel_size)
                 self.weight = self.weight.matmul(self.w_transform_matrix)

@@ -33,7 +33,7 @@ FUEL_MOISTURES = {
 }
 DEFAULT_PT_ADJUSTMENTS = {"fuel_spread": 1.0, "weather_spread": 1.0}
 
-# rough per-worker footprint: input arrays (both roles) + SpreadState (~29 B/cell) + output copies
+# approximate per-worker memory per cell
 PT_BYTES_PER_CELL = 128
 
 
@@ -143,7 +143,7 @@ def read_raw_inputs(fuels_path: Path, topo_path: Path, profile: dict) -> dict[st
 def collate_treatment(
     baseline: dict[str, np.ndarray], treatment: dict[str, np.ndarray], treatment_area, profile: dict
 ) -> dict[str, np.ndarray]:
-    # treatment fuels inside the area, baseline outside (same as VarLoc._collate_treatments)
+    # treatment fuels inside the area, baseline outside
     treated = geometry_mask(
         [treatment_area],
         out_shape=(profile["height"], profile["width"]),
@@ -164,7 +164,7 @@ def _init_worker(state: dict) -> None:
 
 
 def resolve_workers(n_cells: int, max_workers: int | None = None) -> int:
-    # every worker simulates over the full extent, so cap by memory as well as cpus
+    # capped by cpus and available memory
     if max_workers:
         return max_workers
     by_memory = psutil.virtual_memory().available // (n_cells * PT_BYTES_PER_CELL)
@@ -172,7 +172,6 @@ def resolve_workers(n_cells: int, max_workers: int | None = None) -> int:
 
 
 def pool(state: dict, max_workers: int) -> ProcessPoolExecutor:
-    # spawn: the parent may already hold a CUDA context
     return ProcessPoolExecutor(
         max_workers=max_workers,
         mp_context=mp.get_context("spawn"),
@@ -198,7 +197,7 @@ def change_task(ignition_point: tuple[int, int], winds: dict[str, float]) -> dic
     if not (burned & _WORKER_STATE["keep_mask"]).any():
         return result
 
-    # crowned (passive or active) is class >= 2; only ship the burned bbox back
+    # returns only the burned bbox
     rows, cols = np.nonzero(burned)
     y0, y1, x0, x1 = rows.min(), rows.max() + 1, cols.min(), cols.max() + 1
     baseline_crowned = baseline_ft[y0:y1, x0:x1] >= 2

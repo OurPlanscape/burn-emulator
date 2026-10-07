@@ -12,7 +12,7 @@ state=$2
 shift 2
 source "$(dirname "$0")/queue.sh"
 
-# the state check runs inside the lock, so a worker cannot claim the line in between
+# state is checked inside the lock
 case "$state" in
     skip) action='if (NF == 1) print $1, "skip"; else print' ;;
     pending) action='if ($2 == "running") print; else print $1' ;;

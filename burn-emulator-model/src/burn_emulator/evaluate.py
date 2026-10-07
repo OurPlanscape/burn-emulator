@@ -73,7 +73,6 @@ def evaluate_model(
     max_write_workers: int,
     timings: dict[str, float] | None = None,
 ) -> int:
-    # how fragile things can be...
     profile = eval_loader.dataset.profile | INF_PROFILE
     shape = (out_channels, profile["height"], profile["width"])
     profile.update({"count": out_channels})
@@ -102,10 +101,7 @@ def evaluate_model(
                 with timed(timings, "write drain"):
                     _drain(pending, limit=max_write_workers)
 
-                # TODO: add in actual evaluation metrics here with
-                #       precomputed burns spreads rasters i.e dataloaders
-                #       for now, just only writing out the predictions to
-                #       disk for post-hoc evaluation
+                # TODO: evaluation metrics; predictions are only written to disk
                 pending.append(
                     pool.submit(
                         _write_batch,
@@ -165,10 +161,10 @@ def evaluate_pt(
     pt_workers: int | None,
     timings: dict[str, float] | None = None,
 ) -> dict:
-    # deferred: pyretechnics is an optional dep (pyproject.toml [data] extra)
+    # optional [data] extra
     from burn_emulator import pt
 
-    # same role the emulator sees: VarLoc without burn_paths only serves the first fuels role
+    # VarLoc without burn_paths serves the first fuels role
     fkey = list(dataset.fuels_paths)[0]
     profile = dataset.profile | INF_PROFILE
     profile.update({"count": out_channels})

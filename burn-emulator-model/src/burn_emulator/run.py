@@ -35,15 +35,13 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
     _, h, w = mask.shape
     cy, cx = h // 2, w // 2
     seed = torch.zeros_like(mask)
-    # seed from the 3x3 neighborhood, not just the single center pixel
+    # seeded from the 3x3 center
     seed[:, max(cy - 1, 0) : cy + 2, max(cx - 1, 0) : cx + 2] = True
-    seed = seed & mask  # nothing burned near center -> empty component
+    seed = seed & mask
     if seed.sum() == 0:
         return seed
     
     kernel = torch.ones(1, 1, 3, 3, device=mask.device)
-    # capped at the window diameter*3 as buffer
-    # but very likely won't reach that kind of shape
     for _ in range(max(h, w)*3):
         grown = (torch.conv2d(seed.float().unsqueeze(1), kernel, padding=1).squeeze(1) > 0) & mask
         if grown.sum() == seed.sum():
@@ -53,7 +51,6 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
 
 
 def timing_report(tag: str, header: str, timings: dict, total: float, rows: dict) -> None:
-    # rows: extra "label: value" lines printed after the timings, e.g. memory
     timing_rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
     extra_rows = "".join(f"\n  {label:<18}: {value}" for label, value in rows.items())
     print(
@@ -66,7 +63,7 @@ def timing_report(tag: str, header: str, timings: dict, total: float, rows: dict
 
 
 def peak_memory_rows() -> dict:
-    # ru_maxrss is peak resident set size (Linux reports KiB); children = reaped workers
+    # ru_maxrss is KiB on Linux
     rows = {
         "peak cpu mem": f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2):7.2f}GB"
     }
@@ -89,7 +86,7 @@ def pt_out_path(out_path: str | Path | None, experiment_dir: Path, model_name: s
     pt_name = pt_model_name(model_name)
     if out_path is None:
         return experiment_dir / f"{pt_name}.tif"
-    # string ops so gs:// URIs survive; swap the model name for the pt name in the file name
+    # string ops keep gs:// URIs intact
     out_path = str(out_path)
     head, _, name = out_path.rpartition("/")
     name = name.replace(model_name, pt_name) if model_name in name else f"{pt_name}_{name}"
@@ -151,7 +148,7 @@ def _run_pt(
                 raise RunCancelled(f"cancelled after {n_kept}/{len(futures)} ignitions")
             sim_runtime += result["runtime"]
             stops.update(result["stop_conditions"])
-            # keep a fire when its burn (baseline or treatment) reaches the region
+            # fires that never reach the region are dropped
             if not result["touches"]:
                 continue
             with timed(timings, "aggregate"):
@@ -161,7 +158,7 @@ def _run_pt(
                 from_crown[y0 : y0 + h, x0 : x0 + w] += result["from_crown"]
             n_kept += 1
 
-    # pixels a kept fire never changes count as "no change", as in batched_agg bg_channel=0
+    # untouched pixels count as no change
     agg = np.stack([n_kept - to_crown - from_crown, to_crown, from_crown])
     agg /= max(n_kept, 1)
 
@@ -216,18 +213,15 @@ def _run_emulator(
     n_change = 3  # 0 no change | 1 non-crown -> crown | 2 crown -> non-crown
     profile.update({"count": n_change})
 
-    # raster of the region; a fire is kept when its predicted burn overlaps it
     keep_mask = torch.from_numpy(
         geometry_mask([region], out_shape=shape, transform=profile["transform"], invert=True)
     ).to(RUN_DEVICE)
 
-    # accumulate in fp32: RUN_DTYPE (bf16) loses 1/len increments once agg approaches 1
+    # fp32 accumulator
     agg = torch.zeros([n_change, *shape], dtype=torch.float32, device=RUN_DEVICE)
     n_kept = 0
     with torch.no_grad():
         for sample in loader:
-            # for use in the runner when the api disconnects from the job
-            # NOTE: probably a good idea to not run 'cancelled' jobs
             if cancel is not None and cancel.is_set():
                 raise RunCancelled(f"cancelled after {n_kept}/{n_ignitions} ignitions")
 
@@ -245,15 +239,12 @@ def _run_emulator(
                 pred = activation(model(X, W)) * M
                 pred = pred.argmax(dim=1)
 
-            # restrict to the fire spreading from the window center;
-            # removing i.e disconnected blobs from NN outputs
+            # keeps only the component connected to the window center
             with timed(timings, "center component"):
                 burned = _center_component(pred != 0)
-                # or operator since extention is still a signal to be captured
                 burned = burned[:n] | burned[n:]
 
-            # fire_type classes: 0 unburned | 1 surface | 2 passive crown | 3 active crown
-            # crowned (passive or active) is class >= 2
+            # fire_type: 0 unburned | 1 surface | 2 passive crown | 3 active crown
             baseline_crowned = pred[:n] >= 2
             treatment_crowned = pred[n:] >= 2
 
@@ -264,7 +255,7 @@ def _run_emulator(
 
             change = torch.stack([no_change, to_crown, from_crown], dim=1).float()
 
-            # keep a fire when its central burn reaches the region
+            # fires that never reach the region are dropped
             with timed(timings, "fire touches"):
                 keep = [
                     _fire_touches(
@@ -280,7 +271,7 @@ def _run_emulator(
             ydiff, xdiff = ydiff[sel], xdiff[sel]
             ymin, ymax, xmin, xmax = ymin[sel], ymax[sel], xmin[sel], xmax[sel]
 
-            # bg_channel=0: pixels a window never reaches count as "no change"
+            # untouched pixels count as no change
             with timed(timings, "aggregate"):
                 agg += batched_agg(
                     change, (ydiff, xdiff), (ymin, ymax, xmin, xmax), shape, bg_channel=0
@@ -336,7 +327,6 @@ def run(
 
     n_ignitions = len(ds)
 
-    # out_path may be a gs:// URI - rasterio writes it through GDAL's /vsigs/
     if backend == "PT":
         out_name = pt_model_name(model_name)
         out_path = pt_out_path(out_path, experiment_dir, model_name)

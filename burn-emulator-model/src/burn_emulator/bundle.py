@@ -10,7 +10,7 @@ from burn_emulator.config import wind_range
 from burn_emulator.constants import BUNDLE_DIR, CONFIG_DIR, Path
 from burn_emulator.utils import resolve_model_checkpoint
 
-# dataset.init_args keys the runner / deployment fills in - never bundle them.
+# dataset.init_args keys filled in at run time
 _RUNTIME_DATASET_KEYS = (
     "treatment_area",
     "fuels_paths",
@@ -60,9 +60,7 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
     }
     (dst / "config.yaml").write_text(yaml.safe_dump(out_config, sort_keys=False))
 
-    # provenance: which model architecture code this checkpoint was trained
-    # against, so the runner can warn when its own code no longer matches.
-    # NOTE: preprocessing code isn't included...
+    # architecture code hash; preprocessing code isn't covered
     repo_sha, dirty = provenance.git_head()
     class_path = config["model"]["class_path"]
     meta = {

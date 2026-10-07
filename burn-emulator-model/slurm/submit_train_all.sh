@@ -126,7 +126,7 @@ POOL_DONE=""
 for NODE in "${NODES[@]}"; do
     [ "$REMAINING" -gt 0 ] || break
     if [ "${GPUS[$NODE]}" -gt 1 ]; then
-        # one array for all multi-GPU nodes, sized to fit the smallest per-GPU share
+        # one array for all multi-GPU nodes, sized to the smallest per-GPU share
         [ -z "$POOL_DONE" ] || continue
         POOL_DONE=1
         WORKERS=$((REMAINING < POOL_GPUS ? REMAINING : POOL_GPUS))
@@ -137,7 +137,7 @@ for NODE in "${NODES[@]}"; do
             [ -z "$CPUS_PER_TASK" ] || [ "$c" -lt "$CPUS_PER_TASK" ] && CPUS_PER_TASK=$c
             [ -z "$MEM_PER_TASK" ] || [ "$m" -lt "$MEM_PER_TASK" ] && MEM_PER_TASK=$m
         done
-        # --exclude, as a multi-node --nodelist would require every node per task
+        # every node outside the pool
         EXCLUDE=$(sinfo -h -N -o %N | sort -u | { grep -vxF -f <(printf '%s\n' "${POOL[@]}") || true; } | paste -sd, -)
         POOL_NAME=$(IFS=-; echo "${POOL[*]}")
         submit_array "$POOL_NAME" "$POOL_GPUS" "$WORKERS" "$CPUS_PER_TASK" "$MEM_PER_TASK" \

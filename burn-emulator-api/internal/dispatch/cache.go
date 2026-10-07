@@ -13,8 +13,7 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// burn_emulator_runner_timeout (20m) + ~5m for container start and report
-// delivery; keep above the runner timeout or healthy runs get duplicated.
+// must exceed burn_emulator_runner_timeout (20m) in infrastructure
 const runStaleAfter = 25 * time.Minute
 
 const maxClaimAttempts = 3
@@ -26,7 +25,10 @@ const (
 	reportPrefix = "_reports/"
 )
 
-// claim entry, stored as GCS object metadata.
+// written by the api next to the output; only a .tif counts as the cached output
+const treatmentAreaObject = "treatment_area.geojson"
+
+// stored as claim object metadata
 type claimRecord struct {
 	Status     string // "running" | "failed"
 	JobName    string
@@ -38,7 +40,7 @@ type claimRecord struct {
 
 func CacheKey(req JobRequest) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s", req.VarLoc, req.TreatmentArea)
+	fmt.Fprint(h, req.TreatmentArea)
 	if req.IgnitionDensity != nil {
 		fmt.Fprintf(h, "|%g", *req.IgnitionDensity)
 	}
@@ -49,7 +51,7 @@ func CacheKey(req JobRequest) string {
 	return key + "0"
 }
 
-// claim a run atomically using the claim object's generation
+// claims a run with a generation precondition on the claim object
 func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, claimRecord, error) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -109,7 +111,7 @@ func (c *Client) readClaim(ctx context.Context, key string) (claimRecord, bool, 
 	return parseClaim(obj), true, nil
 }
 
-// report whether the claim object is still the one the api wrote
+// whether the claim object is still generation gen
 func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -127,8 +129,7 @@ func (c *Client) ownsClaim(ctx context.Context, key string, gen int64) bool {
 	return true
 }
 
-// delete the claim object, only if it is still the claim the api wrote once
-// a run finishes (output now exists) or fails (so the next run can claim it).
+// deletes the claim object if it is still generation gen
 func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -147,7 +148,7 @@ func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	}
 }
 
-// GCS uploads are atomic (an object only appears once its upload completes)
+// releases a running claim whose output exists
 func (c *Client) clearFinishedClaim(ctx context.Context, key string) {
 	rec, found, err := c.readClaim(ctx, key)
 	if err != nil || !found || rec.Status != "running" {
@@ -156,8 +157,7 @@ func (c *Client) clearFinishedClaim(ctx context.Context, key string) {
 	c.releaseRun(ctx, key, rec.Generation)
 }
 
-// mark the api's claim (generation gen) "failed" so GET reports it until the
-// next POST reclaims it. A claim reclaimed by another run is left alone.
+// marks the claim failed if it is still generation gen
 func (c *Client) failRun(ctx context.Context, key string, gen int64, reason string) error {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -185,9 +185,7 @@ func claimObjectName(key string) string {
 	return claimPrefix + key
 }
 
-// write rec as metadata on an empty object at bucket/name, conditioned on
-// ifGenerationMatch (0 = must not exist, else = unchanged since read).
-// Returns the new object generation, or a 412 error if the check fails.
+// ifGenerationMatch 0: the object must not exist. Returns the new generation; 412 on a failed precondition.
 func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRecord, ifGenerationMatch int64) (int64, error) {
 	obj := &storage.Object{
 		Name: name,
@@ -230,11 +228,24 @@ func (c *Client) outputExists(ctx context.Context, gcsPath string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	resp, err := c.storage.Objects.List(bucket).Prefix(prefix + "/").MaxResults(1).Context(ctx).Do()
+	resp, err := c.storage.Objects.List(bucket).Prefix(prefix + "/").MatchGlob(prefix + "/*.tif").MaxResults(1).Context(ctx).Do()
 	if err != nil {
 		return false, fmt.Errorf("listing gs://%s/%s: %w", bucket, prefix, err)
 	}
 	return len(resp.Items) > 0, nil
+}
+
+func (c *Client) writeTreatmentArea(ctx context.Context, gcsPath, geojson string) error {
+	bucket, name, err := parseGCSPath(gcsPath)
+	if err != nil {
+		return err
+	}
+	obj := &storage.Object{Name: name, ContentType: "application/geo+json"}
+	_, err = c.storage.Objects.Insert(bucket, obj).Media(strings.NewReader(geojson)).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("writing treatment area %s: %w", gcsPath, err)
+	}
+	return nil
 }
 
 func (c *Client) deleteOutput(ctx context.Context, gcsPath string) {

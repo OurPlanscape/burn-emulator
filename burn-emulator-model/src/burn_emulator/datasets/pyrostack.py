@@ -111,8 +111,7 @@ FBFM13_MAP = {
 FBFM13_NUM_CLASSES = len(set(FBFM13_MAP.values()))
 FBFM40_NUM_CLASSES = len(set(FBFM40_MAP.values()))
 
-# Dataset_README.md documents these as encoded raw units (cbd: 100 kg/m^3,
-# cbh/ch: m*10, cc: percent); scale factors convert each to physical units.
+# raw encodings (Dataset_README.md): cbd 100 kg/m^3, cbh/ch m*10, cc percent
 FUEL_STRUCTURE_SCALE = {"cbd": 0.01, "cbh": 0.1, "cc": 0.01, "ch": 0.1}
 FUEL_STRUCTURE_VARS = ["cbd", "cbh", "cc", "ch"]
 TOPO_CATEGORICAL_VARS = ["evt", "roads"]  # kept as raw codes, not one-hot
@@ -121,9 +120,7 @@ LOW_RES_CLIMATE_VARS = ["d2m", "sp", "t2m", "tp"]
 
 
 def _find_layer_file(dir_path: Path, layer: str) -> Path | None:
-    # veg_fm_topo filenames carry inconsistent year/region prefixes and
-    # suffixes (e.g. "230fbfm13.tif", "lf2022_fbfm13_ak.tif", "fbfm13.tif"),
-    # and per the Dataset_README, fbfm13/fbfm40 may instead be named f13/f40
+    # e.g. "230fbfm13.tif", "lf2022_fbfm13_ak.tif", "fbfm13.tif", "f13.tif"
     aliases = {"fbfm13": ("fbfm13", "f13"), "fbfm40": ("fbfm40", "f40")}.get(layer, (layer,))
     for file in sorted(dir_path.glob("*.tif")):
         if any(alias in file.stem.lower() for alias in aliases):
@@ -197,8 +194,7 @@ class PyroStack(Dataset):
     def _load_fire(self, fire_dir: Path) -> dict:
         farea = _read_raster(fire_dir / "fire_spread" / "farea.tif")
         fuel_structure = self._load_fuel_structure(fire_dir / "fuel_structure")
-        # veg_fm_topo shares fuel_structure's 30m resolution and per-fire
-        # bounding box, so its shape is a valid fallback for missing layers
+        # veg_fm_topo shape (same grid as fuel_structure) for missing layers
         ref_shape = tuple(fuel_structure["cbd"].shape[-2:])
 
         static_path = fire_dir / "veg_fm_topo"
@@ -251,8 +247,7 @@ class PyroStack(Dataset):
         for name in TOPO_CATEGORICAL_VARS:
             file = _find_layer_file(dir_path, name)
             if file is None:
-                # a missing roads tif means the fire has no operational roads
-                # in its bounding box, not that the data is unavailable
+                # missing roads tif: no roads in the bounding box
                 fill = 0.0 if name == "roads" else float(NO_DATA)
                 out[name] = torch.full((1, *ref_shape), fill)
                 continue

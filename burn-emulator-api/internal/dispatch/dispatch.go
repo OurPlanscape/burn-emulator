@@ -10,12 +10,10 @@ import (
 	"time"
 )
 
-// how long the claim + runner job trigger get, detached from the caller so a
-// hangup can't leave a claim with no job behind it, or a job with no claim.
+// claim + trigger timeout, detached from the caller's context
 const claimTriggerTimeout = 90 * time.Second
 
-// the most CreateJob can run past its caller's deadline: the detached claim +
-// trigger, then a detached release if the trigger fails.
+// max time CreateJob runs past its caller's deadline
 const DetachedBudget = claimTriggerTimeout + releaseTimeout
 
 var ErrJobNotFound = errors.New("job not found")
@@ -31,22 +29,25 @@ const (
 
 type JobRequest struct {
 	TreatmentArea   string
-	VarLoc          string
+	VarLoc          string // optional; picked from the treatment area when empty
 	JobName         string
 	IgnitionDensity *float64
 	Backend         string // BackendDL | BackendPT
 }
 
+// model_version segment of PT jobs
+const ptModelVersion = "pt"
+
 type JobID struct {
-	VarLoc       string
-	ModelVersion string
-	DataVersion  string // fuels (baseline + legalmax) and topo, published together
-	Hash         string // cache key for the request parameters
+	InputsVersion string // fuels (baseline + legalmax), topo and varlocs, published together
+	VarLoc        string // see selectVarLoc
+	ModelVersion  string // <models>/<varloc>/current for DL, ptModelVersion for PT
+	Hash          string // cache key for the request parameters
 }
 
-// <varloc>/<model_version>/<data_version>/<hash>
+// <inputs_version>/<varloc>/<model_version>/<hash>
 func (id JobID) Path() string {
-	return strings.Join([]string{id.VarLoc, id.ModelVersion, id.DataVersion, id.Hash}, "/")
+	return strings.Join([]string{id.InputsVersion, id.VarLoc, id.ModelVersion, id.Hash}, "/")
 }
 
 func (id JobID) Backend() string {
@@ -57,12 +58,10 @@ func (id JobID) Backend() string {
 }
 
 func (id JobID) valid() bool {
-	for _, seg := range []string{id.VarLoc, id.ModelVersion, id.DataVersion} {
-		if !validVersion.MatchString(seg) {
-			return false
-		}
-	}
-	return validHash.MatchString(id.Hash)
+	return validVersion.MatchString(id.InputsVersion) &&
+		validVersion.MatchString(id.VarLoc) &&
+		validVersion.MatchString(id.ModelVersion) &&
+		validHash.MatchString(id.Hash)
 }
 
 type JobResult struct {
@@ -75,27 +74,21 @@ type JobResult struct {
 }
 
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, error) {
-	dataVersion, err := c.dataVersions.resolve(ctx, "")
+	inputsVersion, err := c.inputsVersions.resolve(ctx, "")
 	if err != nil {
-		return JobResult{}, fmt.Errorf("resolving data version: %w", err)
+		return JobResult{}, fmt.Errorf("resolving inputs version: %w", err)
 	}
-	ok, err := c.varLocs.contains(ctx, dataVersion, req.VarLoc)
+	varLoc, modelVersion, backend, err := c.selectVarLoc(ctx, inputsVersion, req.TreatmentArea, req.VarLoc, req.Backend)
 	if err != nil {
 		return JobResult{}, err
 	}
-	if !ok {
-		return JobResult{}, ErrUnknownVarLoc
-	}
-	modelVersion, err := c.modelVersions.resolve(ctx, req.VarLoc)
-	if err != nil {
-		return JobResult{}, fmt.Errorf("resolving model version for %s: %w", req.VarLoc, err)
-	}
+	req.Backend = backend
 
 	id := JobID{
-		VarLoc:       req.VarLoc,
-		ModelVersion: modelVersion,
-		DataVersion:  dataVersion,
-		Hash:         CacheKey(req),
+		InputsVersion: inputsVersion,
+		VarLoc:        varLoc,
+		ModelVersion:  modelVersion,
+		Hash:          CacheKey(req),
 	}
 	runObject := id.Path()
 	bucket := strings.TrimSuffix(c.cfg.OutputBucket, "/")
@@ -128,25 +121,29 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return result, nil
 	}
 
+	treatmentAreaPath := outPath + "/" + treatmentAreaObject
+	if err := c.writeTreatmentArea(detachedCtx, treatmentAreaPath, req.TreatmentArea); err != nil {
+		c.releaseRun(ctx, runObject, rec.Generation)
+		return JobResult{}, err
+	}
+
 	err = c.runner.Trigger(detachedCtx, inferRequest{
-		VarLoc:          req.VarLoc,
-		ModelVersion:    modelVersion,
-		DataVersion:     dataVersion,
-		TreatmentArea:   req.TreatmentArea,
-		IgnitionDensity: req.IgnitionDensity,
-		Backend:         req.Backend,
-		Hash:            id.Hash,
-		OutputPath:      outPath,
-		ReportPath:      reportPath,
-		ClaimGeneration: rec.Generation,
+		InputsVersion:     inputsVersion,
+		VarLoc:            varLoc,
+		ModelVersion:      modelVersion,
+		TreatmentAreaPath: treatmentAreaPath,
+		IgnitionDensity:   req.IgnitionDensity,
+		Backend:           req.Backend,
+		Hash:              id.Hash,
+		OutputPath:        outPath,
+		ReportPath:        reportPath,
+		ClaimGeneration:   rec.Generation,
 	})
 	if err != nil {
 		if isRejected(err) {
 			c.releaseRun(ctx, runObject, rec.Generation)
 		} else {
-			// an execution may have started without the api hearing back, so keep the
-			// claim rather than risk a duplicate run; if nothing started it goes
-			// stale after runStaleAfter and GET reports it failed.
+			// an execution may have started; the claim is kept and goes stale after runStaleAfter
 			slog.Warn("runner trigger outcome unknown; keeping claim", "run", runObject, "error", err)
 		}
 		return JobResult{}, fmt.Errorf("triggering inference: %w", err)
@@ -158,31 +155,19 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 	return result, nil
 }
 
-// read-only status of a run. ErrJobNotFound covers a malformed id, a varloc
-// not published with its data_version, and a run with neither output nor claim
-// (never started, or its claim was cleared).
+// ErrJobNotFound: malformed id, or neither output nor claim
 func (c *Client) GetJob(ctx context.Context, id JobID) (JobResult, error) {
 	if !id.valid() {
-		return JobResult{}, ErrJobNotFound
-	}
-	ok, err := c.varLocs.contains(ctx, id.DataVersion, id.VarLoc)
-	if isStatusCode(err, 404) {
-		return JobResult{}, ErrJobNotFound
-	}
-	if err != nil {
-		return JobResult{}, err
-	}
-	if !ok {
 		return JobResult{}, ErrJobNotFound
 	}
 	outPath := strings.TrimSuffix(c.cfg.OutputBucket, "/") + "/" + id.Path()
 	result := JobResult{ID: id, OutputPath: outPath}
 
-	done, err := c.outputExists(ctx, outPath)
+	cached, err := c.outputExists(ctx, outPath)
 	if err != nil {
 		return JobResult{}, fmt.Errorf("checking output: %w", err)
 	}
-	if done {
+	if cached {
 		c.clearFinishedClaim(ctx, id.Path())
 		result.Status = "cached"
 		return result, nil

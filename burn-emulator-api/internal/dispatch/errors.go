@@ -8,11 +8,11 @@ import (
 )
 
 func isStatusCode(err error, code int) bool {
-	apiErr, ok := err.(*googleapi.Error)
-	return ok && apiErr.Code == code
+	var apiErr *googleapi.Error
+	return errors.As(err, &apiErr) && apiErr.Code == code
 }
 
-// timeouts, network errors, and 5xx are ambiguous. leaving that to timeout
+// 4xx other than 408
 func isRejected(err error) bool {
 	var apiErr *googleapi.Error
 	return errors.As(err, &apiErr) &&
