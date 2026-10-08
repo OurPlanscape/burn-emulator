@@ -201,6 +201,10 @@ func (c *Client) selectVarLoc(ctx context.Context, inputsVersion, geojson, reque
 	if backend == BackendPT {
 		return varLoc, ptModelVersion, BackendPT, nil
 	}
+	if c.cfg.RunnerGPUJob == "" {
+		slog.Warn("no GPU runner job configured; falling back to PT", "varloc", varLoc)
+		return varLoc, ptModelVersion, BackendPT, nil
+	}
 
 	valid, err := c.varLocs.shapes(ctx, inputsVersion, validVarLocsObject)
 	if err != nil {

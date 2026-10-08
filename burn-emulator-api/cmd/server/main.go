@@ -29,7 +29,7 @@ func main() {
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
 		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
 		OutputBucket: env("BURN_EMULATOR_OUTPUT_URI"),
-		RunnerGPUJob: env("BURN_EMULATOR_RUNNER_GPU_JOB"),
+		RunnerGPUJob: os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB"), // optional; unset runs DL requests on PT
 		RunnerCPUJob: env("BURN_EMULATOR_RUNNER_CPU_JOB"),
 	}
 

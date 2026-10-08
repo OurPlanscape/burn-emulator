@@ -12,7 +12,7 @@ type Config struct {
 	ModelsURI    string // gs://<bucket>[/<prefix>] root of the model registry (reads <varloc>/current -> model_version)
 	InputsURI    string // gs://<bucket> root of the fuels/topo/varlocs inputs (reads current -> inputs_version)
 	OutputBucket string // gs://<bucket> for outputs + the claim
-	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*
+	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*; empty: DL falls back to PT
 	RunnerCPUJob string // fully-qualified CPU-only burn-emulator-runner job name (PT)
 }
 

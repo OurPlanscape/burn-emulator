@@ -4,14 +4,14 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 
 ## Config
 
-All required; the server exits on startup if one is missing.
+All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup if one is missing.
 
 | Variable | Purpose |
 | --- | --- |
 | `BURN_EMULATOR_MODELS_URI` | `gs://` model registry root; reads `<varloc>/current` |
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs root; reads `current` and `<inputs_version>/varlocs/*.gpkg` |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
-| `BURN_EMULATOR_RUNNER_GPU_JOB` | `DL` runner job, `projects/*/locations/*/jobs/*` |
+| `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
 | `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job |
 
 ## `POST /v1/jobs`
@@ -96,6 +96,7 @@ Backend:
 
 | `backend` | varloc in `valid_varlocs.gpkg` | `<models>/<varloc>/current` | runs |
 | --- | --- | --- | --- |
+| `DL`, no `BURN_EMULATOR_RUNNER_GPU_JOB` | - | - | PT (warning) |
 | `DL` | yes | yes | DL with that `model_version` |
 | `DL` | yes | no | PT (warning) |
 | `DL` | no | - | PT (warning) |
