@@ -15,17 +15,15 @@ import (
 )
 
 const (
-	maxBodyBytes = 1 << 20
-	// caller-attached steps; the claim + trigger run under dispatch.DetachedBudget
-	requestTimeout = 2 * time.Minute
-
-	// http.Server.WriteTimeout builds on this
-	MaxHandlerDuration = requestTimeout + dispatch.DetachedBudget
+	maxBodyBytes       = 1 << 20
+	requestTimeout     = 2 * time.Minute                          // caller-attached; claim + trigger use dispatch.DetachedBudget
+	MaxHandlerDuration = requestTimeout + dispatch.DetachedBudget // base of http.Server.WriteTimeout
 )
 
-var validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-
-var validVarLoc = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
+var (
+	validJobName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	validVarLoc  = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
+)
 
 type jobRequestBody struct {
 	TreatmentArea   string   `json:"treatment_area"`
@@ -46,7 +44,9 @@ type jobResponseBody struct {
 	Status        string `json:"status"`
 	Cached        bool   `json:"cached"`
 	Attempts      int    `json:"attempts,omitempty"`
+	OutputDir     string `json:"output_dir"`
 	OutputPath    string `json:"output_path"`
+	OutputMeta    string `json:"output_meta"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -113,7 +113,7 @@ func (h *JobsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("run handled",
 		"job_id", result.ID.Path(), "job_name", result.JobName, "status", result.Status,
-		"attempts", result.Attempts, "output_path", result.OutputPath, "client_ip", clientAddr)
+		"attempts", result.Attempts, "output_dir", result.OutputDir, "client_ip", clientAddr)
 
 	statusCode := http.StatusOK
 	if result.Status == "pending" {
@@ -150,22 +150,20 @@ func (h *JobsHandler) Get(w http.ResponseWriter, r *http.Request) {
 func writeJob(w http.ResponseWriter, statusCode int, result dispatch.JobResult) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	modelVersion := result.ID.ModelVersion
-	if result.ID.Backend() == dispatch.BackendPT {
-		modelVersion = ""
-	}
 	json.NewEncoder(w).Encode(jobResponseBody{
 		JobID:         result.ID.Path(),
 		JobName:       result.JobName,
 		Hash:          result.ID.Hash,
 		InputsVersion: result.ID.InputsVersion,
 		VarLoc:        result.ID.VarLoc,
-		ModelVersion:  modelVersion,
+		ModelVersion:  result.ID.BundleVersion(),
 		Backend:       result.ID.Backend(),
 		Status:        result.Status,
 		Cached:        result.Status == "cached",
 		Attempts:      result.Attempts,
+		OutputDir:     result.OutputDir,
 		OutputPath:    result.OutputPath,
+		OutputMeta:    result.OutputMeta,
 		Error:         result.Error,
 	})
 }

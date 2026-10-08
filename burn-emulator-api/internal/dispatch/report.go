@@ -8,11 +8,9 @@ import (
 	"strings"
 )
 
-// report statuses; must match REPORT_COMPLETED / REPORT_FAILED in
-// burn-emulator-runner's __main__.py.
 const (
-	reportCompleted = "completed"
-	reportFailed    = "failed"
+	reportCompleted = "completed" // runner REPORT_COMPLETED
+	reportFailed    = "failed"    // runner REPORT_FAILED
 )
 
 // handles a runner report named by a Pub/Sub storage notification

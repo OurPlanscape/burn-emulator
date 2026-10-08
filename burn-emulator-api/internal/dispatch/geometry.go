@@ -12,19 +12,17 @@ import (
 	"github.com/twpayne/go-proj/v10"
 )
 
-// varloc gpkgs and overlap scoring use this equal-area CRS
-// make sure this matches runner TARGET_CRS
+// equal-area CRS for varloc gpkgs and overlap scoring; runner TARGET_CRS
 const (
 	workingSRID = 5070
 	workingCRS  = "EPSG:5070"
 )
 
-var geosCtx = geos.NewContext()
-
-var errEmptyGeometry = errors.New("empty geometry")
-
-// EPSG:4326, urn:ogc:def:crs:EPSG::4326, ...
-var epsgCode = regexp.MustCompile(`EPSG:+(\d+)$`)
+var (
+	geosCtx          = geos.NewContext()
+	errEmptyGeometry = errors.New("empty geometry")
+	epsgCode         = regexp.MustCompile(`EPSG:+(\d+)$`) // EPSG:4326, urn:ogc:def:crs:EPSG::4326, ...
+)
 
 type geoJSON struct {
 	Type        string          `json:"type"`
@@ -92,6 +90,12 @@ func treatmentArea(s string) (*geos.Geom, error) {
 		return nil, errEmptyGeometry
 	}
 	return area, nil
+}
+
+// area as a one-Feature FeatureCollection in workingCRS, crs member included
+func workingGeoJSON(area *geos.Geom) string {
+	return `{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"` + workingCRS +
+		`"}},"features":[{"type":"Feature","properties":{},"geometry":` + area.ToGeoJSON(0) + `}]}`
 }
 
 // FeatureCollection of Features, a Feature, or a bare geometry

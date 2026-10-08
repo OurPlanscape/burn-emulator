@@ -5,8 +5,9 @@ import sys
 import tempfile
 from copy import deepcopy
 
+import geopandas as gpd
 from burn_emulator.config import load_treatment_area
-from burn_emulator.constants import Path
+from burn_emulator.constants import TARGET_CRS, Path
 from burn_emulator.run import run
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -22,12 +23,9 @@ from burn_emulator_runner.utils import env_flag, warm_gpu
 
 DEBUG = env_flag("BURN_EMULATOR_DEBUG")
 
-# GCS custom metadata is capped at 8 KiB per object
-REPORT_ERROR_MAX_CHARS = 1024
-
-# must match reportCompleted / reportFailed in burn-emulator-api dispatch/report.go
-REPORT_COMPLETED = "completed"
-REPORT_FAILED = "failed"
+REPORT_ERROR_MAX_CHARS = 1024  # GCS metadata cap is 8 KiB
+REPORT_COMPLETED = "completed"  # api dispatch/report.go
+REPORT_FAILED = "failed"  # api dispatch/report.go
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("burn_emulator_runner")
@@ -47,6 +45,15 @@ def _gcs_blob(gcs_path: str) -> storage.Blob:
 def _upload_output(local_path: str, gcs_path: str) -> None:
     _gcs_blob(gcs_path).upload_from_filename(
         local_path, content_type="image/tiff", retry=DEFAULT_RETRY
+    )
+
+
+# overwrites the api's treatment area input with it as geometry and the run meta as properties;
+# to_json writes a crs member for non-EPSG:4326
+def _upload_meta(treatment_area: BaseGeometry, meta: dict, gcs_path: str) -> None:
+    gdf = gpd.GeoDataFrame([meta], geometry=[treatment_area], crs=TARGET_CRS)
+    _gcs_blob(gcs_path).upload_from_string(
+        gdf.to_json(drop_id=True), content_type="application/geo+json", retry=DEFAULT_RETRY
     )
 
 
@@ -94,7 +101,7 @@ def _run_config(
     return cfg
 
 
-def _check_provenance(bundle: Path, varloc: str, model_version: str) -> None:
+def _check_provenance(bundle: Path, varloc: str, model_version: str) -> dict | None:
     meta, runner_code_sha = read_provenance(bundle)
     if meta is None:
         log.warning(
@@ -119,16 +126,16 @@ def _check_provenance(bundle: Path, varloc: str, model_version: str) -> None:
             meta.get("model_code_sha256"),
             runner_code_sha,
         )
+    return meta
 
 
 def main() -> None:
     signal.signal(signal.SIGTERM, _on_sigterm)
     run_hash = os.environ.get("BURN_EMULATOR_HASH", "<unknown>")
     try:
+        output_meta = os.environ["BURN_EMULATOR_OUTPUT_META"]
         treatment_area = load_treatment_area(
-            _gcs_blob(os.environ["BURN_EMULATOR_TREATMENT_AREA_PATH"]).download_as_text(
-                retry=DEFAULT_RETRY
-            )
+            _gcs_blob(output_meta).download_as_text(retry=DEFAULT_RETRY)
         )
         run_hash = os.environ["BURN_EMULATOR_HASH"]
         output_path = os.environ["BURN_EMULATOR_OUTPUT_PATH"]
@@ -136,21 +143,25 @@ def main() -> None:
         ignition_density_raw = os.environ.get("BURN_EMULATOR_IGNITION_DENSITY")
         ignition_density = float(ignition_density_raw) if ignition_density_raw else None
 
-        # varloc and backend come from the api; only DL loads a bundle
+        # from the api; model_version is the varloc's bundle, unset for PT without one
         varloc = os.environ["BURN_EMULATOR_VARLOC"]
-        model_version = os.environ.get("BURN_EMULATOR_MODEL_VERSION") if backend == "DL" else None
+        model_version = os.environ.get("BURN_EMULATOR_MODEL_VERSION")
 
         warm_gpu()
 
+        bundle_meta = None
         if model_version:
-            bundle = bundle_dir(varloc, model_version)
+            bundle = bundle_dir(os.environ["BURN_EMULATOR_BUNDLE_DIR"])
             spec = load_spec(bundle)
-            _check_provenance(bundle, varloc, model_version)
+            if backend == "DL":
+                bundle_meta = _check_provenance(bundle, varloc, model_version)
+            else:
+                bundle_meta, _ = read_provenance(bundle)
         elif backend == "DL":
             raise ValueError("DL run without BURN_EMULATOR_MODEL_VERSION")
 
         with tempfile.TemporaryDirectory() as local_dir:
-            if backend == "PT":
+            if not model_version:
                 spec = pt_spec(varloc, os.environ["BURN_EMULATOR_INPUTS_VERSION"], local_dir)
             cfg = _run_config(spec, treatment_area, ignition_density, local_dir)
             cfg["backend"] = backend
@@ -166,8 +177,23 @@ def main() -> None:
 
             # SIGTERM is ignored from here on
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            local_out = os.fspath(result["out_path"])
-            _upload_output(local_out, f"{output_path.rstrip('/')}/{os.path.basename(local_out)}")
+            meta = {
+                "hash": run_hash,
+                "backend": backend,
+                "varloc": varloc,
+                "inputs_version": os.environ.get("BURN_EMULATOR_INPUTS_VERSION"),
+                "ignition_density": cfg["dataset"]["init_args"].get("ignition_density"),
+                "output_path": output_path,
+            }
+            if model_version:
+                meta |= {
+                    "model_version": model_version,
+                    "bundle_uri": os.environ.get("BURN_EMULATOR_BUNDLE_URI"),
+                    **(bundle_meta or {}),
+                }
+            # meta first: the tif marks the run cached
+            _upload_meta(treatment_area, meta, output_meta)
+            _upload_output(os.fspath(result["out_path"]), output_path)
 
         log.info("run done hash=%s output_path=%s", run_hash, output_path)
         _write_report(REPORT_COMPLETED)

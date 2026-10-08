@@ -3,8 +3,7 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     USE_CLOUD_PATHS=1 \
     RUN_DEVICE=cuda \
-    RUN_DTYPE=bfloat16 \
-    BURN_EMULATOR_MODELS_DIR=/models
+    RUN_DTYPE=bfloat16
 
 RUN mkdir -p /models
 

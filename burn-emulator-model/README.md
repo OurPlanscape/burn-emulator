@@ -120,7 +120,7 @@ scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]      
 | `config.yaml` | the merged config without run-time fields (treatment area, fuels, topo, fbfm map, ignitions, burns) |
 | `bundle_meta.json` | `model_repo_sha`, `model_repo_dirty`, `model_class_path`, `model_code_sha256` (architecture module) |
 
-`publish_model.sh` (needs `BURN_EMULATOR_MODELS_URI`) checks every bundle (four files, `model_name` matches `<varloc>`), uploads each to `<models_uri>/<varloc>/<model_version>/`, then repoints each `<varloc>/current`. `<model_version>` = `<model.pt mtime, YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`. An already published version with a matching bundle is not re-uploaded; a different bundle is refused unless `FORCE=1`, which keeps outputs cached under that version.
+`publish_model.sh` (needs `BURN_EMULATOR_MODELS_URI`) checks every bundle (four files, `model_name` matches `<varloc>`), uploads each to `<models_uri>/<varloc>/<model_version>/`, then repoints each `<varloc>/current`. `<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, both from the bundle (the mtime is the checkpoint's, kept by `-m bundle`), so it changes only with a new checkpoint or commit. An already published version with a matching bundle is not re-uploaded; a different bundle is refused unless `FORCE=1`, which keeps DL and PT outputs cached under that version (`<model_version>` / `pt-<model_version>` job ids) even if its dataset config changed.
 
 ## Publish inputs
 

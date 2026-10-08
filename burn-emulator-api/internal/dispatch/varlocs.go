@@ -172,13 +172,9 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 }
 
 // varloc: the requested one if it intersects the area in all_varlocs.gpkg, else the largest
-// overlap there. DL needs the varloc in valid_varlocs.gpkg and a <varloc>/current; otherwise PT.
-func (c *Client) selectVarLoc(ctx context.Context, inputsVersion, geojson, requested, backend string) (varLoc, modelVersion, selected string, err error) {
-	area, err := treatmentArea(geojson)
-	if err != nil {
-		return "", "", "", fmt.Errorf("%w: %v", ErrInvalidTreatmentArea, err)
-	}
-
+// overlap there. modelVersion: the varloc's released bundle, used by DL and PT; "" if none.
+// DL needs that bundle and a GPU runner job; otherwise PT.
+func (c *Client) selectVarLoc(ctx context.Context, inputsVersion string, area *geos.Geom, requested, backend string) (varLoc, modelVersion, selected string, err error) {
 	all, err := c.varLocs.shapes(ctx, inputsVersion, allVarLocsObject)
 	if err != nil {
 		return "", "", "", err
@@ -198,31 +194,40 @@ func (c *Client) selectVarLoc(ctx context.Context, inputsVersion, geojson, reque
 			return "", "", "", ErrOutsideVarLocs
 		}
 	}
-	if backend == BackendPT {
-		return varLoc, ptModelVersion, BackendPT, nil
-	}
-	if c.cfg.RunnerGPUJob == "" {
-		slog.Warn("no GPU runner job configured; falling back to PT", "varloc", varLoc)
-		return varLoc, ptModelVersion, BackendPT, nil
-	}
 
-	valid, err := c.varLocs.shapes(ctx, inputsVersion, validVarLocsObject)
+	modelVersion, err = c.releasedModel(ctx, inputsVersion, varLoc)
 	if err != nil {
 		return "", "", "", err
 	}
-	if known, _ := intersects(valid, varLoc, nil); !known {
-		slog.Warn("varloc has no trained model; falling back to PT", "varloc", varLoc)
-		return varLoc, ptModelVersion, BackendPT, nil
-	}
-	modelVersion, err = c.modelVersions.resolve(ctx, varLoc)
-	if isStatusCode(err, 404) {
+	switch {
+	case backend == BackendPT:
+	case modelVersion == "":
 		slog.Warn("varloc has no released model; falling back to PT", "varloc", varLoc)
-		return varLoc, ptModelVersion, BackendPT, nil
+	case c.cfg.RunnerGPUJob == "":
+		slog.Warn("no GPU runner job configured; falling back to PT", "varloc", varLoc)
+	default:
+		return varLoc, modelVersion, BackendDL, nil
+	}
+	return varLoc, modelVersion, BackendPT, nil
+}
+
+// <varloc>/current if the varloc is in valid_varlocs.gpkg and has one, else ""
+func (c *Client) releasedModel(ctx context.Context, inputsVersion, varLoc string) (string, error) {
+	valid, err := c.varLocs.shapes(ctx, inputsVersion, validVarLocsObject)
+	if err != nil {
+		return "", err
+	}
+	if known, _ := intersects(valid, varLoc, nil); !known {
+		return "", nil
+	}
+	modelVersion, err := c.modelVersions.resolve(ctx, varLoc)
+	if isStatusCode(err, 404) {
+		return "", nil
 	}
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolving model version for %s: %w", varLoc, err)
+		return "", fmt.Errorf("resolving model version for %s: %w", varLoc, err)
 	}
-	return varLoc, modelVersion, BackendDL, nil
+	return modelVersion, nil
 }
 
 // known: name is in shapes; hit: one of its shapes intersects area (area nil: not checked)

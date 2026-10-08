@@ -12,11 +12,9 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// pointer re-read interval
-const versionCacheTTL = 60 * time.Second
+const versionCacheTTL = 60 * time.Second // pointer re-read interval
 
-// versions must be usable as a single GCS path segment.
-var validVersion = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+var validVersion = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`) // one GCS path segment
 
 type cachedVersion struct {
 	version string

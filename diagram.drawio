@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net">
   <diagram name="API Runner + Model Run" id="0">
-    <mxGraphModel dx="7248" dy="2760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
+    <mxGraphModel dx="4952" dy="1396" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="2400" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -34,19 +34,19 @@
         <mxCell id="n3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;validate()&lt;/b&gt; + normalizeGeoJSON()&lt;br&gt;varloc alphanumeric; valid job_name;&lt;br&gt;treatment_area present; ignition_density &amp;gt; 0;&lt;br&gt;backend DL | PT (jobs.go)" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="210" as="geometry" />
         </mxCell>
-        <mxCell id="n4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;selectVarLoc()&lt;/b&gt; (varlocs.go)&lt;br&gt;varloc: requested or largest overlap&lt;br&gt;in all_varlocs.gpkg; none -&amp;gt; 400&lt;br&gt;DL if trained + has current, else PT" vertex="1">
+        <mxCell id="n4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;selectVarLoc()&lt;/b&gt; (varlocs.go)&lt;br&gt;varloc: requested or largest overlap&lt;br&gt;in all_varlocs.gpkg; none -&amp;gt; 400&lt;br&gt;bundle = current if trained&lt;br&gt;DL if bundle, else PT (PT uses it too)" vertex="1">
           <mxGeometry height="70" width="280" x="249" y="330" as="geometry" />
         </mxCell>
         <mxCell id="n5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="&lt;b&gt;pointers + gpkgs&lt;/b&gt;&lt;br&gt;gs://inputs/current&lt;br&gt;gs://models/{varloc}/current&lt;br&gt;gs://inputs/{inputs_version}/&lt;br&gt;varlocs/{valid,all}_varlocs.gpkg" vertex="1">
-          <mxGeometry height="110" width="251.5" x="777" y="310" as="geometry" />
+          <mxGeometry height="125" width="251.5" x="777" y="302.5" as="geometry" />
         </mxCell>
-        <mxCell id="n6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="hash = sha256(treatment_area|ignition_density) + 0 DL | 1 PT&lt;br&gt;job_id = {inputs_version}/{varloc}/{model_version | pt}/{hash}&lt;br&gt;(dispatch.go, cache.go)" vertex="1">
+        <mxCell id="n6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="hash = sha256(treatment_area|ignition_density) + 0 DL | 1 PT&lt;br&gt;job_id = {inputs_version}/{varloc}/{model_version | pt[-model_version]}/{hash}&lt;br&gt;(dispatch.go, cache.go)" vertex="1">
           <mxGeometry height="80" width="370" x="204" y="450" as="geometry" />
         </mxCell>
-        <mxCell id="n7" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="&lt;b&gt;outputExists()?&lt;/b&gt;&lt;br&gt;*.tif under job_id&lt;br&gt;(cache.go)" vertex="1">
+        <mxCell id="n7" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="&lt;b&gt;outputExists()?&lt;/b&gt;&lt;br&gt;{job_id}/output.tif&lt;br&gt;(cache.go)" vertex="1">
           <mxGeometry height="100" width="200" x="289" y="560" as="geometry" />
         </mxCell>
-        <mxCell id="n7r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="200 cached&lt;br&gt;{job_id, output_path}&lt;br&gt;(clears a leftover running claim)" vertex="1">
+        <mxCell id="n7r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="200 cached&lt;br&gt;{job_id, output_dir, output_path, output_meta}&lt;br&gt;(clears a leftover running claim)" vertex="1">
           <mxGeometry height="70" width="240" x="-236" y="575" as="geometry" />
         </mxCell>
         <mxCell id="n8" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1d293b);strokeColor=light-dark(#D79B00,#5C79A3);" value="claimRun()&lt;div&gt;CAS write&lt;br&gt;already claimed &amp;amp;&amp;nbsp;&lt;/div&gt;&lt;div&gt;fresh running (&amp;lt;25min)?&lt;/div&gt;" vertex="1">
@@ -58,16 +58,16 @@
         <mxCell id="n8r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="202 pending {job_id}&lt;br&gt;Location: /v1/jobs/{job_id}&lt;br&gt;(new run, or identical run in flight)" vertex="1">
           <mxGeometry height="70" width="240" x="-236" y="740" as="geometry" />
         </mxCell>
-        <mxCell id="n9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;runner.Trigger()&lt;/b&gt;: GPU (DL) | CPU (PT) job&lt;br&gt;after writing treatment_area.geojson&lt;br&gt;Jobs.Run(), no waiting; detached, 90s&lt;br&gt;4xx releases claim, timeout/5xx keeps it" vertex="1">
+        <mxCell id="n9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;runner.Trigger()&lt;/b&gt;: GPU (DL) | CPU (PT) job&lt;br&gt;after writing meta.geojson&lt;br&gt;Jobs.Run(), no waiting; detached, 90s&lt;br&gt;4xx releases claim, timeout/5xx keeps it" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="885" as="geometry" />
         </mxCell>
-        <mxCell id="n10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;Cloud Run Job execution starts&lt;/b&gt;&lt;br&gt;env: varloc, backend, model_version (DL),&lt;br&gt;inputs_version, treatment_area_path, hash,&lt;br&gt;output_path, report_path, claim_generation,&lt;br&gt;fuels / topo / fbfm paths" vertex="1">
-          <mxGeometry height="100" width="300" x="1206" y="885" as="geometry" />
+        <mxCell id="n10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;Cloud Run Job execution starts&lt;/b&gt;&lt;br&gt;env: varloc, backend, model_version + bundle_dir + bundle_uri (if bundle),&lt;br&gt;inputs_version, output_meta, hash,&lt;br&gt;output_path, report_path, claim_generation,&lt;br&gt;fuels / topo / fbfm paths" vertex="1">
+          <mxGeometry height="100" width="300" x="1206" y="880" as="geometry" />
         </mxCell>
         <mxCell id="n11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;__main__.main()&lt;/b&gt;&lt;br&gt;SIGTERM -&amp;gt; failure until run() returns&lt;br&gt;warm_gpu(): fails fast without CUDA" vertex="1">
           <mxGeometry height="70" width="300" x="1206" y="1020" as="geometry" />
         </mxCell>
-        <mxCell id="n12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;DL&lt;/b&gt;: load bundle&lt;br&gt;artifacts.bundle_dir + load_spec&lt;br&gt;(model.pt, config.yaml) + provenance check&lt;br&gt;&lt;b&gt;PT&lt;/b&gt;: pt_spec(), no bundle&lt;br&gt;(wind_range from wind_directions.csv)" vertex="1">
+        <mxCell id="n12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;bundle&lt;/b&gt; (DL, PT if any): bundle_dir + load_spec&lt;br&gt;(model.pt, config.yaml) + provenance check (DL)&lt;br&gt;&lt;b&gt;PT, no bundle&lt;/b&gt;: pt_spec() from run_smoke.yaml&lt;br&gt;(wind_range from wind_directions.csv)" vertex="1">
           <mxGeometry height="90" width="300" x="1206" y="1120" as="geometry" />
         </mxCell>
         <mxCell id="n13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;_run_config()&lt;/b&gt;&lt;br&gt;treatment_area from GCS, ignition_density?&lt;br&gt;fuels / topo / fbfm paths from env&lt;br&gt;out_path = local temp dir" vertex="1">
@@ -85,10 +85,10 @@
         <mxCell id="n17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="batched_agg()&#xa;aggregate into running mean raster" vertex="1">
           <mxGeometry height="70" width="300" x="1206" y="1700" as="geometry" />
         </mxCell>
-        <mxCell id="n18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Write GeoTIFF to local temp (/tmp, in-memory)&lt;br&gt;SIGTERM ignored from here&lt;br&gt;_upload_output(): atomic GCS upload" vertex="1">
+        <mxCell id="n18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="Write GeoTIFF to local temp (/tmp, in-memory)&lt;br&gt;SIGTERM ignored from here&lt;br&gt;overwrite meta.geojson, then _upload_output(): atomic GCS upload" vertex="1">
           <mxGeometry height="80" width="300" x="1206" y="1800" as="geometry" />
         </mxCell>
-        <mxCell id="n18g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="&lt;b&gt;output object&lt;/b&gt;&lt;br&gt;gs://{output_bucket}/{job_id}/{name}.tif&lt;br&gt;DL: {varloc}_{architecture}_{data_version}.tif&lt;br&gt;PT: {varloc}_pt_{inputs_version}.tif&lt;br&gt;one tif per job_id" vertex="1">
+        <mxCell id="n18g" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;boundedLbl=1;" value="&lt;b&gt;output object&lt;/b&gt;&lt;br&gt;gs://{output_bucket}/{job_id}/output.tif&lt;br&gt;+ meta.geojson (treatment area, run + bundle props)&lt;br&gt;one tif per job_id" vertex="1">
           <mxGeometry height="225" width="312" x="741" y="1727.5" as="geometry" />
         </mxCell>
         <mxCell id="n19" parent="1" style="rhombus;whiteSpace=wrap;html=1;fillColor=light-dark(#ffe6cc, #1f2f1e);strokeColor=light-dark(#D79B00,#446E2C);" value="exception?&lt;br&gt;(SIGTERM ignored&lt;br&gt;in except)" vertex="1">
@@ -298,8 +298,8 @@
             <Array as="points">
               <mxPoint x="-20" y="2005" />
               <mxPoint x="720" y="2005" />
-              <mxPoint x="720" y="480" />
-              <mxPoint x="902.8" y="480" />
+              <mxPoint x="720" y="570" />
+              <mxPoint x="902.8" y="570" />
             </Array>
           </mxGeometry>
         </mxCell>

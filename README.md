@@ -75,7 +75,7 @@ gs://<models>/<varloc>/current                  # text file: the active model_ve
 gs://<models>/<varloc>/<model_version>/         # model.pt, stats.yaml, config.yaml, bundle_meta.json
 ```
 
-`<model_version>` = `<model.pt mtime, YYYYMMDDTHHMMSSZ>-<7-char git sha>[-dirty]`.
+`<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, set by `publish_model.sh` from the bundle; DL and PT runs on a varloc with a bundle are cached under it.
 
 ## Request flow
 
@@ -86,16 +86,17 @@ caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, ba
      varloc         = requested varloc if it intersects treatment_area in
                       <inputs_version>/varlocs/all_varlocs.gpkg (else 400),
                       or the largest overlap there (none -> 400)
-     DL if varloc is in valid_varlocs.gpkg and gs://<models>/<varloc>/current exists (60s cache),
-     else PT
+     bundle         = gs://<models>/<varloc>/current if varloc is in valid_varlocs.gpkg (60s cache)
+     DL if requested, there is a bundle and a GPU job is set, else PT; PT also uses the bundle when there is one
      hash           = sha256(treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
-     out_path       = gs://<out>/<inputs_version>/<varloc>/<model_version | pt>/<hash>
+     output_dir     = gs://<out>/<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>
   3. output exists?                                                      -> 200 cached
      claim running?                                                      -> 202 pending + Location
-     else claim it, write <out_path>/treatment_area.geojson, trigger the GPU (DL) or CPU (PT) job
+     else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
                                                                          -> 202 pending + Location
-  4. runner: DL loads <varloc>/<model_version> from the models mount, PT uses no bundle;
-     run(), upload the tif to <out_path>/, write gs://<out>/_reports/... {status, claim_generation, error}
+  4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
+     run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,
+     write gs://<out>/_reports/... {status, claim_generation, error}
   5. _reports/ OBJECT_FINALIZE -> Pub/Sub push -> POST /internal/pubsub/run-reports
      completed -> release the claim; failed -> delete partial output, mark the claim failed
   6. caller polls GET <Location> until cached or failed

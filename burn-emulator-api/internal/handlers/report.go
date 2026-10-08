@@ -11,8 +11,7 @@ import (
 	"burn-emulator-api/internal/dispatch"
 )
 
-// plus up to 2x dispatch.releaseTimeout; must stay below ack_deadline_seconds (120s) in infrastructure
-const reportTimeout = 90 * time.Second
+const reportTimeout = 90 * time.Second // + 2x dispatch.releaseTimeout stays below the Pub/Sub ack deadline
 
 type pushEnvelope struct {
 	Message struct {

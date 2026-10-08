@@ -13,20 +13,21 @@ import (
 	storage "google.golang.org/api/storage/v1"
 )
 
-// must exceed burn_emulator_runner_timeout (20m) in infrastructure
-const runStaleAfter = 25 * time.Minute
-
-const maxClaimAttempts = 3
-
-const releaseTimeout = 10 * time.Second
+const (
+	runStaleAfter    = 25 * time.Minute // exceeds the runner job timeout
+	maxClaimAttempts = 3
+	releaseTimeout   = 10 * time.Second
+)
 
 const (
 	claimPrefix  = "_claims/"
 	reportPrefix = "_reports/"
 )
 
-// written by the api next to the output; only a .tif counts as the cached output
-const treatmentAreaObject = "treatment_area.geojson"
+const (
+	outputObject = "output.tif" // its existence is the cache hit
+	metaObject   = "meta.geojson"
+)
 
 // stored as claim object metadata
 type claimRecord struct {
@@ -224,15 +225,18 @@ func parseClaim(obj *storage.Object) claimRecord {
 }
 
 func (c *Client) outputExists(ctx context.Context, gcsPath string) (bool, error) {
-	bucket, prefix, err := parseGCSPath(gcsPath)
+	bucket, name, err := parseGCSPath(gcsPath)
 	if err != nil {
 		return false, err
 	}
-	resp, err := c.storage.Objects.List(bucket).Prefix(prefix + "/").MatchGlob(prefix + "/*.tif").MaxResults(1).Context(ctx).Do()
-	if err != nil {
-		return false, fmt.Errorf("listing gs://%s/%s: %w", bucket, prefix, err)
+	_, err = c.storage.Objects.Get(bucket, name).Context(ctx).Do()
+	if isStatusCode(err, 404) {
+		return false, nil
 	}
-	return len(resp.Items) > 0, nil
+	if err != nil {
+		return false, fmt.Errorf("checking gs://%s/%s: %w", bucket, name, err)
+	}
+	return true, nil
 }
 
 func (c *Client) writeTreatmentArea(ctx context.Context, gcsPath, geojson string) error {

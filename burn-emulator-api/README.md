@@ -8,8 +8,8 @@ All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup 
 
 | Variable | Purpose |
 | --- | --- |
-| `BURN_EMULATOR_MODELS_URI` | `gs://` model registry root; reads `<varloc>/current` |
-| `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs root; reads `current` and `<inputs_version>/varlocs/*.gpkg` |
+| `BURN_EMULATOR_MODELS_URI` | `gs://` model registry bucket; reads `<varloc>/current`, sends the runner `<uri>/<varloc>/<model_version>` as `bundle_uri`. A bare bucket: the runner mounts it at `/models` |
+| `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs bucket; reads `current` and `<inputs_version>/varlocs/*.gpkg`. A bare bucket: the runner mounts it at `/inputs` |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
 | `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
 | `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job |
@@ -31,10 +31,10 @@ All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup 
 | `treatment_area` | required; `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), rejected without one |
 | `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
 | `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
-| `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value (DL) or 20 (PT). Capped at 2**16 ignitions per run, checked by the runner |
-| `backend` | optional; `DL` (default) or `PT`. `DL` becomes `PT` when the varloc has no model (see Varloc selection); the response `backend` is what runs |
+| `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value, or `run_smoke.yaml`'s (20) for PT without a bundle. Capped at 2**16 ignitions per run, checked by the runner |
+| `backend` | optional; `DL` (default) or `PT`. `DL` becomes `PT` when the varloc has no bundle (see Varloc selection); the response `backend` is what runs |
 
-`hash` = sha256 hex of `treatment_area[|ignition_density]` + `0` (DL) or `1` (PT). `treatment_area` is re-encoded first (sorted keys, no whitespace); the runner gets the re-encoded copy.
+`hash` = sha256 hex of `treatment_area[|ignition_density]` + `0` (DL) or `1` (PT). `treatment_area` is re-encoded first (sorted keys, no whitespace). The runner gets it reprojected to EPSG:5070 and unioned, as a one-Feature FeatureCollection with a `crs` member.
 
 ```json
 {
@@ -47,15 +47,17 @@ All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup 
   "cached": true,
   "varloc": "WC711",
   "model_version": "20260829T143000Z-a1b2c3d",
-  "output_path": "gs://<bucket>/<inputs_version>/<varloc>/<model_version>/<hash>"
+  "output_dir": "gs://<bucket>/<inputs_version>/<varloc>/<model_version>/<hash>",
+  "output_path": "gs://<bucket>/<inputs_version>/<varloc>/<model_version>/<hash>/output.tif",
+  "output_meta": "gs://<bucket>/<inputs_version>/<varloc>/<model_version>/<hash>/meta.geojson"
 }
 ```
 
-`model_version` is omitted for PT (`pt` in the job id). `attempts` is omitted when 0; `error` is set when `status` is `failed`.
+`model_version` is the bundle used, omitted for PT without one (`pt` in the job id; `pt-<model_version>` with one). `attempts` is omitted when 0; `error` is set when `status` is `failed`.
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `<output_path>/<model_name>.tif` (DL) or `<VARLOC>_pt_<inputs_version>.tif` (PT) exists |
+| `cached` | 200 | `output_path` exists; `output_meta` is the treatment area with the run and its bundle as properties |
 | `pending` | 202 | run triggered, or an identical run in flight; `Location: /v1/jobs/<job_id>` |
 
 An identical body dedupes onto the same run; a `failed` run is retried.
@@ -92,15 +94,15 @@ Varloc, from `all_varlocs.gpkg`:
 | `varloc` given, not in the gpkg / no intersection | 400 |
 | no `varloc` | largest overlap; none -> 400 |
 
-Backend:
+Backend. The bundle is `<models>/<varloc>/current` when the varloc is in `valid_varlocs.gpkg`; PT uses it too, for its dataset config:
 
-| `backend` | varloc in `valid_varlocs.gpkg` | `<models>/<varloc>/current` | runs |
-| --- | --- | --- | --- |
-| `DL`, no `BURN_EMULATOR_RUNNER_GPU_JOB` | - | - | PT (warning) |
-| `DL` | yes | yes | DL with that `model_version` |
-| `DL` | yes | no | PT (warning) |
-| `DL` | no | - | PT (warning) |
-| `PT` | - | - | PT |
+| `backend` | bundle | `BURN_EMULATOR_RUNNER_GPU_JOB` | runs | job id `model_version` |
+| --- | --- | --- | --- | --- |
+| `DL` | yes | set | DL | `<model_version>` |
+| `DL` | yes | unset | PT (warning) | `pt-<model_version>` |
+| `DL` | no | - | PT (warning) | `pt` |
+| `PT` | yes | - | PT | `pt-<model_version>` |
+| `PT` | no | - | PT, runner's `run_smoke.yaml` defaults | `pt` |
 
 Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite` and parsed with GEOS (`twpayne/go-geos`); the treatment area is reprojected into EPSG:5070 with PROJ (`twpayne/go-proj`). Overlap is the exact intersection area in EPSG:5070; ties go to the first varloc name. Accepted `crs`: CRS84 or any EPSG code known to PROJ. Invalid polygons are repaired with GEOS `MakeValid` (structure method); rings must be closed.
 
@@ -110,33 +112,33 @@ A claim is a zero-byte GCS object written with a generation precondition; identi
 
 ## Output bucket layout
 
-All objects share the suffix `<inputs_version>/<varloc>/<model_version | pt>/<hash>` (`dispatch.JobID.Path`, the `job_id`).
+All objects share the suffix `<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>` (`dispatch.JobID.Path`, the `job_id`).
 
 ```
 gs://<out>/
-├── <job_id>/<model_name>.tif         # output (PT: <VARLOC>_pt_<inputs_version>.tif)
-├── <job_id>/treatment_area.geojson   # runner input
+├── <job_id>/output.tif               # output
+├── <job_id>/meta.geojson             # runner input, then the run meta
 ├── _claims/<job_id>                  # claim
 └── _reports/<job_id>                 # runner report
 ```
 
 | Prefix | Written by | Metadata | Lifetime |
 | --- | --- | --- | --- |
-| `<job_id>/*.tif` | runner | none | permanent; its existence is the cache hit |
-| `<job_id>/treatment_area.geojson` | api, before the trigger | none | deleted with the output on failure, rewritten on retry |
+| `<job_id>/output.tif` | runner | none | permanent; its existence is the cache hit |
+| `<job_id>/meta.geojson` | api before the trigger (treatment area, EPSG:5070); runner overwrites it before `output.tif` (EPSG:5070 Feature, run + bundle as properties) | none | permanent; deleted with the output on failure, rewritten on retry |
 | `_claims/` | api | `status` (`running` \| `failed`), `job_name`, `attempts`, `updated_at`, `error` | deleted on success; a `failed` claim stays until the next POST reclaims it |
 | `_reports/` | runner | `status` (`completed` \| `failed`), `claim_generation`, `error` | deleted once handled |
 
-Only `_reports/` triggers the notification (`object_name_prefix` in infrastructure).
+Only `_reports/` triggers the notification (the notification's object prefix filter).
 
 ## Timeouts
 
 | Rule | Values | Set in |
 | --- | --- | --- |
-| runner timeout < claim stale age | 20 min < 25 min | `burn_emulator_runner_timeout` (infra), `dispatch.runStaleAfter` |
-| runner retries = 0 | 0 | `burn_emulator_runner_max_retries` (infra) |
-| report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, `ack_deadline_seconds` (infra) |
-| handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, `burn_emulator_api_timeout` (infra) |
+| runner timeout < claim stale age | 20 min < 25 min | runner job task timeout, `dispatch.runStaleAfter` |
+| runner retries = 0 | 0 | runner job max retries |
+| report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
+| handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
 
 ## Build
 

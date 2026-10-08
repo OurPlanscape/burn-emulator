@@ -9,8 +9,10 @@ import (
 	run "google.golang.org/api/run/v2"
 )
 
-// must match both runner jobs' "inputs" GCS volume mount_path in Terraform.
-const inputsMountPath = "/inputs"
+const (
+	inputsMountPath = "/inputs" // runner's inputs bucket mount
+	modelsMountPath = "/models" // runner's models bucket mount
+)
 
 type runnerClient struct {
 	svc  *run.Service
@@ -31,16 +33,17 @@ func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient,
 
 // passed to the job execution as env overrides
 type inferRequest struct {
-	InputsVersion     string
-	VarLoc            string
-	ModelVersion      string // only sent for DL
-	TreatmentAreaPath string // gs:// geojson next to the output, see treatmentAreaObject
-	IgnitionDensity   *float64
-	Backend           string
-	Hash              string
-	OutputPath        string
-	ReportPath        string // gs:// path of the _reports/ report the runner writes when it finishes
-	ClaimGeneration   int64
+	InputsVersion   string
+	VarLoc          string
+	ModelVersion    string // the bundle; only sent when there is one
+	BundleURI       string // gs:// of that bundle; recorded in the run's meta.geojson
+	OutputMeta      string // JobResult.OutputMeta
+	IgnitionDensity *float64
+	Backend         string
+	Hash            string
+	OutputPath      string // JobResult.OutputPath
+	ReportPath      string // gs:// path of the _reports/ report the runner writes when it finishes
+	ClaimGeneration int64
 }
 
 // starts a runner job execution without waiting; the runner reports via _reports/
@@ -52,7 +55,7 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 	env := []*run.GoogleCloudRunV2EnvVar{
 		{Name: "BURN_EMULATOR_VARLOC", Value: req.VarLoc},
 		{Name: "BURN_EMULATOR_INPUTS_VERSION", Value: req.InputsVersion},
-		{Name: "BURN_EMULATOR_TREATMENT_AREA_PATH", Value: req.TreatmentAreaPath},
+		{Name: "BURN_EMULATOR_OUTPUT_META", Value: req.OutputMeta},
 		{Name: "BURN_EMULATOR_HASH", Value: req.Hash},
 		{Name: "BURN_EMULATOR_BACKEND", Value: req.Backend},
 		{Name: "BURN_EMULATOR_OUTPUT_PATH", Value: req.OutputPath},
@@ -63,8 +66,12 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 		{Name: "BURN_EMULATOR_TOPO_PATH", Value: fmt.Sprintf("%s/%s/topo", inputsMountPath, req.InputsVersion)},
 		{Name: "BURN_EMULATOR_FBFM_MAP_PATH", Value: fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.InputsVersion)},
 	}
-	if req.Backend == BackendDL {
-		env = append(env, &run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_MODEL_VERSION", Value: req.ModelVersion})
+	if req.ModelVersion != "" {
+		env = append(env,
+			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_MODEL_VERSION", Value: req.ModelVersion},
+			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_BUNDLE_URI", Value: req.BundleURI},
+			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_BUNDLE_DIR", Value: fmt.Sprintf("%s/%s/%s", modelsMountPath, req.VarLoc, req.ModelVersion)},
+		)
 	}
 	if req.IgnitionDensity != nil {
 		env = append(env, &run.GoogleCloudRunV2EnvVar{
