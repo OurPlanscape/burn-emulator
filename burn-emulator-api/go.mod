@@ -3,8 +3,8 @@ module burn-emulator-api
 go 1.26.5
 
 require (
-	github.com/golang/geo v0.0.0-20260928092222-7d12f68cfadb
-	github.com/wroge/wgs84 v1.1.7
+	github.com/twpayne/go-geos v0.23.0
+	github.com/twpayne/go-proj/v10 v10.5.0
 	google.golang.org/api v0.170.0
 	modernc.org/sqlite v1.60.1
 )

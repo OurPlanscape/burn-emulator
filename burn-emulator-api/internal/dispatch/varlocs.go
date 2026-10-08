@@ -12,13 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/geo/s2"
-	"github.com/wroge/wgs84"
+	"github.com/twpayne/go-geos"
 	storage "google.golang.org/api/storage/v1"
 	_ "modernc.org/sqlite"
 )
 
-// under <inputs>/<inputs_version>/, EPSG:5070
+// under <inputs>/<inputs_version>/, workingCRS
 const (
 	validVarLocsObject = "varlocs/valid_varlocs.gpkg" // varlocs with a trained model
 	allVarLocsObject   = "varlocs/all_varlocs.gpkg"   // every varloc; untrained ones run PT
@@ -31,16 +30,10 @@ var (
 	ErrOutsideVarLoc        = errors.New("treatment_area does not intersect varloc")
 )
 
-// cells the treatment area is split into to score overlaps
-const overlapCells = 512
-
-// EPSG:5070, NAD83 / Conus Albers
-var conusAlbers = wgs84.NAD83().AlbersEqualAreaConic(-96, 23, 29.5, 45.5, 0, 0)
-
 type varLocShape struct {
-	name    string
-	polygon *s2.Polygon
-	bound   s2.Rect
+	name     string
+	geom     *geos.Geom
+	prepared *geos.PrepGeom
 }
 
 type cachedVarLocShapes struct {
@@ -142,8 +135,8 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading gpkg_geometry_columns: %w", err)
 	}
-	if srsID != 5070 {
-		return nil, fmt.Errorf("layer %s is EPSG:%d, expected EPSG:5070", table, srsID)
+	if srsID != workingSRID {
+		return nil, fmt.Errorf("layer %s is EPSG:%d, expected %s", table, srsID, workingCRS)
 	}
 
 	rows, err := db.Query(fmt.Sprintf(`SELECT varloc, %q FROM %q`, column, table))
@@ -152,7 +145,6 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 	}
 	defer rows.Close()
 
-	toLonLat := wgs84.Transform(conusAlbers, wgs84.LonLat())
 	var shapes []varLocShape
 	for rows.Next() {
 		var name string
@@ -160,24 +152,15 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 		if err := rows.Scan(&name, &blob); err != nil {
 			return nil, err
 		}
-		wkb, err := gpkgWKB(blob)
+		g, err := gpkgGeom(blob)
+		if errors.Is(err, errEmptyGeometry) {
+			slog.Warn("skipping empty varloc geometry", "varloc", name)
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("varloc %s: %w", name, err)
 		}
-		polys, err := parseWKBPolygons(wkb)
-		if err != nil {
-			return nil, fmt.Errorf("varloc %s: %w", name, err)
-		}
-		for _, rings := range polys {
-			for _, ring := range rings {
-				for i, c := range ring {
-					lon, lat, _ := toLonLat(c[0], c[1], 0)
-					ring[i] = [2]float64{lon, lat}
-				}
-			}
-		}
-		p := s2Polygon(polys)
-		shapes = append(shapes, varLocShape{name: name, polygon: p, bound: p.RectBound()})
+		shapes = append(shapes, varLocShape{name: name, geom: g, prepared: g.Prepare()})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -191,11 +174,10 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 // varloc: the requested one if it intersects the area in all_varlocs.gpkg, else the largest
 // overlap there. DL needs the varloc in valid_varlocs.gpkg and a <varloc>/current; otherwise PT.
 func (c *Client) selectVarLoc(ctx context.Context, inputsVersion, geojson, requested, backend string) (varLoc, modelVersion, selected string, err error) {
-	polys, err := treatmentAreaLonLat(geojson)
+	area, err := treatmentArea(geojson)
 	if err != nil {
 		return "", "", "", fmt.Errorf("%w: %v", ErrInvalidTreatmentArea, err)
 	}
-	area := s2Polygon(polys)
 
 	all, err := c.varLocs.shapes(ctx, inputsVersion, allVarLocsObject)
 	if err != nil {
@@ -240,45 +222,29 @@ func (c *Client) selectVarLoc(ctx context.Context, inputsVersion, geojson, reque
 }
 
 // known: name is in shapes; hit: one of its shapes intersects area (area nil: not checked)
-func intersects(shapes []varLocShape, name string, area *s2.Polygon) (known, hit bool) {
+func intersects(shapes []varLocShape, name string, area *geos.Geom) (known, hit bool) {
 	for _, s := range shapes {
 		if s.name != name {
 			continue
 		}
 		known = true
-		if area != nil && s.bound.Intersects(area.RectBound()) && s.polygon.Intersects(area) {
+		if area != nil && s.prepared.Intersects(area) {
 			return true, true
 		}
 	}
 	return known, false
 }
 
-// scores covering cells whose center both contain; ties go to the first name
-func largestOverlap(shapes []varLocShape, area *s2.Polygon) string {
-	bound := area.RectBound()
+// scores intersection area in workingCRS; ties go to the first name
+func largestOverlap(shapes []varLocShape, area *geos.Geom) string {
 	scores := map[string]float64{}
 	for _, s := range shapes {
-		if s.bound.Intersects(bound) && s.polygon.Intersects(area) {
-			scores[s.name] = scores[s.name]
+		if s.prepared.Intersects(area) {
+			scores[s.name] += s.geom.Intersection(area).Area()
 		}
 	}
 	if len(scores) == 0 {
 		return ""
-	}
-	if len(scores) > 1 {
-		coverer := &s2.RegionCoverer{MaxLevel: 30, MaxCells: overlapCells}
-		for _, id := range coverer.Covering(area) {
-			center := id.Point()
-			if !area.ContainsPoint(center) {
-				continue
-			}
-			w := s2.CellFromCellID(id).ApproxArea()
-			for _, s := range shapes {
-				if _, ok := scores[s.name]; ok && s.polygon.ContainsPoint(center) {
-					scores[s.name] += w
-				}
-			}
-		}
 	}
 	names := make([]string, 0, len(scores))
 	for n := range scores {
@@ -292,31 +258,4 @@ func largestOverlap(shapes []varLocShape, area *s2.Polygon) string {
 		}
 	}
 	return best
-}
-
-// loops are normalized; nested rings become holes
-func s2Polygon(polys [][][][2]float64) *s2.Polygon {
-	var loops []*s2.Loop
-	for _, rings := range polys {
-		for _, ring := range rings {
-			pts := make([]s2.Point, 0, len(ring))
-			for _, c := range ring {
-				p := s2.PointFromLatLng(s2.LatLngFromDegrees(c[1], c[0]))
-				if len(pts) > 0 && pts[len(pts)-1] == p {
-					continue
-				}
-				pts = append(pts, p)
-			}
-			if len(pts) > 1 && pts[0] == pts[len(pts)-1] {
-				pts = pts[:len(pts)-1]
-			}
-			if len(pts) < 3 {
-				continue
-			}
-			l := s2.LoopFromPoints(pts)
-			l.Normalize()
-			loops = append(loops, l)
-		}
-	}
-	return s2.PolygonFromLoops(loops)
 }

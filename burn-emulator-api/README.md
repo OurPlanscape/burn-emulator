@@ -28,7 +28,7 @@ All required; the server exits on startup if one is missing.
 
 | field | |
 | --- | --- |
-| `treatment_area` | required; `Polygon` / `MultiPolygon` GeoJSON, bare or in a `Feature` / `FeatureCollection`. CRS from the `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), EPSG:4326 without one |
+| `treatment_area` | required; `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), rejected without one |
 | `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
 | `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
 | `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value (DL) or 20 (PT). Capped at 2**16 ignitions per run, checked by the runner |
@@ -101,7 +101,7 @@ Backend:
 | `DL` | no | - | PT (warning) |
 | `PT` | - | - | PT |
 
-Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite`, unprojected from EPSG:5070 with `wroge/wgs84` and intersected with S2 (`golang/geo`). Overlap is scored on up to 512 S2 cells; ties go to the first varloc name. Accepted `crs`: EPSG:4326 / CRS84, 4269, 5070, or any code in `wgs84.EPSG()`.
+Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite` and parsed with GEOS (`twpayne/go-geos`); the treatment area is reprojected into EPSG:5070 with PROJ (`twpayne/go-proj`). Overlap is the exact intersection area in EPSG:5070; ties go to the first varloc name. Accepted `crs`: CRS84 or any EPSG code known to PROJ. Invalid polygons are repaired with GEOS `MakeValid` (structure method); rings must be closed.
 
 ## Claims
 
@@ -140,6 +140,6 @@ Only `_reports/` triggers the notification (`object_name_prefix` in infrastructu
 ## Build
 
 ```bash
-go build -o burn-emulator-api ./cmd/server   # Go 1.26+
+go build -o burn-emulator-api ./cmd/server   # Go 1.26+, cgo, libgeos-dev + libproj-dev
 docker build -f burn-emulator-api/Dockerfile -t burn-emulator-api .   # from the repo root
 ```
