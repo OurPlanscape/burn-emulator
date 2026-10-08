@@ -26,11 +26,11 @@ var (
 )
 
 type jobRequestBody struct {
-	TreatmentArea   string   `json:"treatment_area"`
-	VarLoc          string   `json:"varloc,omitempty"`
-	JobName         string   `json:"job_name,omitempty"`
-	IgnitionDensity *float64 `json:"ignition_density,omitempty"`
-	Backend         string   `json:"backend,omitempty"`
+	TreatmentArea   json.RawMessage `json:"treatment_area"`
+	VarLoc          string          `json:"varloc,omitempty"`
+	JobName         string          `json:"job_name,omitempty"`
+	IgnitionDensity *float64        `json:"ignition_density,omitempty"`
+	Backend         string          `json:"backend,omitempty"`
 }
 
 type jobResponseBody struct {
@@ -176,7 +176,7 @@ func validate(body jobRequestBody) error {
 	if body.JobName != "" && !validJobName.MatchString(body.JobName) {
 		return errors.New("invalid 'job_name': must be 1-63 lowercase alphanumeric characters or '-', starting/ending with alphanumeric")
 	}
-	if strings.TrimSpace(body.TreatmentArea) == "" {
+	if len(body.TreatmentArea) == 0 || string(body.TreatmentArea) == "null" {
 		return errors.New(
 			"missing 'treatment_area'",
 		)
@@ -191,9 +191,9 @@ func validate(body jobRequestBody) error {
 }
 
 // sorted keys, no whitespace
-func normalizeGeoJSON(s string) (string, error) {
+func normalizeGeoJSON(raw json.RawMessage) (string, error) {
 	var v any
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
+	if err := json.Unmarshal(raw, &v); err != nil {
 		return "", err
 	}
 	if _, ok := v.(map[string]any); !ok {

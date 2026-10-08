@@ -18,7 +18,11 @@ All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup 
 
 ```json
 {
-  "treatment_area": "<geojson>",
+  "treatment_area": {
+    "type": "Polygon",
+    "crs": {"type": "name", "properties": {"name": "EPSG:5070"}},
+    "coordinates": [[[-2100000, 2050000], [-2099000, 2050000], [-2099000, 2051000], [-2100000, 2051000], [-2100000, 2050000]]]
+  },
   "varloc": "WC711",
   "job_name": "my-run-01",
   "ignition_density": 20,
@@ -28,7 +32,7 @@ All required except `BURN_EMULATOR_RUNNER_GPU_JOB`; the server exits on startup 
 
 | field | |
 | --- | --- |
-| `treatment_area` | required; `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), rejected without one |
+| `treatment_area` | required; a GeoJSON object (not a string): `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), rejected without one |
 | `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
 | `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
 | `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value, or `run_smoke.yaml`'s (20) for PT without a bundle. Capped at 2**16 ignitions per run, checked by the runner |
