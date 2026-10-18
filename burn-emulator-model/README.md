@@ -23,7 +23,7 @@ UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync --extra data # + pyretechnics/r
 
 ## CLI
 
-`burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins); CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version`) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<model_name>/`. `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
+`burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins); CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version`) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<VARLOC>/<data_version>_<architecture>/` (`<experiment_dir>` below; same shape as `data/training_data/<varloc>/<data_version>/`). `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
 
 ## Training data
 
@@ -40,7 +40,7 @@ burn_emulator -m train -a <architecture> -vl <varloc> -dv <data_version> \
               -c configs/<architecture>/model.yaml -c configs/<architecture>/train.yaml -c configs/varlocs/templates/train.yaml
 ```
 
-Writes `data/outputs/<model_name>/`: `checkpoints/` (`<model_name>_loss-<loss>_epoch-<NNNN>_step-<NNNNNN>.pt`, epochs from 0), `stats.yaml`, `train_log.csv`. Resumes from the latest checkpoint.
+Writes `<experiment_dir>/`: `checkpoints/` (`<model_name>_loss-<loss>_epoch-<NNNN>_step-<NNNNNN>.pt`, epochs from 0), `stats.yaml`, `train_log.csv`. Resumes from the latest checkpoint.
 
 ## Evaluate
 
@@ -48,7 +48,7 @@ Writes `data/outputs/<model_name>/`: `checkpoints/` (`<model_name>_loss-<loss>_e
 burn_emulator -m evaluate -a <architecture> -vl <varloc> -dv <data_version> -c <model.yaml> -c <eval_data.yaml>
 ```
 
-Writes per-ignition prediction GeoTIFFs and `throughput.csv` to `data/outputs/<model_name>/inference/`; no metrics.
+Writes per-ignition prediction GeoTIFFs and `throughput.csv` to `<experiment_dir>/inference/`; no metrics.
 
 ```bash
 scripts/ignite_inference.sh <varloc> <outputs_root>
@@ -76,7 +76,7 @@ burn_emulator -m run -vl <varloc> \
 7. write a 3-band float32 GeoTIFF (no change | to crown | from crown)
 ```
 
-Writes `-o`, else `data/outputs/<model_name>/<model_name>.tif`. Capped at 2**16 ignitions. `make smoke` runs it on a sample treatment area.
+Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `make smoke` runs it on a sample treatment area.
 
 Env: `RUN_DEVICE` (`cuda` default, `XLA`, `cpu`), `RUN_DTYPE` (default `bfloat16`), `USE_CLOUD_PATHS` (for `gs://` paths), `BURN_EMULATOR_BACKEND` (`DL` default, `PT`). `PT` / `-pt` runs pyretechnics and writes `<VARLOC>_pt_<data_version>.tif`.
 
@@ -111,7 +111,7 @@ burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc> [-cp <check
 scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]                # make model-release(-all)
 ```
 
-`-m bundle` writes `data/bundles/<model_name>/`:
+`-m bundle` writes `data/bundles/<VARLOC>/<data_version>_<architecture>/`:
 
 | file | from |
 | --- | --- |
@@ -125,10 +125,9 @@ scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]      
 ## Publish inputs
 
 ```bash
-scripts/publish_inputs.sh <data_version> <fuels_dir> <topo_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]   # make inputs-release
+scripts/publish_inputs.sh <data_version> <inputs_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]   # make inputs-release
 # <data_version>        fuels date, YYYYMMDD
-# <fuels_dir>           {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif
-# <topo_dir>            topo tifs
+# <inputs_dir>          data/inputs/<data_version>: {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, topo/*.tif
 # <valid_varlocs.gpkg>  data/outputs/valid_varlocs.gpkg (make valid-varlocs)
 # <all_varlocs.gpkg>    data/outputs/all_varlocs.gpkg (make all-varlocs)
 # <fbfm_map>            configs/fbfm_behavior_adjectives.csv

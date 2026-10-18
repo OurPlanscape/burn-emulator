@@ -18,12 +18,11 @@ from rasterio.windows import from_bounds
 from burn_emulator.config import check_data_version, inputs_version, wind_range
 from burn_emulator.constants import (
     INPUT_KEYS,
+    INPUTS_DIR,
     RAW_NO_DATA,
     TARGET_CRS,
-    TOPO_DIR_PREFIX,
     TRAINING_DATA_DIR,
     VARLOCS_GPKG,
-    FUELS_DIR_PREFIX,
 )
 from burn_emulator.pt import CUBE_BANDS, DEFAULT_PT_ADJUSTMENTS, pt_inputs, simulate
 
@@ -228,8 +227,8 @@ def ignite(
 
     data_version = check_data_version(data_version)
     fuels = inputs_version(data_version)
-    fuels_source_dir = TRAINING_DATA_DIR / f"{FUELS_DIR_PREFIX}_{fuels}"
-    topo_source_dir = TRAINING_DATA_DIR / f"{TOPO_DIR_PREFIX}_{fuels}"
+    fuels_source_dir = INPUTS_DIR / fuels
+    topo_source_dir = fuels_source_dir / "topo"
     for src_dir in (fuels_source_dir, topo_source_dir):
         if not src_dir.is_dir():
             raise FileNotFoundError(f"{src_dir} not found for data_version {data_version}")

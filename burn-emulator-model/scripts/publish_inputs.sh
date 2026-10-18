@@ -3,19 +3,18 @@
 set -euo pipefail
 
 data_version_raw="${1:-}"
-fuels_dir="${2:-}"
-topo_dir="${3:-}"
-valid_gpkg="${4:-}"
-all_gpkg="${5:-}"
-fbfm_map="${6:-}"
-inputs_uri="${7:-${BURN_EMULATOR_INPUTS_URI:-}}"
+inputs_dir="${2:-}"
+valid_gpkg="${3:-}"
+all_gpkg="${4:-}"
+fbfm_map="${5:-}"
+inputs_uri="${6:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
-if [[ -z "$data_version_raw" || -z "$fuels_dir" || -z "$topo_dir" || -z "$valid_gpkg" || -z "$all_gpkg" || -z "$fbfm_map" ]]; then
-    echo "usage: $0 <data_version> <fuels_dir> <topo_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]" >&2
+if [[ -z "$data_version_raw" || -z "$inputs_dir" || -z "$valid_gpkg" || -z "$all_gpkg" || -z "$fbfm_map" ]]; then
+    echo "usage: $0 <data_version> <inputs_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]" >&2
     exit 2
 fi
 if [[ -z "$inputs_uri" ]]; then
-    echo "error: pass inputs_uri as arg 7, or set BURN_EMULATOR_INPUTS_URI" >&2
+    echo "error: pass inputs_uri as arg 6, or set BURN_EMULATOR_INPUTS_URI" >&2
     exit 2
 fi
 
@@ -27,14 +26,14 @@ else
     exit 1
 fi
 
-for dir in "$fuels_dir" "$topo_dir"; do
-    if [[ ! -d "$dir" ]]; then
-        echo "error: $dir is not a directory" >&2
+for dir in baseline legalmax topo; do
+    if [[ ! -d "$inputs_dir/$dir" ]]; then
+        echo "error: $inputs_dir/$dir is not a directory" >&2
         exit 1
     fi
 done
-if ! compgen -G "$topo_dir/*.tif" >/dev/null; then
-    echo "error: $topo_dir has no *.tif layers" >&2
+if ! compgen -G "$inputs_dir/topo/*.tif" >/dev/null; then
+    echo "error: $inputs_dir/topo has no *.tif layers" >&2
     exit 1
 fi
 
@@ -52,10 +51,10 @@ if [[ ! -f "$fbfm_map" || "$(basename "$fbfm_map")" != fbfm_behavior_adjectives.
     exit 1
 fi
 
-# fuels_dir/{baseline,legalmax}/<layer>.tif
+# inputs_dir/{baseline,legalmax}/<layer>.tif
 for t in baseline legalmax; do
     for l in cbd cbh cc fbfm th; do
-        [[ -f "$fuels_dir/$t/$l.tif" ]] || { echo "error: $fuels_dir/$t/$l.tif not found" >&2; exit 1; }
+        [[ -f "$inputs_dir/$t/$l.tif" ]] || { echo "error: $inputs_dir/$t/$l.tif not found" >&2; exit 1; }
     done
 done
 
@@ -88,9 +87,9 @@ publish_layer () {
     echo
 }
 
-publish_layer baseline "$fuels_dir"/baseline/*.tif
-publish_layer legalmax "$fuels_dir"/legalmax/*.tif
-publish_layer topo "$topo_dir"/*.tif
+publish_layer baseline "$inputs_dir"/baseline/*.tif
+publish_layer legalmax "$inputs_dir"/legalmax/*.tif
+publish_layer topo "$inputs_dir"/topo/*.tif
 publish_layer varlocs "$valid_gpkg" "$all_gpkg"
 publish_layer fbfm "$fbfm_map"
 

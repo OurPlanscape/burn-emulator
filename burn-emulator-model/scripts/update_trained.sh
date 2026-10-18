@@ -20,10 +20,10 @@ flock "$lock_fd"
 touch "$varlocs_txt"
 
 trained=()
-for dir in data/outputs/*_"${arch}_${dv}"/; do
+for dir in data/outputs/*/"${dv}_${arch}"/; do
     [ -d "$dir" ] || continue
-    model_name=$(basename "$dir")
-    varloc=${model_name%%_*}
+    varloc=$(basename "$(dirname "$dir")")
+    model_name="${varloc}_${arch}_${dv}"
     if compgen -G "${dir}checkpoints/${model_name}_*_epoch-${last}_step-*.pt" >/dev/null; then
         trained+=("${varloc^^}")
     else

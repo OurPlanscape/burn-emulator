@@ -6,7 +6,7 @@ import yaml
 from omegaconf import DictConfig, OmegaConf
 
 from burn_emulator import provenance
-from burn_emulator.config import wind_range
+from burn_emulator.config import model_subdir, wind_range
 from burn_emulator.constants import BUNDLE_DIR, CONFIG_DIR, Path
 from burn_emulator.utils import resolve_model_checkpoint
 
@@ -36,7 +36,7 @@ def bundle(configs: DictConfig, ckpt_path: str | None = None, **kwargs: Any) -> 
     ckpt = resolve_model_checkpoint(experiment_dir, ckpt_path)
     stats = _resolve_stats(config["dataset"], experiment_dir)
 
-    dst = BUNDLE_DIR / model_name
+    dst = BUNDLE_DIR / model_subdir(varloc, architecture, config["data_version"])
     shutil.rmtree(dst, ignore_errors=True)
     dst.mkdir(parents=True)
 

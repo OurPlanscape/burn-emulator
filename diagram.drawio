@@ -235,10 +235,10 @@
         <mxCell id="e27" edge="1" parent="1" source="n9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;dashPattern=8 4 1 4;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="n8r" value="triggered">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="m1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;Training outputs&lt;/b&gt;&lt;br&gt;data/outputs/{varloc}_{arch}_{data_version}/&lt;br&gt;checkpoints/ (top-3 + last) + optim/&lt;br&gt;stats.yaml, train_log.csv" vertex="1">
+        <mxCell id="m1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;Training outputs&lt;/b&gt;&lt;br&gt;data/outputs/{varloc}/{data_version}_{arch}/&lt;br&gt;checkpoints/ (top-3 + last) + optim/&lt;br&gt;stats.yaml, train_log.csv" vertex="1">
           <mxGeometry height="80" width="320" x="-336" y="1444.93" as="geometry" />
         </mxCell>
-        <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;make model-bundle(-all)&lt;/b&gt; [metal]&lt;br&gt;-all: update-mark-trained first&lt;br&gt;(or train.slurm with -p)&lt;br&gt;burn_emulator -m bundle&lt;br&gt;-&amp;gt; data/bundles/{model_name}/&lt;br&gt;model.pt, config, stats, bundle_meta" vertex="1">
+        <mxCell id="m2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#d5e8d4, #003333);strokeColor=#82b366;" value="&lt;b&gt;make model-bundle(-all)&lt;/b&gt; [metal]&lt;br&gt;-all: update-mark-trained first&lt;br&gt;(or train.slurm with -p)&lt;br&gt;burn_emulator -m bundle&lt;br&gt;-&amp;gt; data/bundles/{varloc}/{data_version}_{arch}/&lt;br&gt;model.pt, config, stats, bundle_meta" vertex="1">
           <mxGeometry height="110" width="240" x="-296" y="1549.93" as="geometry" />
         </mxCell>
         <mxCell id="m3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#DAE8FC,#003333);strokeColor=light-dark(#6C8EBF,#446E2C);" value="&lt;b&gt;make model-release(-all)&lt;/b&gt; [metal]&lt;br&gt;publish_model.sh: upload bundles,&lt;br&gt;then repoint {varloc}/current&lt;br&gt;model_version = mtime + git_sha" vertex="1">
@@ -309,7 +309,7 @@
         <mxCell id="2ATwCExI6ut9H0HkGRfX-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=22;fontStyle=1" value="The actual model run" vertex="1">
           <mxGeometry height="110" width="120" x="1550" y="1455" as="geometry" />
         </mxCell>
-        <mxCell id="2ATwCExI6ut9H0HkGRfX-8" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;dashed=1;" target="i1" value="FUELS_DIR / TOPO_DIR">
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-8" edge="1" parent="1" source="2ATwCExI6ut9H0HkGRfX-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;dashed=1;" target="i1" value="INPUTS_DIR">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="-1836" y="1249.93" />
@@ -318,7 +318,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;align=center;" value="&lt;b&gt;Raw inputs from DS on Dragon Cluster&lt;/b&gt;&lt;br&gt;data/training_data/&lt;br&gt;fuels_{inputs_version}/{baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif&lt;br&gt;topo_{inputs_version}/{aspect, slope_degrees}.tif&lt;br&gt;varlocs.gpkg (every varloc, source)" vertex="1">
+        <mxCell id="2ATwCExI6ut9H0HkGRfX-5" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;align=center;" value="&lt;b&gt;Raw inputs from DS on Dragon Cluster&lt;/b&gt;&lt;br&gt;data/inputs/{inputs_version}/&lt;br&gt;{baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif&lt;br&gt;topo/{aspect, slope_degrees}.tif&lt;br&gt;data/training_data/varlocs.gpkg (every varloc, source)" vertex="1">
           <mxGeometry height="170" width="370" x="-1810" y="1164.93" as="geometry" />
         </mxCell>
         <mxCell id="DRsQ0ycy17QCxkV9Jszo-2" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontSize=22;fontStyle=1" value="Offline training and publishing model.&lt;br&gt;&lt;br&gt;Left to right: Pyretechnics training data, PyTorch training, bundle + publish." vertex="1">

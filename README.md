@@ -41,11 +41,11 @@ Releases (need `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI`):
 | target | what it does |
 | --- | --- |
 | `valid-varlocs` | filters `data/outputs/all_varlocs.gpkg` to `data/outputs/varlocs.txt` -> `data/outputs/valid_varlocs.gpkg` |
-| `model-bundle VARLOC=` | `burn_emulator -m bundle` -> `data/bundles/<model_name>/` |
+| `model-bundle VARLOC=` | `burn_emulator -m bundle` -> `data/bundles/<VARLOC>/<data_version>_<architecture>/` |
 | `model-bundle-all` | `update-mark-trained`, `valid-varlocs`, then `model-bundle` for every varloc in `varlocs.txt` |
 | `model-release VARLOC= [BUNDLE_DIR=] [FORCE=1]` | `scripts/publish_model.sh`: uploads the bundle, repoints `<varloc>/current` |
 | `model-release-all` | uploads every bundle in `varlocs.txt`, then repoints each `current` |
-| `inputs-release [DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [FBFM_MAP=]` | `scripts/publish_inputs.sh`: fuels, topo, both varlocs gpkgs and the fbfm map under one `inputs_version`, then repoints `current`. Defaults follow `inputs_version` in `configs/varlocs/current.yaml` |
+| `inputs-release [DATA_VERSION=] [INPUTS_DIR=] [FBFM_MAP=]` | `scripts/publish_inputs.sh`: `data/inputs/<inputs_version>/{baseline,legalmax,topo}`, both varlocs gpkgs and the fbfm map under one `inputs_version`, then repoints `current`. Defaults follow `inputs_version` in `configs/varlocs/current.yaml` |
 | `varlocs-release [DATA_VERSION=]` | `valid-varlocs`, then `scripts/publish_varlocs.sh` replaces both gpkgs under a published `inputs_version` (default `current`) |
 
 Local runs:

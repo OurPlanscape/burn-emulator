@@ -80,7 +80,7 @@ model-release: ## [metal] publish one model bundle and repoint its <varloc>/curr
 	    arch=$$(grep -oP '^architecture:[[:space:]]*\K\S+' "$(MODEL_DIR)/configs/varlocs/current.yaml")
 	    dv=$$($(MODEL_DIR)/scripts/data_version.sh)
 	    varloc="$(VARLOC)"
-	    bundle_dir="$(MODEL_DIR)/data/bundles/$${varloc^^}_$${arch}_$${dv}"
+	    bundle_dir="$(MODEL_DIR)/data/bundles/$${varloc^^}/$${dv}_$${arch}"
 	fi
 	BURN_EMULATOR_MODELS_URI="$(BURN_EMULATOR_MODELS_URI)" $(MODEL_DIR)/scripts/publish_model.sh "$(VARLOC)=$$bundle_dir"
 
@@ -93,21 +93,20 @@ model-release-all: ## [metal] publish every trained varloc (VARLOCS_TXT), then r
 	dv=$$($(MODEL_DIR)/scripts/data_version.sh)
 	pairs=()
 	for varloc in "$${varlocs[@]}"; do
-	    pairs+=("$${varloc^^}=$(MODEL_DIR)/data/bundles/$${varloc^^}_$${arch}_$${dv}")
+	    pairs+=("$${varloc^^}=$(MODEL_DIR)/data/bundles/$${varloc^^}/$${dv}_$${arch}")
 	done
 	BURN_EMULATOR_MODELS_URI="$(BURN_EMULATOR_MODELS_URI)" $(MODEL_DIR)/scripts/publish_model.sh "$${pairs[@]}"
 
 # defaults follow current.yaml's inputs_version
 FBFM_MAP     ?= $(MODEL_DIR)/configs/fbfm_behavior_adjectives.csv
 
-inputs-release: ## [metal] publish input rasters + varlocs gpkgs ([DATA_VERSION=] [FUELS_DIR=] [TOPO_DIR=] [VALID_VARLOCS_GPKG= ALL_VARLOCS_GPKG=] [FBFM_MAP=], default: current.yaml inputs_version)
+inputs-release: ## [metal] publish input rasters + varlocs gpkgs ([DATA_VERSION=] [INPUTS_DIR=] [VALID_VARLOCS_GPKG= ALL_VARLOCS_GPKG=] [FBFM_MAP=], default: current.yaml inputs_version)
 	set -e
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi
 	data_version="$(DATA_VERSION)"
 	[ -n "$$data_version" ] || data_version=$$($(MODEL_DIR)/scripts/data_version.sh inputs_version)
-	fuels_dir="$(or $(FUELS_DIR),$(MODEL_DIR)/data/training_data/fuels_$$data_version)"
-	topo_dir="$(or $(TOPO_DIR),$(MODEL_DIR)/data/training_data/topo_$$data_version)"
-	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$fuels_dir" "$$topo_dir" $(VALID_VARLOCS_GPKG) $(ALL_VARLOCS_GPKG) $(FBFM_MAP) $(BURN_EMULATOR_INPUTS_URI)
+	inputs_dir="$(or $(INPUTS_DIR),$(MODEL_DIR)/data/inputs/$$data_version)"
+	$(MODEL_DIR)/scripts/publish_inputs.sh "$$data_version" "$$inputs_dir" $(VALID_VARLOCS_GPKG) $(ALL_VARLOCS_GPKG) $(FBFM_MAP) $(BURN_EMULATOR_INPUTS_URI)
 
 varlocs-release: valid-varlocs ## [metal] rebuild the valid-varlocs gpkg, then replace only the varlocs gpkgs of a published data_version ([VARLOCS_TXT=] [VALID_VARLOCS_GPKG=] [ALL_VARLOCS_GPKG=] [DATA_VERSION=], default: current)
 	if [ -z "$(BURN_EMULATOR_INPUTS_URI)" ]; then echo "error: BURN_EMULATOR_INPUTS_URI is not set - export it (see README.md)" >&2; exit 2; fi

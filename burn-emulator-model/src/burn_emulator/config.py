@@ -96,9 +96,15 @@ def resolve_model_name(
     parts["varloc"] = str(parts["varloc"]).upper()
     OmegaConf.update(configs, "varloc", parts["varloc"], merge=True)
     parts["data_version"] = check_data_version(parts["data_version"])
+    OmegaConf.update(configs, "data_version", parts["data_version"], merge=True)
     model_name = "{varloc}_{architecture}_{data_version}".format(**parts)
     OmegaConf.update(configs, "model_name", model_name, merge=True)
-    OmegaConf.update(configs, "experiment_dir", str(OUTDIR / model_name), merge=True)
+    OmegaConf.update(configs, "experiment_dir", str(OUTDIR / model_subdir(**parts)), merge=True)
+
+
+# <VARLOC>/<data_version>_<architecture>, like data/training_data/<varloc>/<data_version>
+def model_subdir(varloc: str, architecture: str, data_version: str) -> str:
+    return f"{varloc}/{data_version}_{architecture}"
 
 
 def apply_overrides(configs: DictConfig, args: argparse.Namespace) -> dict:
