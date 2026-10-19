@@ -9,7 +9,7 @@ A deep-learning emulator of a burn spread model that generates thousands of burn
 | Directory | What it is |
 | --- | --- |
 | [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: training data, train, evaluate, bundle and `run()` inference. |
-| [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service, no GPU: validates or picks the varloc, picks the backend, serves the GCS cache, triggers a runner job on a miss. |
+| [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service, CPU-only: validates or picks the varloc, picks the backend, serves the GCS cache, triggers a runner job on a miss (or, in slurm mode, queues a claim for the cluster dispatcher in `burn-emulator-api/scripts`). |
 | [`burn-emulator-runner/`](burn-emulator-runner/README.md) | Cloud Run Job (GPU for `DL`, CPU for `PT`): runs `burn_emulator.run.run()` once per execution. |
 
 ## Makefile targets
@@ -57,6 +57,13 @@ Local runs:
 | `inference-all OUTPUTS_ROOT=` | `inference` for every varloc in `varlocs.txt`, root `OUTPUTS_ROOT/<varloc>` |
 | `shell` | syncs `burn-emulator-model/.venv-<arch>` (with the `data` extra) and opens a shell in it |
 
+Slurm dispatch (deploy checkout; see [burn-emulator-api](burn-emulator-api/README.md#slurm-dispatch)):
+
+| target | what it does |
+| --- | --- |
+| `runner-venv` | syncs `burn-emulator-runner/.venv-<arch>` from its lockfile; the venv `slurm/infer.slurm` execs |
+| `dispatch-once` | one `burn-emulator-api/scripts/dispatch.sh` pass in the foreground |
+
 ## Varloc files
 
 Under `burn-emulator-model/`:
@@ -87,13 +94,15 @@ caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, ba
                       <inputs_version>/varlocs/all_varlocs.gpkg (else 400),
                       or the largest overlap there (none -> 400)
      bundle         = gs://<models>/<varloc>/current if varloc is in valid_varlocs.gpkg (60s cache)
-     DL if requested, there is a bundle and a GPU job is set, else PT; PT also uses the bundle when there is one
+     DL if requested, there is a bundle and a GPU job is set (or slurm mode), else PT; PT also uses the bundle when there is one
      hash           = sha256(treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
      output_dir     = gs://<out>/<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>
   3. output exists?                                                      -> 200 cached
      claim running?                                                      -> 202 pending + Location
      else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
                                                                          -> 202 pending + Location
+     slurm mode: the claim is written queued with the runner env as its body;
+     the cluster dispatcher (scrontab, every minute) sbatches it and the job runs the same runner
   4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
      run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,
      write gs://<out>/_reports/... {status, claim_generation, error}

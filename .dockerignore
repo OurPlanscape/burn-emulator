@@ -15,6 +15,10 @@ wheels/
 burn-emulator-model/data/
 burn-emulator-model/logs/
 burn-emulator-model/slurm/
+burn-emulator-model/scripts/
+burn-emulator-api/data/
+burn-emulator-api/scripts/
+burn-emulator-api/slurm/
 
 **/README.md
 Makefile

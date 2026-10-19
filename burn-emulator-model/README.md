@@ -122,6 +122,8 @@ scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]      
 
 `publish_model.sh` (needs `BURN_EMULATOR_MODELS_URI`) checks every bundle (four files, `model_name` matches `<varloc>`), uploads each to `<models_uri>/<varloc>/<model_version>/`, then repoints each `<varloc>/current`. `<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, both from the bundle (the mtime is the checkpoint's, kept by `-m bundle`), so it changes only with a new checkpoint or commit. An already published version with a matching bundle is not re-uploaded; a different bundle is refused unless `FORCE=1`, which keeps DL and PT outputs cached under that version (`<model_version>` / `pt-<model_version>` job ids) even if its dataset config changed.
 
+Each published bundle also gets a local release copy at `<BUNDLES_ROOT>/<varloc>/<model_version>/` (default `data/bundles/`; hard links when on the same filesystem, kept once written; `FORCE=1` replaces it). The slurm dispatcher (`burn-emulator-api/scripts`) runs bundles from there, so publish from the cluster checkout whose `data/bundles` is the shared bundles dir.
+
 ## Publish inputs
 
 ```bash
@@ -134,6 +136,8 @@ scripts/publish_inputs.sh <data_version> <inputs_dir> <valid_varlocs.gpkg> <all_
 ```
 
 Uploads `baseline/`, `legalmax/`, `topo/`, `varlocs/` (both gpkgs; the api reads them by name) and `fbfm/` to `<inputs_uri>/<data_version>/`, then repoints `<inputs_uri>/current`. A failed upload leaves `current` unchanged. Published layers are skipped unless `FORCE=1`, which keeps cached outputs; changed inputs go under a new `data_version`. `inputs_uri` defaults to `BURN_EMULATOR_INPUTS_URI`.
+
+The fbfm map is first copied to `<inputs_dir>/fbfm/fbfm_behavior_adjectives.csv` and published from there, so the local inputs dir matches the published `<data_version>/` layout the slurm runner reads. A differing existing copy stops the publish with an error; `FORCE=1` replaces it.
 
 ```bash
 scripts/publish_varlocs.sh <valid_varlocs.gpkg> <all_varlocs.gpkg> [data_version] [inputs_uri]   # make varlocs-release

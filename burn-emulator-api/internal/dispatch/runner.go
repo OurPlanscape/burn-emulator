@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strconv"
 
 	run "google.golang.org/api/run/v2"
@@ -31,7 +33,7 @@ func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient,
 	return &runnerClient{svc: svc, jobs: jobs}, nil
 }
 
-// passed to the job execution as env overrides
+// passed to the job execution as env overrides, or stored as the claim body in slurm mode
 type inferRequest struct {
 	InputsVersion   string
 	VarLoc          string
@@ -46,38 +48,46 @@ type inferRequest struct {
 	ClaimGeneration int64
 }
 
+// the runner's env; BURN_EMULATOR_CLAIM_GENERATION only when set (slurm/infer.slurm adds it)
+func runnerEnv(req inferRequest) map[string]string {
+	env := map[string]string{
+		"BURN_EMULATOR_VARLOC":         req.VarLoc,
+		"BURN_EMULATOR_INPUTS_VERSION": req.InputsVersion,
+		"BURN_EMULATOR_OUTPUT_META":    req.OutputMeta,
+		"BURN_EMULATOR_HASH":           req.Hash,
+		"BURN_EMULATOR_BACKEND":        req.Backend,
+		"BURN_EMULATOR_OUTPUT_PATH":    req.OutputPath,
+		"BURN_EMULATOR_REPORT_PATH":    req.ReportPath,
+		"BURN_EMULATOR_BASELINE_FUELS": fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.InputsVersion),
+		"BURN_EMULATOR_LEGALMAX_FUELS": fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.InputsVersion),
+		"BURN_EMULATOR_TOPO_PATH":      fmt.Sprintf("%s/%s/topo", inputsMountPath, req.InputsVersion),
+		"BURN_EMULATOR_FBFM_MAP_PATH":  fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.InputsVersion),
+	}
+	if req.ClaimGeneration != 0 {
+		env["BURN_EMULATOR_CLAIM_GENERATION"] = strconv.FormatInt(req.ClaimGeneration, 10)
+	}
+	if req.ModelVersion != "" {
+		env["BURN_EMULATOR_MODEL_VERSION"] = req.ModelVersion
+		env["BURN_EMULATOR_BUNDLE_URI"] = req.BundleURI
+		env["BURN_EMULATOR_BUNDLE_DIR"] = fmt.Sprintf("%s/%s/%s", modelsMountPath, req.VarLoc, req.ModelVersion)
+	}
+	if req.IgnitionDensity != nil {
+		env["BURN_EMULATOR_IGNITION_DENSITY"] = strconv.FormatFloat(*req.IgnitionDensity, 'g', -1, 64)
+	}
+	return env
+}
+
 // starts a runner job execution without waiting; the runner reports via _reports/
 func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 	job, ok := r.jobs[req.Backend]
 	if !ok {
 		return fmt.Errorf("no runner job for backend %q", req.Backend)
 	}
-	env := []*run.GoogleCloudRunV2EnvVar{
-		{Name: "BURN_EMULATOR_VARLOC", Value: req.VarLoc},
-		{Name: "BURN_EMULATOR_INPUTS_VERSION", Value: req.InputsVersion},
-		{Name: "BURN_EMULATOR_OUTPUT_META", Value: req.OutputMeta},
-		{Name: "BURN_EMULATOR_HASH", Value: req.Hash},
-		{Name: "BURN_EMULATOR_BACKEND", Value: req.Backend},
-		{Name: "BURN_EMULATOR_OUTPUT_PATH", Value: req.OutputPath},
-		{Name: "BURN_EMULATOR_REPORT_PATH", Value: req.ReportPath},
-		{Name: "BURN_EMULATOR_CLAIM_GENERATION", Value: strconv.FormatInt(req.ClaimGeneration, 10)},
-		{Name: "BURN_EMULATOR_BASELINE_FUELS", Value: fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.InputsVersion)},
-		{Name: "BURN_EMULATOR_LEGALMAX_FUELS", Value: fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.InputsVersion)},
-		{Name: "BURN_EMULATOR_TOPO_PATH", Value: fmt.Sprintf("%s/%s/topo", inputsMountPath, req.InputsVersion)},
-		{Name: "BURN_EMULATOR_FBFM_MAP_PATH", Value: fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.InputsVersion)},
-	}
-	if req.ModelVersion != "" {
-		env = append(env,
-			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_MODEL_VERSION", Value: req.ModelVersion},
-			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_BUNDLE_URI", Value: req.BundleURI},
-			&run.GoogleCloudRunV2EnvVar{Name: "BURN_EMULATOR_BUNDLE_DIR", Value: fmt.Sprintf("%s/%s/%s", modelsMountPath, req.VarLoc, req.ModelVersion)},
-		)
-	}
-	if req.IgnitionDensity != nil {
-		env = append(env, &run.GoogleCloudRunV2EnvVar{
-			Name:  "BURN_EMULATOR_IGNITION_DENSITY",
-			Value: strconv.FormatFloat(*req.IgnitionDensity, 'g', -1, 64),
-		})
+	vars := runnerEnv(req)
+	names := slices.Sorted(maps.Keys(vars))
+	env := make([]*run.GoogleCloudRunV2EnvVar, 0, len(names))
+	for _, name := range names {
+		env = append(env, &run.GoogleCloudRunV2EnvVar{Name: name, Value: vars[name]})
 	}
 
 	body := &run.GoogleCloudRunV2RunJobRequest{

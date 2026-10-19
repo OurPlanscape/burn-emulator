@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"burn-emulator-api/internal/dispatch"
@@ -25,13 +26,26 @@ func main() {
 
 	ctx := context.Background()
 
+	slurm := false
+	if v := os.Getenv("BURN_EMULATOR_SLURM"); v != "" {
+		var err error
+		if slurm, err = strconv.ParseBool(v); err != nil {
+			slog.Error("invalid env var", "key", "BURN_EMULATOR_SLURM", "value", v)
+			os.Exit(1)
+		}
+	}
+
 	cfg := dispatch.Config{
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
 		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
 		OutputBucket: env("BURN_EMULATOR_OUTPUT_URI"),
-		RunnerGPUJob: os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB"), // optional; unset runs DL requests on PT
-		RunnerCPUJob: env("BURN_EMULATOR_RUNNER_CPU_JOB"),
+		Slurm:        slurm,
 	}
+	if !slurm {
+		cfg.RunnerGPUJob = os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB") // optional; unset runs DL requests on PT
+		cfg.RunnerCPUJob = env("BURN_EMULATOR_RUNNER_CPU_JOB")
+	}
+	slog.Info("dispatch mode", "slurm", slurm)
 
 	client, err := dispatch.NewClient(ctx, cfg)
 	if err != nil {

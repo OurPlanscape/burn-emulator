@@ -14,6 +14,7 @@ type Config struct {
 	OutputBucket string // gs://<bucket> for outputs + the claim
 	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*; empty: DL falls back to PT
 	RunnerCPUJob string // fully-qualified CPU-only burn-emulator-runner job name (PT)
+	Slurm        bool   // claims are queued for the slurm dispatcher (burn-emulator-api/scripts), which runs them
 }
 
 type Client struct {
@@ -42,9 +43,12 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	runner, err := newRunnerClient(ctx, cfg.RunnerGPUJob, cfg.RunnerCPUJob)
-	if err != nil {
-		return nil, err
+	var runner *runnerClient
+	if !cfg.Slurm {
+		runner, err = newRunnerClient(ctx, cfg.RunnerGPUJob, cfg.RunnerCPUJob)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Client{storage: storageSvc, inputsVersions: inputsVersions, modelVersions: modelVersions, varLocs: varLocs, runner: runner, cfg: cfg}, nil
 }

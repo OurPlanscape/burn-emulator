@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -139,10 +140,36 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return result, nil
 	}
 
+	var bundleURI string
+	if modelVersion != "" {
+		bundleURI = strings.TrimSuffix(c.cfg.ModelsURI, "/") + "/" + varLoc + "/" + modelVersion
+	}
+	infer := inferRequest{
+		InputsVersion:   inputsVersion,
+		VarLoc:          varLoc,
+		ModelVersion:    modelVersion,
+		BundleURI:       bundleURI,
+		OutputMeta:      result.OutputMeta,
+		IgnitionDensity: req.IgnitionDensity,
+		Backend:         req.Backend,
+		Hash:            id.Hash,
+		OutputPath:      result.OutputPath,
+		ReportPath:      reportPath,
+	}
+
+	claimStatus, claimBody := statusRunning, ""
+	if c.cfg.Slurm {
+		env, err := json.Marshal(runnerEnv(infer))
+		if err != nil {
+			return JobResult{}, fmt.Errorf("encoding runner env: %w", err)
+		}
+		claimStatus, claimBody = statusQueued, string(env)
+	}
+
 	detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimTriggerTimeout)
 	defer cancel()
 
-	claimed, rec, err := c.claimRun(detachedCtx, runObject, req.JobName)
+	claimed, rec, err := c.claimRun(detachedCtx, runObject, req.JobName, claimStatus, claimBody)
 	if err != nil {
 		return JobResult{}, fmt.Errorf("claiming run: %w", err)
 	}
@@ -158,23 +185,15 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return JobResult{}, err
 	}
 
-	var bundleURI string
-	if modelVersion != "" {
-		bundleURI = strings.TrimSuffix(c.cfg.ModelsURI, "/") + "/" + varLoc + "/" + modelVersion
+	if c.cfg.Slurm {
+		result.JobName = req.JobName
+		result.Attempts = rec.Attempts
+		result.Status = "pending"
+		return result, nil
 	}
-	err = c.runner.Trigger(detachedCtx, inferRequest{
-		InputsVersion:   inputsVersion,
-		VarLoc:          varLoc,
-		ModelVersion:    modelVersion,
-		BundleURI:       bundleURI,
-		OutputMeta:      result.OutputMeta,
-		IgnitionDensity: req.IgnitionDensity,
-		Backend:         req.Backend,
-		Hash:            id.Hash,
-		OutputPath:      result.OutputPath,
-		ReportPath:      reportPath,
-		ClaimGeneration: rec.Generation,
-	})
+
+	infer.ClaimGeneration = rec.Generation
+	err = c.runner.Trigger(detachedCtx, infer)
 	if err != nil {
 		if isRejected(err) {
 			c.releaseRun(ctx, runObject, rec.Generation)
@@ -213,13 +232,19 @@ func (c *Client) GetJob(ctx context.Context, id JobID) (JobResult, error) {
 		return JobResult{}, err
 	}
 	if !found {
-		return JobResult{}, ErrJobNotFound
+		rec, found, err = c.readArchivedClaim(ctx, id.Path())
+		if err != nil {
+			return JobResult{}, err
+		}
+		if !found {
+			return JobResult{}, ErrJobNotFound
+		}
 	}
 	result.JobName = rec.JobName
 	result.Attempts = rec.Attempts
 
 	switch {
-	case rec.Status == "failed":
+	case rec.Status == statusFailed:
 		result.Status = "failed"
 		result.Error = rec.Error
 	case time.Since(rec.UpdatedAt) >= runStaleAfter:

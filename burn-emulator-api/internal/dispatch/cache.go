@@ -29,9 +29,21 @@ const (
 	metaObject   = "meta.geojson"
 )
 
-// stored as claim object metadata
+const (
+	statusQueued    = "queued"    // slurm mode: waiting for the dispatcher
+	statusSubmitted = "submitted" // slurm mode: sbatch'd by the dispatcher
+	statusRunning   = "running"
+	statusFailed    = "failed"
+)
+
+// a claim in one of these goes stale after runStaleAfter without a report
+func isActive(status string) bool {
+	return status == statusQueued || status == statusSubmitted || status == statusRunning
+}
+
+// stored as claim object metadata; the slurm dispatcher adds submit_id, submitted_at and slurm_job, dropped on the next API write
 type claimRecord struct {
-	Status     string // "running" | "failed"
+	Status     string // statusQueued | statusSubmitted | statusRunning | statusFailed
 	JobName    string
 	Attempts   int
 	UpdatedAt  time.Time
@@ -52,8 +64,8 @@ func CacheKey(req JobRequest) string {
 	return key + "0"
 }
 
-// claims a run with a generation precondition on the claim object
-func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, claimRecord, error) {
+// claims a run with a generation precondition on the claim object; status is statusRunning, or statusQueued with the runner env as body
+func (c *Client) claimRun(ctx context.Context, key, jobName, status, body string) (bool, claimRecord, error) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
 		return false, claimRecord{}, err
@@ -66,8 +78,8 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, claim
 			if !isStatusCode(getErr, 404) {
 				return false, claimRecord{}, fmt.Errorf("reading run claim %s: %w", key, getErr)
 			}
-			rec := claimRecord{Status: "running", JobName: jobName, Attempts: 1, UpdatedAt: time.Now()}
-			gen, putErr := c.putClaim(ctx, bucket, name, rec, 0)
+			rec := claimRecord{Status: status, JobName: jobName, Attempts: 1, UpdatedAt: time.Now()}
+			gen, putErr := c.putClaim(ctx, bucket, name, rec, body, 0)
 			if putErr != nil {
 				if isStatusCode(putErr, 412) {
 					continue // lost the race; retry
@@ -79,12 +91,12 @@ func (c *Client) claimRun(ctx context.Context, key, jobName string) (bool, claim
 		}
 
 		rec := parseClaim(obj)
-		if rec.Status == "running" && time.Since(rec.UpdatedAt) < runStaleAfter {
+		if isActive(rec.Status) && time.Since(rec.UpdatedAt) < runStaleAfter {
 			return false, rec, nil
 		}
 
-		next := claimRecord{Status: "running", JobName: jobName, Attempts: rec.Attempts + 1, UpdatedAt: time.Now()}
-		gen, putErr := c.putClaim(ctx, bucket, name, next, obj.Generation)
+		next := claimRecord{Status: status, JobName: jobName, Attempts: rec.Attempts + 1, UpdatedAt: time.Now()}
+		gen, putErr := c.putClaim(ctx, bucket, name, next, body, obj.Generation)
 		if putErr != nil {
 			if isStatusCode(putErr, 412) {
 				continue // someone else reclaimed it; retry
@@ -149,10 +161,10 @@ func (c *Client) releaseRun(ctx context.Context, key string, gen int64) {
 	}
 }
 
-// releases a running claim whose output exists
+// releases an active claim whose output exists
 func (c *Client) clearFinishedClaim(ctx context.Context, key string) {
 	rec, found, err := c.readClaim(ctx, key)
-	if err != nil || !found || rec.Status != "running" {
+	if err != nil || !found || !isActive(rec.Status) {
 		return
 	}
 	c.releaseRun(ctx, key, rec.Generation)
@@ -173,10 +185,10 @@ func (c *Client) failRun(ctx context.Context, key string, gen int64, reason stri
 		return fmt.Errorf("reading run claim %s: %w", key, err)
 	}
 	rec := parseClaim(obj)
-	rec.Status = "failed"
+	rec.Status = statusFailed
 	rec.Error = reason
 	rec.UpdatedAt = time.Now()
-	if _, err := c.putClaim(ctx, bucket, name, rec, gen); err != nil && !isStatusCode(err, 412) {
+	if _, err := c.putClaim(ctx, bucket, name, rec, "", gen); err != nil && !isStatusCode(err, 412) {
 		return fmt.Errorf("marking run %s failed: %w", key, err)
 	}
 	return nil
@@ -187,7 +199,7 @@ func claimObjectName(key string) string {
 }
 
 // ifGenerationMatch 0: the object must not exist. Returns the new generation; 412 on a failed precondition.
-func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRecord, ifGenerationMatch int64) (int64, error) {
+func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRecord, body string, ifGenerationMatch int64) (int64, error) {
 	obj := &storage.Object{
 		Name: name,
 		Metadata: map[string]string{
@@ -200,8 +212,11 @@ func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRec
 	if rec.Error != "" {
 		obj.Metadata["error"] = rec.Error
 	}
+	if body != "" {
+		obj.ContentType = "application/json"
+	}
 	written, err := c.storage.Objects.Insert(bucket, obj).
-		Media(strings.NewReader("")).
+		Media(strings.NewReader(body)).
 		IfGenerationMatch(ifGenerationMatch).
 		Context(ctx).
 		Do()

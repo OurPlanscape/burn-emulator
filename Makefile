@@ -24,7 +24,7 @@ VALID_VARLOCS_GPKG ?= $(MODEL_DIR)/data/outputs/valid_varlocs.gpkg
 
 .DEFAULT_GOAL := help
 
-.PHONY: help api-image api-release runner-image runner-release images-release valid-varlocs model-bundle model-bundle-all model-release model-release-all inputs-release varlocs-release train-all train-release train-release-all update-mark-trained inference inference-all smoke training-data training-data-all all-varlocs shell
+.PHONY: help api-image api-release runner-image runner-release images-release valid-varlocs model-bundle model-bundle-all model-release model-release-all inputs-release varlocs-release train-all train-release train-release-all update-mark-trained inference inference-all smoke training-data training-data-all all-varlocs shell runner-venv dispatch-once
 
 help: ## show this help; [metal] runs here, [slurm] submits to the cluster, [metal|slurm] picks via SLURM=1
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -44,6 +44,14 @@ runner-image: ## [metal] build the runner image
 
 runner-release: runner-image ## [metal] build and push the runner image
 	docker push $(RUNNER_IMAGE)
+
+runner-venv: ## [metal] sync the runner venv slurm/infer.slurm execs (burn-emulator-runner/.venv-<arch>; needs burn-emulator-api/data/.env)
+	set -e
+	. $(API_DIR)/scripts/env.sh
+	UV_PROJECT_ENVIRONMENT="$(CURDIR)/$(RUNNER_DIR)/.venv-$$(uname -m)" uv sync --project $(RUNNER_DIR) --locked --no-dev
+
+dispatch-once: ## [slurm] run one dispatcher pass in the foreground (burn-emulator-api/scripts/dispatch.sh)
+	$(API_DIR)/scripts/dispatch.sh
 
 images-release: api-release runner-release ## [metal] build and push the API and runner images under one VERSION
 	echo "pushed $(API_IMAGE)"

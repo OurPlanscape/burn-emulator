@@ -58,6 +58,21 @@ for t in baseline legalmax; do
     done
 done
 
+# local copy under the inputs version, published from there; the slurm runner reads it as <inputs>/<data_version>/fbfm/
+fbfm_copy="$inputs_dir/fbfm/fbfm_behavior_adjectives.csv"
+if [[ ! -f "$fbfm_copy" ]]; then
+    mkdir -p "$inputs_dir/fbfm"
+    cp -p "$fbfm_map" "$fbfm_copy"
+    echo "local fbfm copy: $fbfm_copy"
+elif ! cmp -s "$fbfm_map" "$fbfm_copy"; then
+    if [[ "${FORCE:-0}" != "1" ]]; then
+        echo "error: $fbfm_copy differs from $fbfm_map; FORCE=1 to replace it (and the published fbfm layer)" >&2
+        exit 1
+    fi
+    cp -p "$fbfm_map" "$fbfm_copy"
+    echo "local fbfm copy replaced: $fbfm_copy"
+fi
+
 base="${inputs_uri%/}/${data_version}"
 
 # skips a published layer unless FORCE=1
@@ -91,7 +106,7 @@ publish_layer baseline "$inputs_dir"/baseline/*.tif
 publish_layer legalmax "$inputs_dir"/legalmax/*.tif
 publish_layer topo "$inputs_dir"/topo/*.tif
 publish_layer varlocs "$valid_gpkg" "$all_gpkg"
-publish_layer fbfm "$fbfm_map"
+publish_layer fbfm "$fbfm_copy"
 
 # repoints current after every layer is up
 printf '%s' "$data_version" | gcloud storage cp - "${inputs_uri%/}/current"

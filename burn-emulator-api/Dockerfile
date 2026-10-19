@@ -18,6 +18,9 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=builder /out/burn-emulator-api /app/burn-emulator-api
 
+# claims are queued for the slurm dispatcher (scripts/dispatch.sh) instead of triggering runner jobs
+ENV BURN_EMULATOR_SLURM=1
+
 USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/app/burn-emulator-api"]

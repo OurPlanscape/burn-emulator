@@ -3,6 +3,8 @@
 set -euo pipefail
 
 models_uri="${BURN_EMULATOR_MODELS_URI:-}"
+# <bundles_root>/<varloc>/<model_version>: local release copies (default: this checkout's data/bundles)
+bundles_root="${BUNDLES_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/bundles}"
 
 if [[ $# -eq 0 ]]; then
     echo "usage: BURN_EMULATOR_MODELS_URI=<gs://...> $0 <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]" >&2
@@ -90,6 +92,20 @@ for i in "${!varlocs[@]}"; do
     else
         gcloud storage cp --recursive "${bundle_dir%/}/"* "${dest}/"
     fi
+
+    # local release copy the slurm dispatcher reads as <bundles>/<varloc>/<model_version>; hard links when possible
+    release_dir="${bundles_root%/}/${varloc}/${model_version}"
+    if [[ -e "$release_dir" && "${FORCE:-0}" != "1" ]]; then
+        echo "local release exists: ${release_dir}"
+    else
+        mkdir -p "$(dirname "$release_dir")"
+        rm -rf "${release_dir}.tmp.$$"
+        cp -al "${bundle_dir%/}" "${release_dir}.tmp.$$" 2>/dev/null || cp -a "${bundle_dir%/}" "${release_dir}.tmp.$$"
+        rm -rf "$release_dir"
+        mv "${release_dir}.tmp.$$" "$release_dir"
+        echo "local release: ${release_dir}"
+    fi
+    echo
 done
 
 # repoints each <varloc>/current after every bundle is up
