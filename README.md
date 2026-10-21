@@ -4,7 +4,7 @@ A deep-learning emulator of a burn spread model that generates thousands of burn
 
 ## Components
 
-[View architecture diagram](https://app.diagrams.net/#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FOurPlanscape%2Fburn-emulator%2Fmain%2Fdiagram.drawio) ([source](diagram.drawio))
+[View architecture diagram](https://app.diagrams.net/#HOurPlanscape%2Fburn-emulator%2Fmain%2Fdiagram.drawio) ([source](diagram.drawio))
 
 | Directory | What it is |
 | --- | --- |
