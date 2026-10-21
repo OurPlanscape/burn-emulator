@@ -118,10 +118,10 @@
         <mxCell id="n19ds" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" value="pull subscription (no consumer)&lt;br&gt;burn-emulator-run-reports-dead-letter-{env}&lt;br&gt;retains 7 days, never expires&lt;br&gt;inspect with gcloud pubsub subscriptions pull" vertex="1">
           <mxGeometry height="80" width="280" x="757" y="2659" as="geometry" />
         </mxCell>
-        <mxCell id="n20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="POST /internal/pubsub/run-reports&lt;br&gt;ReportHandler -&amp;gt; HandleReport()&lt;br&gt;re-read report @ notified generation&lt;br&gt;completed: releaseRun(claim_generation)&lt;br&gt;failed: ownsClaim -&amp;gt; deleteOutput + failRun&lt;br&gt;then delete report, then maybePrune() (daily)&lt;div&gt;(handlers/report.go, dispatch/report.go, prune.go)&lt;/div&gt;" vertex="1">
+        <mxCell id="n20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="POST /internal/pubsub/run-reports&lt;br&gt;ReportHandler -&amp;gt; HandleReport()&lt;br&gt;re-read report @ notified generation&lt;br&gt;completed: releaseRun(claim_generation)&lt;br&gt;failed: ownsClaim -&amp;gt; deleteOutput + failRun&lt;br&gt;then delete report&lt;div&gt;(handlers/report.go, dispatch/report.go)&lt;/div&gt;" vertex="1">
           <mxGeometry height="130" width="280" x="249" y="2305" as="geometry" />
         </mxCell>
-        <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;JobsHandler.Get -&amp;gt; GetJob()&lt;/b&gt;&lt;br&gt;GET /v1/jobs/{job_id}&lt;br&gt;cached | pending | failed | 404&lt;br&gt;(claim, then _failed/; running &amp;gt;30 min or&lt;br&gt;queued &amp;gt;60 min -&amp;gt; failed)" vertex="1">
+        <mxCell id="n21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;JobsHandler.Get -&amp;gt; GetJob()&lt;/b&gt;&lt;br&gt;GET /v1/jobs/{job_id}&lt;br&gt;cached | pending | failed | 404&lt;br&gt;(running &amp;gt;30 min or&lt;br&gt;queued &amp;gt;60 min -&amp;gt; failed)" vertex="1">
           <mxGeometry height="90" width="280" x="249" y="2475" as="geometry" />
         </mxCell>
         <mxCell id="n21r" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Client polls GET Location&lt;br&gt;until cached or failed" vertex="1">
@@ -495,9 +495,6 @@
         <mxCell id="dsk" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=light-dark(#FFF2CC,#1A3300);strokeColor=light-dark(#D6B656,#446E2C);dashed=1;" value="&lt;b&gt;On disk (cluster checkout)&lt;/b&gt;&lt;br&gt;burn-emulator-model/data/&lt;br&gt;inputs/{inputs_version}/ + current&lt;br&gt;bundles/{VARLOC}/{model_version}/ + current&lt;br&gt;(make inputs-current / model-bundle)" vertex="1">
           <mxGeometry height="150" width="300" x="2350" y="1230" as="geometry" />
         </mxCell>
-        <mxCell id="fg" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#fff2cc;strokeColor=#d6b656;" value="gs://{output_bucket}/_failed/{job_id}&lt;br&gt;+ _prune/last&lt;br&gt;(claims older than a day)" vertex="1">
-          <mxGeometry height="100" width="240" x="1060" y="2440" as="geometry" />
-        </mxCell>
         <mxCell id="es1" edge="1" parent="1" source="n8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="s0" value="claimed OK (metal mode)">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
@@ -536,12 +533,6 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="ed7" edge="1" parent="1" source="dsk" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="d5" value="read (preload + per claim)">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="ef1" edge="1" parent="1" source="n20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="fg" value="daily prune: copy + delete">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="ef2" edge="1" parent="1" source="n21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="fg" value="fallback read">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="b2tmoVeBYLdJR2ggQvKn-2" parent="1" style="text;html=1;fontStyle=1;fontSize=22;align=center;verticalAlign=middle;fillColor=light-dark(#000000, #1a3300);strokeColor=default;strokeWidth=2;" value="On disk model staging" vertex="1">
