@@ -15,14 +15,14 @@ from pyretechnics.space_time_cube import SpaceTimeCube
 from rasterio.features import geometry_mask
 from rasterio.windows import from_bounds
 
-from burn_emulator.config import check_data_version, inputs_version, wind_range
+from burn_emulator.config import check_data_version, inputs_version, varlocs_gpkg, wind_range
 from burn_emulator.constants import (
     INPUT_KEYS,
     INPUTS_DIR,
     RAW_NO_DATA,
     TARGET_CRS,
     TRAINING_DATA_DIR,
-    VARLOCS_GPKG,
+    Path,
 )
 from burn_emulator.pt import CUBE_BANDS, DEFAULT_PT_ADJUSTMENTS, pt_inputs, simulate
 
@@ -64,11 +64,11 @@ def _print_memory_summary(peak: dict):
     )
 
 
-def _load_varloc_geom(varloc: str):
-    gdf = gpd.read_file(VARLOCS_GPKG)
+def _load_varloc_geom(varloc: str, gpkg: Path):
+    gdf = gpd.read_file(gpkg)
     rows = gdf[gdf["varloc"] == varloc]
     if rows.empty:
-        raise ValueError(f"varloc {varloc!r} not found in {VARLOCS_GPKG}")
+        raise ValueError(f"varloc {varloc!r} not found in {gpkg}")
     return rows.union_all()
 
 
@@ -237,7 +237,7 @@ def ignite(
     if training_data_dir.exists() and not overwrite:
         raise FileExistsError(f"{training_data_dir} already exists; pass overwrite to replace it")
 
-    geom = _load_varloc_geom(varloc)
+    geom = _load_varloc_geom(varloc, varlocs_gpkg(fuels))
     bounds = geom.bounds
 
     aoi_gdf = gpd.GeoDataFrame(geometry=[geom], crs=TARGET_CRS)

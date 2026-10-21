@@ -12,7 +12,14 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 from shapely.geometry.base import BaseGeometry
 
-from burn_emulator.constants import CONFIG_DIR, OUTDIR, TARGET_CRS, WIND_DIRECTIONS, Path
+from burn_emulator.constants import (
+    CONFIG_DIR,
+    INPUTS_DIR,
+    OUTDIR,
+    TARGET_CRS,
+    WIND_DIRECTIONS,
+    Path,
+)
 
 _MODEL_NAME_FLAGS = {"varloc": "-vl", "architecture": "-a", "data_version": "-dv"}
 # unresolved ${name} interpolations fall back to the environment
@@ -65,6 +72,11 @@ def check_data_version(value: str) -> str:
 
 def inputs_version(data_version: str) -> str:
     return check_data_version(data_version).split("_")[0]
+
+
+# every varloc polygon, EPSG:5070; by hand with the inputs version's rasters
+def varlocs_gpkg(inputs_version: str) -> Path:
+    return INPUTS_DIR / inputs_version / "varlocs" / "all_varlocs.gpkg"
 
 
 def current_data_version() -> str:

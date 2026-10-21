@@ -9,12 +9,12 @@ A deep-learning emulator of a burn spread model that generates thousands of burn
 | Directory | What it is |
 | --- | --- |
 | [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: training data, train, evaluate, bundle and `run()` inference. |
-| [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service, CPU-only: validates or picks the varloc, picks the backend, serves the GCS cache, triggers a runner job on a miss (or, in slurm mode, queues a claim for the cluster dispatcher in `burn-emulator-api/scripts`). |
+| [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service, CPU-only: validates or picks the varloc, picks the backend, serves the GCS cache, triggers a runner job on a miss (or, in metal mode, queues a claim for the runner's claim loop on prem). |
 | [`burn-emulator-runner/`](burn-emulator-runner/README.md) | Cloud Run Job (GPU for `DL`, CPU for `PT`): runs `burn_emulator.run.run()` once per execution. |
 
 ## Makefile targets
 
-Run from the repo root. `make help` lists every target; `[metal]` runs locally, `[slurm]` submits to the cluster, `[metal|slurm]` submits with `SLURM=1`.
+Run from the repo root. `make help` lists every target; `[direct]` runs in this shell, `[slurm]` submits to the cluster, `[direct|slurm]` submits with `SLURM=1`.
 
 Images (need `BURN_EMULATOR_ARTIFACT_STORE`):
 
@@ -29,8 +29,7 @@ Training data and training:
 | target | what it does |
 | --- | --- |
 | `training-data VARLOC= [INPUTS_VERSION=] [IGNITIONS_VERSION=] [NUM_IGNITIONS=] [OVERWRITE=1] [SLURM=1]` | `burn_emulator -m ignite` into `data/training_data/<varloc>/<inputs_version>_<ignitions_version>/` (versions default to `current.yaml`, `NUM_IGNITIONS` to 5000); `OVERWRITE=1` replaces an existing directory |
-| `training-data-all [EXCLUDE=] [...] [SLURM=1]` | `training-data` for every varloc in `data/training_data/varlocs.gpkg`, skipping complete ones (legalmax `outputs_table.csv`) unless `OVERWRITE=1`; exits nonzero listing failures; then runs `all-varlocs`. `SLURM=1` queues them for `slurm/ignitions.slurm` (`EXCLUDE` is slurm only) |
-| `all-varlocs` | copies `data/training_data/varlocs.gpkg` to `data/outputs/all_varlocs.gpkg` |
+| `training-data-all [EXCLUDE=] [...] [SLURM=1]` | `training-data` for every varloc in `data/inputs/<inputs_version>/varlocs/all_varlocs.gpkg`, skipping complete ones (legalmax `outputs_table.csv`) unless `OVERWRITE=1`; exits nonzero listing failures. `SLURM=1` queues them for `slurm/ignitions.slurm` (`EXCLUDE` is slurm only) |
 | `train-all [SLURM=1 [EXCLUDE=] [NODES=]]` | trains every varloc with complete training data; adds each to `data/outputs/varlocs.txt` |
 | `train-release VARLOC= [NODES=]` | slurm: train -> `model-bundle` -> `model-release` -> `mark_trained.sh` + `varlocs-release` |
 | `train-release-all [EXCLUDE=] [NODES=]` | the same for every varloc with complete training data |
@@ -40,13 +39,16 @@ Releases (need `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI`):
 
 | target | what it does |
 | --- | --- |
-| `valid-varlocs` | filters `data/outputs/all_varlocs.gpkg` to `data/outputs/varlocs.txt` -> `data/outputs/valid_varlocs.gpkg` |
-| `model-bundle VARLOC=` | `burn_emulator -m bundle` -> `data/bundles/<VARLOC>/<data_version>_<architecture>/` |
+| `valid-varlocs` | filters `data/inputs/current`'s `varlocs/all_varlocs.gpkg` to `data/outputs/varlocs.txt` -> `varlocs/valid_varlocs.gpkg` |
+| `model-bundle VARLOC=` | `burn_emulator -m bundle` -> `data/bundles/<VARLOC>/<model_version>/`, then points `data/bundles/<VARLOC>/current` at it: the models bucket's layout |
 | `model-bundle-all` | `update-mark-trained`, `valid-varlocs`, then `model-bundle` for every varloc in `varlocs.txt` |
-| `model-release VARLOC= [BUNDLE_DIR=] [FORCE=1]` | `scripts/publish_model.sh`: uploads the bundle, repoints `<varloc>/current` |
-| `model-release-all` | uploads every bundle in `varlocs.txt`, then repoints each `current` |
-| `inputs-release [DATA_VERSION=] [INPUTS_DIR=] [FBFM_MAP=]` | `scripts/publish_inputs.sh`: `data/inputs/<inputs_version>/{baseline,legalmax,topo}`, both varlocs gpkgs and the fbfm map under one `inputs_version`, then repoints `current`. Defaults follow `inputs_version` in `configs/varlocs/current.yaml` |
-| `varlocs-release [DATA_VERSION=]` | `valid-varlocs`, then `scripts/publish_varlocs.sh` replaces both gpkgs under a published `inputs_version` (default `current`) |
+| `model-release VARLOC= [FORCE=1]` | `scripts/publish_model.sh`: uploads `data/bundles/<VARLOC>/current`'s bundle, then repoints the bucket's `<VARLOC>/current` to the same version |
+| `model-release-all` | the same for every varloc in `varlocs.txt`; repoints only after every upload |
+| `inputs-current [INPUTS_VERSION=]` | `scripts/set_inputs_current.sh`: checks the hand-made `data/inputs/<inputs_version>/` (`baseline/`, `legalmax/`, `topo/`, `varlocs/all_varlocs.gpkg`, `fbfm/fbfm_behavior_adjectives.csv`), then points `data/inputs/current` at it. `INPUTS_VERSION` defaults to `current.yaml` |
+| `inputs-release [FORCE=1]` | `scripts/publish_inputs.sh`: uploads `data/inputs/current`'s version as is, then repoints the bucket's `current` |
+| `varlocs-release` | `valid-varlocs`, then `scripts/publish_varlocs.sh` uploads `data/inputs/current`'s `varlocs/{valid,all}_varlocs.gpkg` over that published version (no repoint) |
+
+Bundle and inputs dirs mirror their buckets, so a release only copies what is local `current`. Inputs are made by hand; only `current` is written locally. The runner loop reads the same dirs.
 
 Local runs:
 
@@ -57,12 +59,13 @@ Local runs:
 | `inference-all OUTPUTS_ROOT=` | `inference` for every varloc in `varlocs.txt`, root `OUTPUTS_ROOT/<varloc>` |
 | `shell` | syncs `burn-emulator-model/.venv-<arch>` (with the `data` extra) and opens a shell in it |
 
-Slurm dispatch (deploy checkout; see [burn-emulator-api](burn-emulator-api/README.md#slurm-dispatch)):
+Runner loop (deploy checkout, metal mode api; see [burn-emulator-runner](burn-emulator-runner/README.md#slurm-loop)):
 
 | target | what it does |
 | --- | --- |
-| `runner-venv` | syncs `burn-emulator-runner/.venv-<arch>` from its lockfile; the venv `slurm/infer.slurm` execs |
-| `dispatch-once` | one `burn-emulator-api/scripts/dispatch.sh` pass in the foreground |
+| `env-vars` | writes `~/.config/burn-emulator/env` (mode 600), no arguments. `BURN_EMULATOR_INPUTS_ROOT` and `BURN_EMULATOR_BUNDLES_ROOT` are always this checkout's `burn-emulator-model/data/{inputs,bundles}`, where the runner loop reads inputs and bundles. `GOOGLE_APPLICATION_CREDENTIALS` defaults to `~/.config/burn-emulator/runner-key.json`. `BURN_EMULATOR_MAX_MODELS` (models the runner loop keeps loaded) defaults to 8. `BURN_EMULATOR_{ENV,ARTIFACT_STORE,INPUTS_URI,MODELS_URI,OUTPUT_URI}` keep their current values (file or shell), and missing ones are asked for. If the key file is missing, it asks before creating one with `gcloud iam service-accounts keys create` for `burn-runner-sa-<env>@planscape-23d66.iam.gserviceaccount.com`. It is the source of truth: every make target reads it, and so do the scripts and slurm jobs, through `burn-emulator-model/scripts/load_env.sh`, even when run directly. The file wins over the shell; a make command-line value wins over the file. `inputs-release` and `model-release` keep their local copies under the two roots |
+| `runner-venv` | syncs `burn-emulator-runner/.venv-<arch>` from its lockfile; the venv `slurm/loop.slurm` runs |
+| `runner-loop [NODES=] [SBATCH_ARGS=]` | sbatches `burn-emulator-runner/slurm/loop.slurm` on a GPU node (`--gres=gpu:1 --exclusive --mem=0`): takes queued DL and PT claims, as the api decided each one's backend, until cancelled |
 
 ## Varloc files
 
@@ -70,10 +73,11 @@ Under `burn-emulator-model/`:
 
 | file | contents | written by |
 | --- | --- | --- |
-| `data/training_data/varlocs.gpkg` | every varloc polygon, EPSG:5070 (source) | external |
-| `data/outputs/all_varlocs.gpkg` | copy of the source | `all-varlocs` |
+| `data/inputs/<inputs_version>/varlocs/all_varlocs.gpkg` | every varloc polygon, EPSG:5070; also what training-data generation reads (`config.varlocs_gpkg`) | by hand, with the rasters |
 | `data/outputs/varlocs.txt` | trained varlocs | `mark_trained.sh`, `update-mark-trained` |
-| `data/outputs/valid_varlocs.gpkg` | `all_varlocs.gpkg` filtered to `varlocs.txt` | `valid-varlocs` |
+| `data/inputs/<inputs_version>/varlocs/valid_varlocs.gpkg` | `all_varlocs.gpkg` filtered to `varlocs.txt` | `valid-varlocs` |
+
+`valid-varlocs` works on `data/inputs/current`'s version, and `inputs-release` / `varlocs-release` upload it unchanged, so local and bucket match.
 
 ## Model registry (GCS)
 
@@ -94,15 +98,15 @@ caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, ba
                       <inputs_version>/varlocs/all_varlocs.gpkg (else 400),
                       or the largest overlap there (none -> 400)
      bundle         = gs://<models>/<varloc>/current if varloc is in valid_varlocs.gpkg (60s cache)
-     DL if requested, there is a bundle and a GPU job is set (or slurm mode), else PT; PT also uses the bundle when there is one
+     DL if requested, there is a bundle and a GPU job is set (or metal mode), else PT; PT also uses the bundle when there is one
      hash           = sha256(treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
      output_dir     = gs://<out>/<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>
   3. output exists?                                                      -> 200 cached
      claim running?                                                      -> 202 pending + Location
      else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
                                                                          -> 202 pending + Location
-     slurm mode: the claim is written queued with the runner env as its body;
-     the cluster dispatcher (scrontab, every minute) sbatches it and the job runs the same runner
+     metal mode: the claim is written queued with the runner env as its body;
+     a long-lived runner on the cluster (BURN_EMULATOR_LOOP=1) takes it and runs it
   4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
      run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,
      write gs://<out>/_reports/... {status, claim_generation, error}

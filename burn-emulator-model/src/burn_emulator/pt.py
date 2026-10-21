@@ -13,6 +13,7 @@ from rasterio.transform import array_bounds
 from rasterio.windows import from_bounds
 
 from burn_emulator.constants import INPUT_KEYS, RAW_NO_DATA, Path
+from burn_emulator.rasters import open_raster
 
 CUBE_BANDS = 96  # 3 days + 3 hours @ 1 hour/band
 CUBE_RESOLUTION = (
@@ -120,7 +121,7 @@ def simulate(
 
 
 def _read_raw(path: Path, bounds: tuple, shape: tuple[int, int]) -> np.ndarray:
-    with rasterio.open(path) as src:
+    with open_raster(path) as src:
         window = from_bounds(*bounds, transform=src.transform).round_offsets().round_lengths()
         arr = src.read(1, window=window).astype("float32")
         nodata = src.nodata

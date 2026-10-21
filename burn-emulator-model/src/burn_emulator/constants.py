@@ -51,6 +51,3 @@ WIND_DIRECTIONS = CONFIG_DIR / "wind_directions.csv"
 
 # <inputs_version>/{baseline,legalmax,topo}, as published to BURN_EMULATOR_INPUTS_URI
 INPUTS_DIR = Path("data/inputs")
-
-# training-data generation (src/burn_emulator/ignite.py)
-VARLOCS_GPKG = TRAINING_DATA_DIR / "varlocs.gpkg"

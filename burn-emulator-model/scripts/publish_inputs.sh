@@ -1,77 +1,31 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/load_env.sh"
 
-data_version_raw="${1:-}"
-inputs_dir="${2:-}"
-valid_gpkg="${3:-}"
-all_gpkg="${4:-}"
-fbfm_map="${5:-}"
-inputs_uri="${6:-${BURN_EMULATOR_INPUTS_URI:-}}"
+# uploads <inputs_root>/<current>/ as is, then repoints <inputs_uri>/current
+inputs_root="${1:-}"
+inputs_uri="${2:-${BURN_EMULATOR_INPUTS_URI:-}}"
 
-if [[ -z "$data_version_raw" || -z "$inputs_dir" || -z "$valid_gpkg" || -z "$all_gpkg" || -z "$fbfm_map" ]]; then
-    echo "usage: $0 <data_version> <inputs_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]" >&2
+if [[ -z "$inputs_root" ]]; then
+    echo "usage: $0 <inputs_root> [inputs_uri]" >&2
     exit 2
 fi
 if [[ -z "$inputs_uri" ]]; then
-    echo "error: pass inputs_uri as arg 6, or set BURN_EMULATOR_INPUTS_URI" >&2
+    echo "error: pass inputs_uri as arg 2, or run make env-vars" >&2
     exit 2
 fi
-
-# data_version: west fuels date, YYYYMMDD
-if [[ "$data_version_raw" =~ ^[0-9]{8}$ ]]; then
-    data_version="$data_version_raw"
-else
-    echo "error: data_version '$data_version_raw' must be YYYYMMDD" >&2
+if [[ ! -f "${inputs_root%/}/current" ]]; then
+    echo "error: ${inputs_root%/}/current not found, run 'make inputs-current'" >&2
     exit 1
 fi
-
-for dir in baseline legalmax topo; do
-    if [[ ! -d "$inputs_dir/$dir" ]]; then
-        echo "error: $inputs_dir/$dir is not a directory" >&2
-        exit 1
-    fi
-done
-if ! compgen -G "$inputs_dir/topo/*.tif" >/dev/null; then
-    echo "error: $inputs_dir/topo has no *.tif layers" >&2
-    exit 1
-fi
-
-# names the api reads
-for pair in "$valid_gpkg:valid_varlocs.gpkg" "$all_gpkg:all_varlocs.gpkg"; do
-    f="${pair%:*}"
-    name="${pair##*:}"
-    if [[ ! -f "$f" || "$(basename "$f")" != "$name" ]]; then
-        echo "error: $f is not a $name file" >&2
-        exit 1
-    fi
-done
-if [[ ! -f "$fbfm_map" || "$(basename "$fbfm_map")" != fbfm_behavior_adjectives.csv ]]; then
-    echo "error: $fbfm_map is not a fbfm_behavior_adjectives.csv file" >&2
-    exit 1
-fi
-
-# inputs_dir/{baseline,legalmax}/<layer>.tif
-for t in baseline legalmax; do
-    for l in cbd cbh cc fbfm th; do
-        [[ -f "$inputs_dir/$t/$l.tif" ]] || { echo "error: $inputs_dir/$t/$l.tif not found" >&2; exit 1; }
-    done
-done
-
-# local copy under the inputs version, published from there; the slurm runner reads it as <inputs>/<data_version>/fbfm/
+data_version="$(<"${inputs_root%/}/current")"
+inputs_dir="${inputs_root%/}/$data_version"
 fbfm_copy="$inputs_dir/fbfm/fbfm_behavior_adjectives.csv"
-if [[ ! -f "$fbfm_copy" ]]; then
-    mkdir -p "$inputs_dir/fbfm"
-    cp -p "$fbfm_map" "$fbfm_copy"
-    echo "local fbfm copy: $fbfm_copy"
-elif ! cmp -s "$fbfm_map" "$fbfm_copy"; then
-    if [[ "${FORCE:-0}" != "1" ]]; then
-        echo "error: $fbfm_copy differs from $fbfm_map; FORCE=1 to replace it (and the published fbfm layer)" >&2
-        exit 1
-    fi
-    cp -p "$fbfm_map" "$fbfm_copy"
-    echo "local fbfm copy replaced: $fbfm_copy"
-fi
+for f in "$fbfm_copy" "$inputs_dir/varlocs/all_varlocs.gpkg"; do
+    [[ -f "$f" ]] || { echo "error: $f not found" >&2; exit 1; }
+done
+[[ -f "$inputs_dir/varlocs/valid_varlocs.gpkg" ]] || { echo "error: $inputs_dir/varlocs/valid_varlocs.gpkg not found, run 'make valid-varlocs'" >&2; exit 1; }
 
 base="${inputs_uri%/}/${data_version}"
 
@@ -105,7 +59,7 @@ publish_layer () {
 publish_layer baseline "$inputs_dir"/baseline/*.tif
 publish_layer legalmax "$inputs_dir"/legalmax/*.tif
 publish_layer topo "$inputs_dir"/topo/*.tif
-publish_layer varlocs "$valid_gpkg" "$all_gpkg"
+publish_layer varlocs "$inputs_dir"/varlocs/*.gpkg
 publish_layer fbfm "$fbfm_copy"
 
 # repoints current after every layer is up

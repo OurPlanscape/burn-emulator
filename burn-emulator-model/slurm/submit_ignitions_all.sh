@@ -36,7 +36,7 @@ else
     set +u
     source "$MODEL_DIR/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
     set -u
-    mapfile -t VARLOCS < <(cd "$MODEL_DIR" && scripts/gpkg_varlocs.sh)
+    mapfile -t VARLOCS < <(cd "$MODEL_DIR" && scripts/gpkg_varlocs.sh "${DATA_VERSION%%_*}")
 fi
 if [ ${#EXCLUDED[@]} -gt 0 ]; then
     for varloc in "${EXCLUDED[@]}"; do

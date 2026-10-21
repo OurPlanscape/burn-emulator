@@ -173,7 +173,7 @@ func loadVarLocShapes(path string) ([]varLocShape, error) {
 
 // varloc: the requested one if it intersects the area in all_varlocs.gpkg, else the largest
 // overlap there. modelVersion: the varloc's released bundle, used by DL and PT; "" if none.
-// DL needs that bundle and a GPU runner job (or slurm mode); otherwise PT.
+// DL needs that bundle and a GPU runner job (or metal mode); otherwise PT.
 func (c *Client) selectVarLoc(ctx context.Context, inputsVersion string, area *geos.Geom, requested, backend string) (varLoc, modelVersion, selected string, err error) {
 	all, err := c.varLocs.shapes(ctx, inputsVersion, allVarLocsObject)
 	if err != nil {
@@ -203,7 +203,7 @@ func (c *Client) selectVarLoc(ctx context.Context, inputsVersion string, area *g
 	case backend == BackendPT:
 	case modelVersion == "":
 		slog.Warn("varloc has no released model; falling back to PT", "varloc", varLoc)
-	case c.cfg.RunnerGPUJob == "" && !c.cfg.Slurm:
+	case c.cfg.RunnerGPUJob == "" && !c.cfg.Metal:
 		slog.Warn("no GPU runner job configured; falling back to PT", "varloc", varLoc)
 	default:
 		return varLoc, modelVersion, BackendDL, nil

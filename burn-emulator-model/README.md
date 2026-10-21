@@ -23,7 +23,7 @@ UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync --extra data # + pyretechnics/r
 
 ## CLI
 
-`burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins); CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version`) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<VARLOC>/<data_version>_<architecture>/` (`<experiment_dir>` below; same shape as `data/training_data/<varloc>/<data_version>/`). `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
+`burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins); CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version`) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<VARLOC>/<data_version>_<architecture>/` (`<experiment_dir>` below). `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
 
 ## Training data
 
@@ -31,7 +31,7 @@ UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync --extra data # + pyretechnics/r
 burn_emulator -m ignite -vl <varloc> -dv <data_version> [-ni <num_ignitions>] [-ow]
 ```
 
-Clips fuels and topo for the varloc (polygon from `data/training_data/varlocs.gpkg`) and simulates burns with pyretechnics into `data/training_data/<varloc>/<data_version>/`. Complete once `legalmax/outputs_table.csv` exists.
+Clips fuels and topo for the varloc (polygon from `data/inputs/<inputs_version>/varlocs/all_varlocs.gpkg`) and simulates burns with pyretechnics into `data/training_data/<varloc>/<data_version>/`. Complete once `legalmax/outputs_table.csv` exists.
 
 ## Train
 
@@ -48,7 +48,7 @@ Writes `<experiment_dir>/`: `checkpoints/` (`<model_name>_loss-<loss>_epoch-<NNN
 burn_emulator -m evaluate -a <architecture> -vl <varloc> -dv <data_version> -c <model.yaml> -c <eval_data.yaml>
 ```
 
-Writes per-ignition prediction GeoTIFFs and `throughput.csv` to `<experiment_dir>/inference/`; no metrics.
+Writes per-ignition prediction GeoTIFFs and `throughput.csv` to `<experiment_dir>/inference/`.
 
 ```bash
 scripts/ignite_inference.sh <varloc> <outputs_root>
@@ -78,6 +78,8 @@ burn_emulator -m run -vl <varloc> \
 
 Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `make smoke` runs it on a sample treatment area.
 
+`run.enable_caching(max_models)` makes later runs in the same process read each raster whole once and slice windows from memory (`burn_emulator.rasters.open_raster`), and keep up to `max_models` `(ckpt_path, model)` pairs loaded on `RUN_DEVICE`, least recently used evicted first. The runner's claim loop turns it on.
+
 Env: `RUN_DEVICE` (`cuda` default, `XLA`, `cpu`), `RUN_DTYPE` (default `bfloat16`), `USE_CLOUD_PATHS` (for `gs://` paths), `BURN_EMULATOR_BACKEND` (`DL` default, `PT`). `PT` / `-pt` runs pyretechnics and writes `<VARLOC>_pt_<data_version>.tif`.
 
 ## Inputs
@@ -102,16 +104,20 @@ burn_paths/{ignition_number}/fire_type.tif # training only
 | `wind` | wind direction (degrees) |
 | `mask` | burnable / circular-window mask |
 
-Inference samples also carry `pdiffs` / `bounds` / `indxes` for stamping predictions onto the full raster. Another fuel product needs a `Dataset` with the same `x` / `y` / `wind` / `mask` keys.
+Inference samples also carry `pdiffs` / `bounds` / `indxes` for stamping predictions onto the full raster.
+
+## Environment
+
+The publish scripts and slurm jobs source [`scripts/load_env.sh`](scripts/load_env.sh), which exports `~/.config/burn-emulator/env` (`make env-vars` at the repo root; `BURN_EMULATOR_ENV_FILE` to override): `BURN_EMULATOR_*` and `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ## Publish a model
 
 ```bash
 burn_emulator -m bundle -c configs/varlocs/current.yaml -vl <varloc> [-cp <checkpoint>]   # make model-bundle
-scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]                # make model-release(-all)
+scripts/publish_model.sh <varloc> [<varloc> ...]                                           # make model-release(-all)
 ```
 
-`-m bundle` writes `data/bundles/<VARLOC>/<data_version>_<architecture>/`:
+`-m bundle` writes `data/bundles/<VARLOC>/<model_version>/` and points `data/bundles/<VARLOC>/current` at it, the models bucket's layout:
 
 | file | from |
 | --- | --- |
@@ -120,27 +126,33 @@ scripts/publish_model.sh <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]      
 | `config.yaml` | the merged config without run-time fields (treatment area, fuels, topo, fbfm map, ignitions, burns) |
 | `bundle_meta.json` | `model_repo_sha`, `model_repo_dirty`, `model_class_path`, `model_code_sha256` (architecture module) |
 
-`publish_model.sh` (needs `BURN_EMULATOR_MODELS_URI`) checks every bundle (four files, `model_name` matches `<varloc>`), uploads each to `<models_uri>/<varloc>/<model_version>/`, then repoints each `<varloc>/current`. `<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, both from the bundle (the mtime is the checkpoint's, kept by `-m bundle`), so it changes only with a new checkpoint or commit. An already published version with a matching bundle is not re-uploaded; a different bundle is refused unless `FORCE=1`, which keeps DL and PT outputs cached under that version (`<model_version>` / `pt-<model_version>` job ids) even if its dataset config changed.
+`<model_version>` = `<checkpoint mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char git sha>[-dirty]`.
 
-Each published bundle also gets a local release copy at `<BUNDLES_ROOT>/<varloc>/<model_version>/` (default `data/bundles/`; hard links when on the same filesystem, kept once written; `FORCE=1` replaces it). The slurm dispatcher (`burn-emulator-api/scripts`) runs bundles from there, so publish from the cluster checkout whose `data/bundles` is the shared bundles dir.
+`publish_model.sh` reads each `<VARLOC>/current` under `BURN_EMULATOR_BUNDLES_ROOT` (default `data/bundles`), checks the bundle, uploads it to `<BURN_EMULATOR_MODELS_URI>/<VARLOC>/<model_version>/` and repoints the bucket's `<VARLOC>/current`. `FORCE=1` overwrites a published version.
+
+The runner's claim loop runs bundles from `data/bundles`.
 
 ## Publish inputs
 
 ```bash
-scripts/publish_inputs.sh <data_version> <inputs_dir> <valid_varlocs.gpkg> <all_varlocs.gpkg> <fbfm_map> [inputs_uri]   # make inputs-release
-# <data_version>        fuels date, YYYYMMDD
-# <inputs_dir>          data/inputs/<data_version>: {baseline,legalmax}/{cbd,cbh,cc,fbfm,th}.tif, topo/*.tif
-# <valid_varlocs.gpkg>  data/outputs/valid_varlocs.gpkg (make valid-varlocs)
-# <all_varlocs.gpkg>    data/outputs/all_varlocs.gpkg (make all-varlocs)
-# <fbfm_map>            configs/fbfm_behavior_adjectives.csv
+scripts/set_inputs_current.sh <inputs_root> <data_version>                                   # make inputs-current
+scripts/publish_inputs.sh <inputs_root> [inputs_uri]                                         # make inputs-release
+scripts/publish_varlocs.sh <inputs_root> <valid_varlocs.gpkg> <all_varlocs.gpkg> [inputs_uri]   # make varlocs-release
+# <inputs_root>   data/inputs
+# <data_version>  fuels date, YYYYMMDD
 ```
 
-Uploads `baseline/`, `legalmax/`, `topo/`, `varlocs/` (both gpkgs; the api reads them by name) and `fbfm/` to `<inputs_uri>/<data_version>/`, then repoints `<inputs_uri>/current`. A failed upload leaves `current` unchanged. Published layers are skipped unless `FORCE=1`, which keeps cached outputs; changed inputs go under a new `data_version`. `inputs_uri` defaults to `BURN_EMULATOR_INPUTS_URI`.
+`data/inputs/<data_version>/` is made by hand in the inputs bucket's layout:
 
-The fbfm map is first copied to `<inputs_dir>/fbfm/fbfm_behavior_adjectives.csv` and published from there, so the local inputs dir matches the published `<data_version>/` layout the slurm runner reads. A differing existing copy stops the publish with an error; `FORCE=1` replaces it.
-
-```bash
-scripts/publish_varlocs.sh <valid_varlocs.gpkg> <all_varlocs.gpkg> [data_version] [inputs_uri]   # make varlocs-release
+```
+baseline/{cbd,cbh,cc,fbfm,th}.tif
+legalmax/{cbd,cbh,cc,fbfm,th}.tif
+topo/{aspect,slope_degrees}.tif
+varlocs/all_varlocs.gpkg              # every varloc polygon
+fbfm/fbfm_behavior_adjectives.csv
+varlocs/valid_varlocs.gpkg            # make valid-varlocs: all_varlocs filtered to varlocs.txt
 ```
 
-Replaces both gpkgs under a published `data_version` (default `current`); `current` is not repointed.
+`set_inputs_current.sh` checks the layout and points `<inputs_root>/current` at the version. `publish_inputs.sh` uploads `current`'s version to `<inputs_uri>/<data_version>/` and repoints `<inputs_uri>/current`. `FORCE=1` overwrites published layers.
+
+`publish_varlocs.sh` uploads the two gpkgs (`make varlocs-release`: `current`'s `varlocs/`, rebuilt by `valid-varlocs`) to the varlocs layer of `current`'s published version. `inputs_uri` defaults to `BURN_EMULATOR_INPUTS_URI`.

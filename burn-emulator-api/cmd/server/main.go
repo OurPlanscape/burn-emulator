@@ -26,11 +26,11 @@ func main() {
 
 	ctx := context.Background()
 
-	slurm := false
-	if v := os.Getenv("BURN_EMULATOR_SLURM"); v != "" {
+	metal := false
+	if v := os.Getenv("BURN_EMULATOR_METAL"); v != "" {
 		var err error
-		if slurm, err = strconv.ParseBool(v); err != nil {
-			slog.Error("invalid env var", "key", "BURN_EMULATOR_SLURM", "value", v)
+		if metal, err = strconv.ParseBool(v); err != nil {
+			slog.Error("invalid env var", "key", "BURN_EMULATOR_METAL", "value", v)
 			os.Exit(1)
 		}
 	}
@@ -39,13 +39,13 @@ func main() {
 		ModelsURI:    env("BURN_EMULATOR_MODELS_URI"),
 		InputsURI:    env("BURN_EMULATOR_INPUTS_URI"),
 		OutputBucket: env("BURN_EMULATOR_OUTPUT_URI"),
-		Slurm:        slurm,
+		Metal:        metal,
 	}
-	if !slurm {
+	if !metal {
 		cfg.RunnerGPUJob = os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB") // optional; unset runs DL requests on PT
 		cfg.RunnerCPUJob = env("BURN_EMULATOR_RUNNER_CPU_JOB")
 	}
-	slog.Info("dispatch mode", "slurm", slurm)
+	slog.Info("dispatch mode", "metal", metal)
 
 	client, err := dispatch.NewClient(ctx, cfg)
 	if err != nil {

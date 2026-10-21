@@ -1,42 +1,43 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/load_env.sh"
 
 models_uri="${BURN_EMULATOR_MODELS_URI:-}"
-# <bundles_root>/<varloc>/<model_version>: local release copies (default: this checkout's data/bundles)
-bundles_root="${BUNDLES_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/bundles}"
+# <bundles_root>/<VARLOC>/{current,<model_version>/}, written by burn_emulator -m bundle (default: this checkout's data/bundles)
+bundles_root="${BURN_EMULATOR_BUNDLES_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/data/bundles}"
 
 if [[ $# -eq 0 ]]; then
-    echo "usage: BURN_EMULATOR_MODELS_URI=<gs://...> $0 <varloc>=<bundle_dir> [<varloc>=<bundle_dir> ...]" >&2
+    echo "usage: $0 <varloc> [<varloc> ...]" >&2
     exit 2
 fi
 if [[ -z "$models_uri" ]]; then
-    echo "error: set BURN_EMULATOR_MODELS_URI" >&2
+    echo "error: BURN_EMULATOR_MODELS_URI is not set - run make env-vars" >&2
     exit 2
 fi
 
-# validate every bundle before touching the registry
+# validate every local current bundle before touching the registry
 declare -A seen=()
 varlocs=()
-bundle_dirs=()
 model_versions=()
-for pair in "$@"; do
-    varloc="${pair%%=*}"
+for varloc in "$@"; do
     varloc="${varloc^^}"
-    bundle_dir="${pair#*=}"
-    if [[ "$pair" != *=* || -z "$varloc" || -z "$bundle_dir" ]]; then
-        echo "error: '$pair' is not <varloc>=<bundle_dir>" >&2
-        exit 2
-    fi
     if [[ -n "${seen[$varloc]:-}" ]]; then
         echo "error: varloc $varloc passed more than once" >&2
         exit 2
     fi
     seen[$varloc]=1
 
+    pointer="$bundles_root/$varloc/current"
+    if [[ ! -f "$pointer" ]]; then
+        echo "error: $pointer not found, run 'make model-bundle VARLOC=$varloc'" >&2
+        exit 1
+    fi
+    model_version="$(<"$pointer")"
+    bundle_dir="$bundles_root/$varloc/$model_version"
     for f in model.pt config.yaml stats.yaml bundle_meta.json; do
         if [[ ! -f "$bundle_dir/$f" ]]; then
-            echo "error: $bundle_dir is missing $f, re-run 'burn_emulator -m bundle'" >&2
+            echo "error: $bundle_dir is missing $f, re-run 'make model-bundle VARLOC=$varloc'" >&2
             exit 1
         fi
     done
@@ -47,29 +48,15 @@ for pair in "$@"; do
         exit 1
     fi
 
-    # model_version = checkpoint mtime + bundled repo sha
-    meta="$bundle_dir/bundle_meta.json"
-    repo_sha="$(grep -oP '"model_repo_sha":[[:space:]]*"\K[0-9a-f]+' "$meta" || true)"
-    if [[ -z "$repo_sha" ]]; then
-        echo "error: $meta has no model_repo_sha (bundled outside git?)" >&2
-        exit 1
-    fi
-    git_sha="${repo_sha:0:7}"
-    grep -qP '"model_repo_dirty":[[:space:]]*true' "$meta" && git_sha="${git_sha}-dirty"
-
-    checkpoint_mtime="$(stat -c %Y "$bundle_dir/model.pt")"
-    timestamp="$(date -u -d "@${checkpoint_mtime}" +%Y%m%dT%H%M%SZ)"
-
     varlocs+=("$varloc")
-    bundle_dirs+=("$bundle_dir")
-    model_versions+=("${timestamp}-${git_sha}")
+    model_versions+=("$model_version")
 done
 
 # a different bundle under a published version is refused unless FORCE=1
 for i in "${!varlocs[@]}"; do
     varloc="${varlocs[$i]}"
-    bundle_dir="${bundle_dirs[$i]}"
     model_version="${model_versions[$i]}"
+    bundle_dir="$bundles_root/$varloc/$model_version"
     dest="${models_uri%/}/${varloc}/${model_version}"
 
     echo "varloc         ${varloc}"
@@ -91,21 +78,8 @@ for i in "${!varlocs[@]}"; do
         echo
     else
         gcloud storage cp --recursive "${bundle_dir%/}/"* "${dest}/"
+        echo
     fi
-
-    # local release copy the slurm dispatcher reads as <bundles>/<varloc>/<model_version>; hard links when possible
-    release_dir="${bundles_root%/}/${varloc}/${model_version}"
-    if [[ -e "$release_dir" && "${FORCE:-0}" != "1" ]]; then
-        echo "local release exists: ${release_dir}"
-    else
-        mkdir -p "$(dirname "$release_dir")"
-        rm -rf "${release_dir}.tmp.$$"
-        cp -al "${bundle_dir%/}" "${release_dir}.tmp.$$" 2>/dev/null || cp -a "${bundle_dir%/}" "${release_dir}.tmp.$$"
-        rm -rf "$release_dir"
-        mv "${release_dir}.tmp.$$" "$release_dir"
-        echo "local release: ${release_dir}"
-    fi
-    echo
 done
 
 # repoints each <varloc>/current after every bundle is up

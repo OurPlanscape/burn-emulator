@@ -4,16 +4,18 @@ import sys
 import geopandas as gpd
 import pyogrio
 
-from burn_emulator.constants import OUTDIR, VARLOCS_GPKG, Path
+from burn_emulator.config import current_data_version, inputs_version, varlocs_gpkg
+from burn_emulator.constants import OUTDIR, Path
 
 VARLOCS_TXT = OUTDIR / "varlocs.txt"
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--input", type=Path, default=VARLOCS_GPKG)
+    all_gpkg = varlocs_gpkg(inputs_version(current_data_version()))
+    parser.add_argument("-i", "--input", type=Path, default=all_gpkg)
     parser.add_argument("-v", "--varlocs", type=Path, default=VARLOCS_TXT)
-    parser.add_argument("-o", "--output", type=Path, default=OUTDIR / "valid_varlocs.gpkg")
+    parser.add_argument("-o", "--output", type=Path, default=all_gpkg.parent / "valid_varlocs.gpkg")
     args = parser.parse_args()
 
     varlocs = [line.strip() for line in args.varlocs.read_text().splitlines() if line.strip()]

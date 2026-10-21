@@ -1,7 +1,8 @@
+import json
 import resource
 import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from concurrent.futures import as_completed
 from typing import Any
 
@@ -10,6 +11,7 @@ import rasterio
 import torch
 from rasterio.features import geometry_mask
 
+from burn_emulator import rasters
 from burn_emulator.config import dynamic_import
 from burn_emulator.constants import BACKENDS, INF_PROFILE, RUN_BACKEND, RUN_DEVICE, RUN_DTYPE, Path
 from burn_emulator.datasets.utils import compute_crop_region
@@ -18,6 +20,44 @@ from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoi
 
 class RunCancelled(Exception):
     pass
+
+
+# (ckpt_path, model config) -> model on RUN_DEVICE after enable_caching(), least recently used
+# first; None loads per run
+_models: OrderedDict[tuple[str, str], torch.nn.Module] | None = None
+_max_models = 0
+
+
+# long-lived processes (the runner's claim loop): rasters read whole once, up to max_models models
+# kept loaded
+def enable_caching(max_models: int) -> None:
+    global _models, _max_models
+    if max_models < 1:
+        raise ValueError(f"max_models must be >= 1, got {max_models}")
+    rasters.enable_cache()
+    _max_models = max_models
+    if _models is None:
+        _models = OrderedDict()
+
+
+def _load_model(model: dict, ckpt_path: Path, timings: dict | None) -> torch.nn.Module:
+    key = (str(ckpt_path), json.dumps(model, sort_keys=True, default=str))
+    if _models is not None and key in _models:
+        _models.move_to_end(key)
+        return _models[key]
+    module = dynamic_import(model)
+    with timed(timings, "model load"):
+        ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)
+        if next(iter(ckpt.keys())).startswith("_orig_mod"):
+            ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
+        module.load_state_dict(ckpt)
+        module.to(RUN_DEVICE, dtype=RUN_DTYPE)
+        module.eval()
+    if _models is not None:
+        _models[key] = module
+        while len(_models) > _max_models:
+            _models.popitem(last=False)
+    return module
 
 
 def _fire_touches(
@@ -195,18 +235,10 @@ def _run_emulator(
 ) -> dict:
     n_ignitions = len(ds)
     ckpt_path = resolve_model_checkpoint(experiment_dir, ckpt_path)
-    model = dynamic_import(model)
     activation = dynamic_import(activation)
     if debug:
         print(f"[run] loading ckpt_path: {ckpt_path}", flush=True)
-
-    with timed(timings, "model load"):
-        ckpt = torch.load(ckpt_path, map_location=RUN_DEVICE, weights_only=True)
-        if next(iter(ckpt.keys())).startswith("_orig_mod"):
-            ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
-        model.load_state_dict(ckpt)
-        model.to(RUN_DEVICE, dtype=RUN_DTYPE)
-        model.eval()
+    model = _load_model(model, ckpt_path, timings)
 
     profile = ds.profile | INF_PROFILE
     shape = (profile["height"], profile["width"])

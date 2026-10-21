@@ -4,7 +4,7 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 
 ## Config
 
-`BURN_EMULATOR_RUNNER_GPU_JOB` and `BURN_EMULATOR_SLURM` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_SLURM` set, the server reads the three bucket variables.
+`BURN_EMULATOR_RUNNER_GPU_JOB` and `BURN_EMULATOR_METAL` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_METAL` set, the server reads the three bucket variables.
 
 | Variable | Purpose |
 | --- | --- |
@@ -13,7 +13,7 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
 | `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
 | `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job |
-| `BURN_EMULATOR_SLURM` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body and [`scripts/dispatch.sh`](#slurm-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
+| `BURN_EMULATOR_METAL` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body, and the [runner's claim loop](#metal-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
 
 ## `POST /v1/jobs`
 
@@ -115,16 +115,15 @@ Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS gene
 
 ## Claims
 
-A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report goes stale after 25 min (`dispatch.runStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report expires 30 min after its run starts (`dispatch.runStaleAfter`; `updated_at` is set when the trigger fires or a runner loop takes it), or, in metal mode, 60 min after it was queued (`dispatch.queueStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
 
 | `status` | written by | |
 | --- | --- | --- |
-| `running` | api (Cloud Run mode), `slurm/infer.slurm` | active |
-| `queued` | api (slurm mode); `dispatch.sh` on requeue | active; body = runner env JSON |
-| `submitted` | `dispatch.sh` | active; `submit_id`, `submitted_at`, `slurm_job` |
-| `failed` | api on a failed report; `dispatch.sh` when its inputs or bundle are missing from the cluster | reclaimed by the next identical POST |
+| `running` | api (Cloud Run mode), runner loop on take | active; loop: `runner` |
+| `queued` | api (metal mode); runner loop when stopped mid-run | active; body = runner env JSON |
+| `failed` | api on a failed report | reclaimed by the next identical POST |
 
-The api writes whole claims (create, reclaim, `failed`) and so owns the generation; the dispatcher and the job update metadata, with generation and metageneration preconditions.
+The api writes whole claims (create, reclaim, `failed`) and so owns the generation. The runner loop only patches metadata, with generation and metageneration preconditions.
 
 ## Output bucket layout
 
@@ -144,7 +143,7 @@ gs://<out>/
 | --- | --- | --- | --- |
 | `<job_id>/output.tif` | runner | none | permanent; its existence is the cache hit |
 | `<job_id>/meta.geojson` | api before the trigger (treatment area, EPSG:5070); runner overwrites it before `output.tif` (EPSG:5070 Feature, run + bundle as properties) | none | permanent; deleted with the output on failure, rewritten on retry |
-| `_claims/` | api; metadata also by `scripts/dispatch.sh` and `slurm/infer.slurm` | `status` (see [Claims](#claims)), `job_name`, `attempts`, `updated_at`, `error`, slurm: `submit_id`, `submitted_at`, `slurm_job` | deleted on success; failed or stale claims move to `_failed/` after a day |
+| `_claims/` | api; metadata also by the runner loop | `status` (see [Claims](#claims)), `job_name`, `attempts`, `updated_at`, `error`, metal: `runner` | deleted on success; failed or stale claims move to `_failed/` after a day |
 | `_reports/` | runner | `status` (`completed` \| `failed`), `claim_generation`, `error` | deleted once handled |
 | `_failed/` | api daily prune | the claim's, `status=failed`, `archived_at`, stale ones `last_status` | permanent; latest failure per job id |
 | `_prune/last` | api | none | rewritten once a day |
@@ -155,62 +154,23 @@ Only `_reports/` triggers the notification (the notification's object prefix fil
 
 | Rule | Values | Set in |
 | --- | --- | --- |
-| runner timeout < claim stale age | 20 min < 25 min | runner job task timeout, `dispatch.runStaleAfter` |
+| runner timeout < claim stale age | 20 min < 30 min | runner job task timeout (metal: `BURN_EMULATOR_RUN_TIMEOUT`), `dispatch.runStaleAfter` |
 | runner retries = 0 | 0 | runner job max retries |
 | report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
 | handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
 
-## Slurm dispatch
+## Metal dispatch
 
-With `BURN_EMULATOR_SLURM` set, the runner runs on a Slurm cluster. A scrontab job on the cluster polls `_claims/` every minute and talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
+With `BURN_EMULATOR_METAL` set, the api triggers nothing: each claim is written `queued`, with the runner env as its body. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
 
 ```
 api: claim queued (generation G0, body = runner env) + meta.geojson
-scripts/dispatch.sh (scrontab, 1/min): requeue submitted claims whose slurm job is gone,
-    fail claims whose inputs or bundle are missing from the cluster,
-    queued -> submitted (submit_id), sbatch slurm/infer.slurm, record slurm_job
-slurm/infer.slurm: submitted -> running, exec burn-emulator-runner with the claim's env
-    (/inputs -> INPUTS_ROOT, /models -> BUNDLES_ROOT, BURN_EMULATOR_CLAIM_GENERATION=G0)
-runner: meta.geojson, output.tif, _reports/<job_id>  ->  HandleReport as in Cloud Run mode
+runner loop: queued -> running (runner = <host>/<slurm job>), adds the inputs and bundle paths (left out of a metal claim) from its on-prem roots,
+    meta.geojson, output.tif, _reports/<job_id> (claim_generation = G0)  ->  HandleReport as in Cloud Run mode
+    stopped mid-run: running -> queued
 ```
 
-Every cluster transition is a metadata update with `--if-generation-match=G0 --if-metageneration-match=<read>`: one pass takes a given claim, and a job that starts after the api reclaimed the run (new generation) or after a requeue (new `submit_id`) exits 0 before running the runner.
-
-| File | |
-| --- | --- |
-| [`scripts/env.sh`](scripts/env.sh) | loads `data/.env`, checks the config and key, isolates gcloud (`CLOUDSDK_CONFIG`, key override) |
-| [`scripts/claims.sh`](scripts/claims.sh) | `claim_list`, `claim_get`, `claim_body`, `claim_update` over `gcloud storage` + `jq` |
-| [`scripts/dispatch.sh`](scripts/dispatch.sh) | one pass; logs one summary line plus one line per action |
-| [`slurm/infer.slurm`](slurm/infer.slurm) | takes the claim, execs the runner |
-| [`slurm/dispatch.scrontab`](slurm/dispatch.scrontab) | the scrontab entry |
-| [`.env.example`](.env.example) | `data/.env` template |
-
-Config: `BURN_EMULATOR_ENV` and `BURN_EMULATOR_OUTPUTS_URI` come from the running user's login profile (scrontab and `sbatch --export=NONE` jobs load it through `bash -l`; check with `bash -lc 'echo $BURN_EMULATOR_OUTPUTS_URI'`). `burn-emulator-api/data/.env` holds `KEY_FILE` (`/home/${USER}/...`), `INPUTS_ROOT`, `BUNDLES_ROOT`, `SLURM_DL_ARGS`, `SLURM_PT_ARGS` (empty: that backend stays queued), `INFER_TIME` (below the 25 min stale age), `MAX_INFLIGHT_DL`, `MAX_INFLIGHT_PT`. `data/` (config, logs, gcloud config, uv cache) is gitignored and excluded from docker builds.
-
-Inputs and bundles are read from disk only, written there by the release targets: `make inputs-release` copies the fbfm map into `<INPUTS_ROOT>/<inputs_version>/fbfm/`, `make model-release` puts each published bundle at `<BUNDLES_ROOT>/<varloc>/<model_version>/`. Release from a checkout whose `burn-emulator-model/data/{inputs,bundles}` are (or link to) those dirs.
-
-Logs: `data/logs/dispatch.log` (every pass, appended) and `data/logs/infer/<job-name>_<job id>.{out,err}`. Both grow until cleaned up by hand.
-
-Setup, as the running user (`$USER`; your own account first, a `planscape` service user later), in a deploy checkout pinned to the API image `VERSION`:
-
-```bash
-# 1. login profile: export BURN_EMULATOR_ENV and BURN_EMULATOR_OUTPUTS_URI (gs://planscape-burn-emulator-output-<env>)
-# 2. key for burn-runner-sa-<env>, created by an admin of the GCP project
-mkdir -p -m 700 ~/.config/burn-emulator
-gcloud iam service-accounts keys create ~/.config/burn-emulator/runner-key.json \
-  --iam-account=burn-runner-sa-dev@planscape-23d66.iam.gserviceaccount.com
-chmod 600 ~/.config/burn-emulator/runner-key.json
-# 3. deploy checkout
-git clone <repo> <deploy> && cd <deploy> && git checkout <VERSION>
-cp burn-emulator-api/.env.example burn-emulator-api/data/.env    # edit: roots, SLURM_*_ARGS
-make runner-venv
-make dispatch-once && tail burn-emulator-api/data/logs/dispatch.log
-# 4. scrontab -e: paste burn-emulator-api/slurm/dispatch.scrontab with <project>, <small>, <deploy> filled in
-```
-
-Moving to another user: comment out the old scrontab entry, wait for `squeue -u <old>` to drain, give the new user its own key under its home and the same profile exports, change ownership of the deploy checkout (and the shared data group), then install the same scrontab entry as the new user. The user must exist with the same UID on the controller, the login node and every node of the partitions in `SLURM_*_ARGS` and `#SCRON`.
-
-Upgrade: `git fetch && git checkout <new VERSION> && make runner-venv` in the deploy checkout, together with the API image roll.
+Each loop transition is a metadata patch with `ifGenerationMatch=G0` and `ifMetagenerationMatch=<read>`, so only one loop takes a given claim. A claim the api has reclaimed in the meantime (new generation) is left alone.
 
 ## Build
 

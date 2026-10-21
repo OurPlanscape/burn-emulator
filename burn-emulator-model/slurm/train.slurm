@@ -17,6 +17,7 @@ echo "Job ID: $SLURM_JOB_ID, Array: ${SLURM_ARRAY_JOB_ID:-}_${SLURM_ARRAY_TASK_I
 source $HOME/.bashrc
 source "burn-emulator-model/${UV_PROJECT_ENVIRONMENT:-.venv-$(uname -m)}/bin/activate"
 cd burn-emulator-model
+source scripts/load_env.sh
 mkdir -p data/logs/train
 source slurm/queue.sh
 
@@ -34,7 +35,7 @@ fi
 
 if [ -n "${PUBLISH:-}" ]; then
     for var in BURN_EMULATOR_MODELS_URI BURN_EMULATOR_INPUTS_URI; do
-        [ -n "${!var:-}" ] || { echo "error: PUBLISH=1 needs $var exported" >&2; exit 2; }
+        [ -n "${!var:-}" ] || { echo "error: PUBLISH=1 needs $var (make env-vars)" >&2; exit 2; }
     done
 fi
 
@@ -116,12 +117,12 @@ run_varloc () {
     fi
     if [ "$status" -eq 0 ] && [ -n "${PUBLISH:-}" ]; then
         echo "[publish] $VARLOC"
-        make -C .. model-release VARLOC="$VARLOC" BUNDLE_DIR= || status=$?
+        make -C .. model-release VARLOC="$VARLOC" || status=$?
     fi
     # txt update, gpkg rebuild and upload under one lock
     if [ "$status" -eq 0 ] && [ -n "${PUBLISH:-}" ]; then
         echo "[varlocs-release] $VARLOC"
-        scripts/mark_trained.sh "$VARLOC" make -C .. varlocs-release DATA_VERSION= || status=$?
+        scripts/mark_trained.sh "$VARLOC" make -C .. varlocs-release || status=$?
     elif [ "$status" -eq 0 ]; then
         scripts/mark_trained.sh "$VARLOC"
     fi

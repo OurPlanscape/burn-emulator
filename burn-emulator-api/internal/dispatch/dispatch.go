@@ -155,10 +155,11 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		Hash:            id.Hash,
 		OutputPath:      result.OutputPath,
 		ReportPath:      reportPath,
+		Metal:           c.cfg.Metal,
 	}
 
 	claimStatus, claimBody := statusRunning, ""
-	if c.cfg.Slurm {
+	if c.cfg.Metal {
 		env, err := json.Marshal(runnerEnv(infer))
 		if err != nil {
 			return JobResult{}, fmt.Errorf("encoding runner env: %w", err)
@@ -185,7 +186,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return JobResult{}, err
 	}
 
-	if c.cfg.Slurm {
+	if c.cfg.Metal {
 		result.JobName = req.JobName
 		result.Attempts = rec.Attempts
 		result.Status = "pending"
@@ -198,7 +199,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		if isRejected(err) {
 			c.releaseRun(ctx, runObject, rec.Generation)
 		} else {
-			// an execution may have started; the claim is kept and goes stale after runStaleAfter
+			// an execution may have started; the claim is kept until it goes stale
 			slog.Warn("runner trigger outcome unknown; keeping claim", "run", runObject, "error", err)
 		}
 		return JobResult{}, fmt.Errorf("triggering inference: %w", err)
@@ -247,7 +248,10 @@ func (c *Client) GetJob(ctx context.Context, id JobID) (JobResult, error) {
 	case rec.Status == statusFailed:
 		result.Status = "failed"
 		result.Error = rec.Error
-	case time.Since(rec.UpdatedAt) >= runStaleAfter:
+	case rec.stale() && rec.Status == statusQueued:
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("no runner took the claim within %.0f min", queueStaleAfter.Minutes())
+	case rec.stale():
 		result.Status = "failed"
 		result.Error = "run did not report back before its claim went stale"
 	default:

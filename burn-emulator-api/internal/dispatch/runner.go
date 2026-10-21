@@ -33,7 +33,7 @@ func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient,
 	return &runnerClient{svc: svc, jobs: jobs}, nil
 }
 
-// passed to the job execution as env overrides, or stored as the claim body in slurm mode
+// passed to the job execution as env overrides, or stored as the claim body in metal mode
 type inferRequest struct {
 	InputsVersion   string
 	VarLoc          string
@@ -46,9 +46,10 @@ type inferRequest struct {
 	OutputPath      string // JobResult.OutputPath
 	ReportPath      string // gs:// path of the _reports/ report the runner writes when it finishes
 	ClaimGeneration int64
+	Metal           bool // the runner loop sets the inputs and bundle paths from its on-prem roots
 }
 
-// the runner's env; BURN_EMULATOR_CLAIM_GENERATION only when set (slurm/infer.slurm adds it)
+// the runner's env; BURN_EMULATOR_CLAIM_GENERATION only when set (the metal loop uses the claim's generation)
 func runnerEnv(req inferRequest) map[string]string {
 	env := map[string]string{
 		"BURN_EMULATOR_VARLOC":         req.VarLoc,
@@ -58,10 +59,12 @@ func runnerEnv(req inferRequest) map[string]string {
 		"BURN_EMULATOR_BACKEND":        req.Backend,
 		"BURN_EMULATOR_OUTPUT_PATH":    req.OutputPath,
 		"BURN_EMULATOR_REPORT_PATH":    req.ReportPath,
-		"BURN_EMULATOR_BASELINE_FUELS": fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.InputsVersion),
-		"BURN_EMULATOR_LEGALMAX_FUELS": fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.InputsVersion),
-		"BURN_EMULATOR_TOPO_PATH":      fmt.Sprintf("%s/%s/topo", inputsMountPath, req.InputsVersion),
-		"BURN_EMULATOR_FBFM_MAP_PATH":  fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.InputsVersion),
+	}
+	if !req.Metal {
+		env["BURN_EMULATOR_BASELINE_FUELS"] = fmt.Sprintf("%s/%s/baseline", inputsMountPath, req.InputsVersion)
+		env["BURN_EMULATOR_LEGALMAX_FUELS"] = fmt.Sprintf("%s/%s/legalmax", inputsMountPath, req.InputsVersion)
+		env["BURN_EMULATOR_TOPO_PATH"] = fmt.Sprintf("%s/%s/topo", inputsMountPath, req.InputsVersion)
+		env["BURN_EMULATOR_FBFM_MAP_PATH"] = fmt.Sprintf("%s/%s/fbfm/fbfm_behavior_adjectives.csv", inputsMountPath, req.InputsVersion)
 	}
 	if req.ClaimGeneration != 0 {
 		env["BURN_EMULATOR_CLAIM_GENERATION"] = strconv.FormatInt(req.ClaimGeneration, 10)
@@ -69,7 +72,9 @@ func runnerEnv(req inferRequest) map[string]string {
 	if req.ModelVersion != "" {
 		env["BURN_EMULATOR_MODEL_VERSION"] = req.ModelVersion
 		env["BURN_EMULATOR_BUNDLE_URI"] = req.BundleURI
-		env["BURN_EMULATOR_BUNDLE_DIR"] = fmt.Sprintf("%s/%s/%s", modelsMountPath, req.VarLoc, req.ModelVersion)
+		if !req.Metal {
+			env["BURN_EMULATOR_BUNDLE_DIR"] = fmt.Sprintf("%s/%s/%s", modelsMountPath, req.VarLoc, req.ModelVersion)
+		}
 	}
 	if req.IgnitionDensity != nil {
 		env["BURN_EMULATOR_IGNITION_DENSITY"] = strconv.FormatFloat(*req.IgnitionDensity, 'g', -1, 64)

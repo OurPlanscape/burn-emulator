@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	runStaleAfter    = 25 * time.Minute // exceeds the runner job timeout
+	runStaleAfter    = 30 * time.Minute  // running: exceeds the runner timeouts
+	queueStaleAfter  = 2 * runStaleAfter // queued (metal): waiting for a runner loop
 	maxClaimAttempts = 3
 	releaseTimeout   = 10 * time.Second
 )
@@ -30,20 +31,19 @@ const (
 )
 
 const (
-	statusQueued    = "queued"    // slurm mode: waiting for the dispatcher
-	statusSubmitted = "submitted" // slurm mode: sbatch'd by the dispatcher
-	statusRunning   = "running"
-	statusFailed    = "failed"
+	statusQueued  = "queued"
+	statusRunning = "running"
+	statusFailed  = "failed"
 )
 
-// a claim in one of these goes stale after runStaleAfter without a report
+// a claim in one of these expires without a report, see claimRecord.stale
 func isActive(status string) bool {
-	return status == statusQueued || status == statusSubmitted || status == statusRunning
+	return status == statusQueued || status == statusRunning
 }
 
-// stored as claim object metadata; the slurm dispatcher adds submit_id, submitted_at and slurm_job, dropped on the next API write
+// stored as claim object metadata; the runner's claim loop adds runner, dropped on the next API write
 type claimRecord struct {
-	Status     string // statusQueued | statusSubmitted | statusRunning | statusFailed
+	Status     string // statusQueued | statusRunning | statusFailed
 	JobName    string
 	Attempts   int
 	UpdatedAt  time.Time
@@ -91,7 +91,7 @@ func (c *Client) claimRun(ctx context.Context, key, jobName, status, body string
 		}
 
 		rec := parseClaim(obj)
-		if isActive(rec.Status) && time.Since(rec.UpdatedAt) < runStaleAfter {
+		if isActive(rec.Status) && !rec.stale() {
 			return false, rec, nil
 		}
 
@@ -224,6 +224,17 @@ func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRec
 		return 0, err
 	}
 	return written.Generation, nil
+}
+
+// updated_at is when the claim was queued, or when its run started
+func (r claimRecord) stale() bool {
+	switch r.Status {
+	case statusRunning:
+		return time.Since(r.UpdatedAt) >= runStaleAfter
+	case statusQueued:
+		return time.Since(r.UpdatedAt) >= queueStaleAfter
+	}
+	return false
 }
 
 func parseClaim(obj *storage.Object) claimRecord {

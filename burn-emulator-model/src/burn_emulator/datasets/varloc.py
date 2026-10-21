@@ -26,6 +26,7 @@ from burn_emulator.constants import (
     Path,
 )
 from burn_emulator.datasets.utils import compute_bounds, compute_padding
+from burn_emulator.rasters import open_raster
 from burn_emulator.types import IgnitionMethod
 from burn_emulator.utils import circle_mask
 
@@ -110,7 +111,7 @@ def _read_fuel_dir(
 ) -> tuple[dict, torch.Tensor | None, dict | None, tuple | None]:
     layer, mask, profile = {}, None, None
     for name in INPUT_KEYS:
-        with rasterio.open(fuels_path / f"{name}.tif") as src:
+        with open_raster(fuels_path / f"{name}.tif") as src:
             if window_bounds is None and sample_region is not None:
                 # margin so every ignition's full model window fits in the read
                 window_bounds = tuple(
@@ -172,11 +173,11 @@ def _load_fbfm_map(map_path: str | Path) -> pd.DataFrame:
 
 
 def _load_topos(topo_path: Path, window_bounds: tuple | None) -> dict:
-    with rasterio.open(topo_path / "aspect.tif") as src:
+    with open_raster(topo_path / "aspect.tif") as src:
         aspect = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
         missing_aspect = aspect == src.nodata
         
-    with rasterio.open(topo_path / "slope_degrees.tif") as src:
+    with open_raster(topo_path / "slope_degrees.tif") as src:
         slope = torch.tensor(src.read(window=_window(src, window_bounds))).to(DEFAULT_DTYPE)
         missing_slope = slope == src.nodata
 

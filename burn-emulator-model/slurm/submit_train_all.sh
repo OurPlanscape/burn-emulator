@@ -22,9 +22,10 @@ while getopts "pv:x:r:" opt; do
 done
 shift $((OPTIND - 1))
 
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/load_env.sh"
 if [ -n "$PUBLISH" ]; then
     for var in BURN_EMULATOR_MODELS_URI BURN_EMULATOR_INPUTS_URI; do
-        [ -n "${!var:-}" ] || { echo "error: -p needs $var exported (see README.md)" >&2; exit 2; }
+        [ -n "${!var:-}" ] || { echo "error: -p needs $var (make env-vars)" >&2; exit 2; }
     done
 fi
 
