@@ -14,3 +14,4 @@ wheels/
 
 # mark_trained.sh lock
 varlocs.txt.lock
+adhoc
