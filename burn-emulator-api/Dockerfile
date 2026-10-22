@@ -19,6 +19,7 @@ WORKDIR /app
 COPY --from=builder /out/burn-emulator-api /app/burn-emulator-api
 
 # claims are queued for the runner's claim loop on prem (BURN_EMULATOR_LOOP=1) instead of triggering runner jobs
+# TODO: add offloading functionality when GPU quotas are available (BURN_EMULATOR_LOOP=0)
 ENV BURN_EMULATOR_METAL=1
 
 USER 65532:65532
