@@ -20,8 +20,7 @@ const (
 	pruneMaxClaims = 500
 )
 
-// archives old claims at most once per pruneEvery across all instances; errors are logged.
-// HandleReport runs it in its own goroutine.
+// archives old claims at most once per pruneEvery across all instances; errors are logged
 func (c *Client) maybePrune(ctx context.Context) {
 	bucket, err := c.outputBucketName()
 	if err != nil {

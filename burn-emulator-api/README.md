@@ -85,7 +85,7 @@ Status of the run named by `job_id`. Same body as POST.
 
 Pub/Sub push endpoint for GCS `OBJECT_FINALIZE` on `gs://<out>/_reports/`. Re-reads the report's `status` and `claim_generation` from GCS: `completed` releases the claim, `failed` deletes partial output and marks the claim `failed`. 2xx acks, 5xx redelivers.
 
-Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`, in its own goroutine after the report is handled; bounded by 30 s and 500 claims per run.
+Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`, before the response; bounded by 30 s and 500 claims per run.
 
 ## `GET /healthz` -> `200 ok`
 
