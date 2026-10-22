@@ -206,7 +206,7 @@ inference-all: ## [direct] run inference for every varloc (OUTPUTS_ROOT=)
 	    $(MAKE) inference VARLOC="$$varloc" OUTPUTS_ROOT="$(OUTPUTS_ROOT)/$$varloc"
 	done
 
-smoke: ## [direct] run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [TREATMENT_AREA=] [OUT_PATH=] [PT=1])
+smoke: ## [direct] run the smoke test for one varloc in debug mode (VARLOC= [WIND_RANGE="lo hi"] [TREATMENT_AREA=] [OUT_PATH=] [IGNITION_DENSITY=] [PT=1])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	source "$(VENV)/bin/activate"
 	cd "$(MODEL_DIR)"
@@ -222,6 +222,7 @@ smoke: ## [direct] run the smoke test for one varloc in debug mode (VARLOC= [WIN
 	    -c configs/varlocs/templates/run_smoke.yaml \
 	    $(if $(TREATMENT_AREA),-ta $(TREATMENT_AREA)) \
 	    $(if $(OUT_PATH),-o $(OUT_PATH)) \
+	    $(if $(IGNITION_DENSITY),-id $(IGNITION_DENSITY)) \
 	    $(if $(PT),-pt)
 
 # $(1): varloc, empty for -all
