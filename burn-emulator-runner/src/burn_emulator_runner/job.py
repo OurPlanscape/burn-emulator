@@ -9,7 +9,7 @@ from functools import cache
 import geopandas as gpd
 from burn_emulator.config import load_treatment_area
 from burn_emulator.constants import TARGET_CRS, Path
-from burn_emulator.run import run
+from burn_emulator.run import BENEFIT_KEYS, run
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 from shapely.geometry.base import BaseGeometry
@@ -196,6 +196,7 @@ def run_job(
         "inputs_version": env.get("BURN_EMULATOR_INPUTS_VERSION"),
         "ignition_density": cfg["dataset"]["init_args"].get("ignition_density"),
         "output_path": output_path,
+        **{k: result[k] for k in BENEFIT_KEYS},
     }
     if model_version:
         meta |= {

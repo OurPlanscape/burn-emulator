@@ -9,7 +9,7 @@
 # make runner-loop [NODES=<node>] [SBATCH_ARGS=...], or
 # sbatch --gres=gpu:1 --exclusive --mem=0 burn-emulator-runner/slurm/loop.slurm
 # runs DL and PT claims alike, as each claim's BURN_EMULATOR_BACKEND says; PT sizes its workers to the node
-# needs BURN_EMULATOR_OUTPUT_URI and GOOGLE_APPLICATION_CREDENTIALS (runner SA key) from
+# needs BURN_EMULATOR_OUTPUT_URI and GOOGLE_APPLICATION_CREDENTIALS from
 # ~/.config/burn-emulator/env (make env-vars; burn-emulator-model/scripts/load_env.sh);
 # inputs and bundles are read under BURN_EMULATOR_{INPUTS,BUNDLES}_ROOT from the same file
 # on SIGTERM the current run's claim goes back to queued for another loop

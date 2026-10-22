@@ -17,6 +17,9 @@ from burn_emulator.constants import BACKENDS, INF_PROFILE, RUN_BACKEND, RUN_DEVI
 from burn_emulator.datasets.utils import compute_crop_region
 from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
 
+M2_PER_ACRE = 4046.8564224
+BENEFIT_KEYS = ("project_area_acres", "indirect_acres_improved", "indirect_benefit_pct")
+
 
 class RunCancelled(Exception):
     pass
@@ -88,6 +91,25 @@ def _center_component(mask: torch.Tensor) -> torch.Tensor:
             break
         seed = grown
     return seed
+
+
+# probability-weighted crown -> non-crown minus non-crown -> crown, outside the region only
+def _indirect_benefit(agg: np.ndarray, inside: np.ndarray, transform: Any, region: Any) -> dict:
+    net = agg[2] - agg[1]
+    pixel_acres = abs(transform.a * transform.e) / M2_PER_ACRE
+    indirect = float(net[~inside].sum()) * pixel_acres
+    project = region.area / M2_PER_ACRE
+    return {
+        "project_area_acres": project,
+        "indirect_acres_improved": indirect,
+        "indirect_benefit_pct": 100 * indirect / project if project > 0 else None,
+    }
+
+
+def _sig3(v: float | None) -> str:
+    if v is None:
+        return "None"
+    return np.format_float_positional(v, precision=3, unique=False, fractional=False, trim="-")
 
 
 def timing_report(tag: str, header: str, timings: dict, total: float, rows: dict) -> None:
@@ -208,8 +230,12 @@ def _run_pt(
     with timed(timings, "write"), rasterio.open(out_path, "w", **profile) as dst:
         dst.write(agg)
 
+    with timed(timings, "benefit"):
+        benefit = _indirect_benefit(agg, state["keep_mask"], profile["transform"], region)
+
     n_sims = 2 * len(futures)
     return {
+        **benefit,
         "n_kept": n_kept,
         "rows": {
             "workers": pt_workers,
@@ -319,7 +345,9 @@ def _run_emulator(
         with rasterio.open(out_path, "w", **profile) as dst:
             dst.write(agg)
 
-    return {"n_kept": n_kept, "rows": {}}
+    with timed(timings, "benefit"):
+        benefit = _indirect_benefit(agg, keep_mask.cpu().numpy(), profile["transform"], region)
+    return {**benefit, "n_kept": n_kept, "rows": {}}
 
 
 def run(
@@ -378,7 +406,8 @@ def run(
             timings, debug, cancel,
         )
 
-    result = {"model_name": out_name, "out_path": out_path, "timings": None}
+    benefit = {k: stats[k] for k in BENEFIT_KEYS}
+    result = {"model_name": out_name, "out_path": out_path, "timings": None, **benefit}
     if debug:
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
@@ -387,7 +416,7 @@ def run(
             f"{label}  ({n_ignitions} ignitions, {stats['n_kept']} kept)",
             timings,
             total,
-            {**stats["rows"], **peak_memory_rows()},
+            {**stats["rows"], **{k: _sig3(v) for k, v in benefit.items()}, **peak_memory_rows()},
         )
         result["timings"] = {**timings, "total": total}
 
