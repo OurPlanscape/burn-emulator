@@ -25,6 +25,33 @@ UV_PROJECT_ENVIRONMENT=.venv-$(uname -m) uv sync --extra data # + pyretechnics/r
 
 `burn_emulator -m <train|evaluate|run|bundle|ignite>`. `-c` configs merge in order (later wins); CLI flags override them. `-a` / `-vl` / `-dv` (or `architecture` / `varloc` / `data_version`) set `model_name` = `<VARLOC>_<architecture>_<data_version>` and the experiment dir `data/outputs/<VARLOC>/<data_version>_<architecture>/` (`<experiment_dir>` below). `configs/varlocs/current.yaml` holds the current `architecture`, `inputs_version` and `ignitions_version`; `data_version` = `<inputs_version>_<ignitions_version>`.
 
+## Run
+
+```bash
+burn_emulator -m run -vl <varloc> \
+              -c configs/varlocs/current.yaml -c configs/<architecture>/model.yaml -c <data.yaml> \
+              -bf <baseline_fuels> -lf <legalmax_fuels> -tp <topo> -mp <fbfm_map> \
+              -ta <treatment_area> [-id <ignition_density>] [-cp <checkpoint>] [-o <out.tif>] [-pt]
+```
+
+```
+1. merge -c configs + CLI overrides
+2. VarLoc dataset: seeded ignitions over the buffered treatment_area, one window per ignition
+   (baseline + collated-treatment fuels, wind, circular mask)
+3. load the checkpoint (-cp, else the lowest-loss one in <experiment_dir>/checkpoints)
+4. per batch: baseline + treatment forward -> activation -> argmax -> fire_type per pixel
+5. per fire: keep the center-connected burn, classify crown change, drop fires outside the treatment area
+6. average kept fires onto the full raster (fp32)
+7. write a 3-band float32 GeoTIFF (no change | to crown | from crown)
+8. compute the indirect benefit outside the treatment area
+```
+
+Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `run()` returns `out_path` plus `project_area_acres`, `indirect_acres_improved` and `indirect_benefit_pct` (defined in [meta.geojson](../burn-emulator-runner/README.md#metageojson)), unrounded. `-d` prints them to 3 significant figures with the timings. `make smoke` runs it on a sample treatment area.
+
+`run.enable_caching(max_models)` makes later runs in the same process read each raster whole once and slice windows from memory (`burn_emulator.rasters.open_raster`), and keep up to `max_models` `(ckpt_path, model)` pairs loaded on `RUN_DEVICE`, least recently used evicted first. The runner's claim loop turns it on.
+
+Env: `RUN_DEVICE` (`cuda` default, `XLA`, `cpu`), `RUN_DTYPE` (default `bfloat16`), `USE_CLOUD_PATHS` (for `gs://` paths), `BURN_EMULATOR_BACKEND` (`DL` default, `PT`). `PT` / `-pt` runs pyretechnics and writes `<VARLOC>_pt_<data_version>.tif`.
+
 ## Training data
 
 ```bash
@@ -55,60 +82,6 @@ scripts/ignite_inference.sh <varloc> <outputs_root>
 ```
 
 Evaluates every scenario under `<outputs_root>` (one subdirectory per scenario, with `<N>_baseline` / `<N>_legalmax` ignition sets), using `configs/varlocs/current.yaml`.
-
-## Run
-
-```bash
-burn_emulator -m run -vl <varloc> \
-              -c configs/varlocs/current.yaml -c configs/<architecture>/model.yaml -c <data.yaml> \
-              -bf <baseline_fuels> -lf <legalmax_fuels> -tp <topo> -mp <fbfm_map> \
-              -ta <treatment_area> [-id <ignition_density>] [-cp <checkpoint>] [-o <out.tif>] [-pt]
-```
-
-```
-1. merge -c configs + CLI overrides
-2. VarLoc dataset: seeded ignitions over the buffered treatment_area, one window per ignition
-   (baseline + collated-treatment fuels, wind, circular mask)
-3. load the checkpoint (-cp, else the lowest-loss one in <experiment_dir>/checkpoints)
-4. per batch: baseline + treatment forward -> activation -> argmax -> fire_type per pixel
-5. per fire: keep the center-connected burn, classify crown change, drop fires outside the treatment area
-6. average kept fires onto the full raster (fp32)
-7. write a 3-band float32 GeoTIFF (no change | to crown | from crown)
-```
-
-Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `make smoke` runs it on a sample treatment area.
-
-`run.enable_caching(max_models)` makes later runs in the same process read each raster whole once and slice windows from memory (`burn_emulator.rasters.open_raster`), and keep up to `max_models` `(ckpt_path, model)` pairs loaded on `RUN_DEVICE`, least recently used evicted first. The runner's claim loop turns it on.
-
-Env: `RUN_DEVICE` (`cuda` default, `XLA`, `cpu`), `RUN_DTYPE` (default `bfloat16`), `USE_CLOUD_PATHS` (for `gs://` paths), `BURN_EMULATOR_BACKEND` (`DL` default, `PT`). `PT` / `-pt` runs pyretechnics and writes `<VARLOC>_pt_<data_version>.tif`.
-
-## Inputs
-
-```
-topo_path/             # tifs: aspect / slope
-baseline_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
-legalmax_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
-fbfm_map_path          # FBFM code -> behaviour lookup csv
-ignitions_path         # ignition points; null samples them from treatment_area
-burn_paths/{ignition_number}/fire_type.tif # training only
-```
-
-## Datasets
-
-`VarLoc` (`burn_emulator.datasets.varloc`) windows one context per ignition and yields:
-
-| key | meaning |
-| --- | --- |
-| `x` | input channels (topo + fuels + FBFM one-hots) |
-| `y` | per-pixel `fire_type`; training only |
-| `wind` | wind direction (degrees) |
-| `mask` | burnable / circular-window mask |
-
-Inference samples also carry `pdiffs` / `bounds` / `indxes` for stamping predictions onto the full raster.
-
-## Environment
-
-The publish scripts and slurm jobs source [`scripts/load_env.sh`](scripts/load_env.sh), which exports `~/.config/burn-emulator/env` (`make env-vars` at the repo root; `BURN_EMULATOR_ENV_FILE` to override): `BURN_EMULATOR_*` and `GOOGLE_APPLICATION_CREDENTIALS`.
 
 ## Publish a model
 
@@ -156,3 +129,31 @@ varlocs/valid_varlocs.gpkg            # make valid-varlocs: all_varlocs filtered
 `set_inputs_current.sh` checks the layout and points `<inputs_root>/current` at the version. `publish_inputs.sh` uploads `current`'s version to `<inputs_uri>/<data_version>/` and repoints `<inputs_uri>/current`. `FORCE=1` overwrites published layers.
 
 `publish_varlocs.sh` uploads the two gpkgs (`make varlocs-release`: `current`'s `varlocs/`, rebuilt by `valid-varlocs`) to the varlocs layer of `current`'s published version. `inputs_uri` defaults to `BURN_EMULATOR_INPUTS_URI`.
+
+## Environment
+
+The publish scripts and slurm jobs source [`scripts/load_env.sh`](scripts/load_env.sh), which exports `~/.config/burn-emulator/env` (`make env-vars` at the repo root; `BURN_EMULATOR_ENV_FILE` to override): `BURN_EMULATOR_*` and `GOOGLE_APPLICATION_CREDENTIALS`.
+
+## Inputs
+
+```
+topo_path/             # tifs: aspect / slope
+baseline_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
+legalmax_fuels_path/   # tifs: cbd, cbh, cc, fbfm, th
+fbfm_map_path          # FBFM code -> behaviour lookup csv
+ignitions_path         # ignition points; null samples them from treatment_area
+burn_paths/{ignition_number}/fire_type.tif # training only
+```
+
+## Datasets
+
+`VarLoc` (`burn_emulator.datasets.varloc`) windows one context per ignition and yields:
+
+| key | meaning |
+| --- | --- |
+| `x` | input channels (topo + fuels + FBFM one-hots) |
+| `y` | per-pixel `fire_type`; training only |
+| `wind` | wind direction (degrees) |
+| `mask` | burnable / circular-window mask |
+
+Inference samples also carry `pdiffs` / `bounds` / `indxes` for stamping predictions onto the full raster.

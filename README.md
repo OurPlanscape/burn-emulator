@@ -8,9 +8,63 @@ A deep-learning emulator of a burn spread model that generates thousands of burn
 
 | Directory | What it is |
 | --- | --- |
-| [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: training data, train, evaluate, bundle and `run()` inference. |
 | [`burn-emulator-api/`](burn-emulator-api/README.md) | Go service, CPU-only: validates or picks the varloc, picks the backend, serves the GCS cache, triggers a runner job on a miss (or, in metal mode, queues a claim for the runner's claim loop on prem). |
-| [`burn-emulator-runner/`](burn-emulator-runner/README.md) | Cloud Run Job (GPU for `DL`, CPU for `PT`): runs `burn_emulator.run.run()` once per execution. |
+| [`burn-emulator-runner/`](burn-emulator-runner/README.md) | Cloud Run Job (GPU for `DL`, CPU for `PT`): runs `burn_emulator.run.run()` once per execution, or as a long-lived claim loop on the cluster. |
+| [`burn-emulator-model/`](burn-emulator-model/README.md) | Model library + CLI: training data, train, evaluate, bundle and `run()` inference. |
+
+## Request flow
+
+```
+caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, backend]}--> burn-emulator-api
+  1. validate the request
+  2. inputs_version = gs://<inputs>/current                                   (60s cache)
+     varloc         = requested varloc if it intersects treatment_area in
+                      <inputs_version>/varlocs/all_varlocs.gpkg (else 400),
+                      or the largest overlap there (none -> 400)
+     bundle         = gs://<models>/<varloc>/current if varloc is in valid_varlocs.gpkg (60s cache)
+     DL if requested, there is a bundle and a GPU job is set (or metal mode), else PT; PT also uses the bundle when there is one
+     hash           = sha256(treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
+     output_dir     = gs://<out>/<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>
+  3. output exists?                                                      -> 200 cached
+     claim running?                                                      -> 202 pending + Location
+     else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
+                                                                         -> 202 pending + Location
+     metal mode: once meta.geojson is written, the claim is rewritten queued with the runner env as its body;
+     a long-lived runner on the cluster (BURN_EMULATOR_LOOP=1) takes it and runs it
+  4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
+     run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,
+     write gs://<out>/_reports/... {status, claim_generation, error}
+  5. _reports/ OBJECT_FINALIZE -> Pub/Sub push -> POST /internal/pubsub/run-reports
+     completed -> release the claim; failed -> delete partial output, mark the claim failed
+  6. caller polls GET <Location> until cached or failed
+```
+
+The api rejects malformed GeoJSON, an unsupported `crs`, an unknown `varloc`, and an area outside the requested varloc or every varloc. The ignition cap (2**16 ignitions: `ignition_density` per km² over the buffered treatment area) is checked by the runner, after a job has started.
+
+## Outputs
+
+Each run writes `<output_dir>/output.tif` (crown change fractions) and `<output_dir>/meta.geojson` (treatment area, run provenance and indirect benefit). Both are specified in [burn-emulator-runner Output](burn-emulator-runner/README.md#output).
+
+## Model registry (GCS)
+
+```
+gs://<models>/<varloc>/current                  # text file: the active model_version
+gs://<models>/<varloc>/<model_version>/         # model.pt, stats.yaml, config.yaml, bundle_meta.json
+```
+
+`<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, set by `publish_model.sh` from the bundle; DL and PT runs on a varloc with a bundle are cached under it.
+
+## Varloc files
+
+Under `burn-emulator-model/`:
+
+| file | contents | written by |
+| --- | --- | --- |
+| `data/inputs/<inputs_version>/varlocs/all_varlocs.gpkg` | every varloc polygon, EPSG:5070; also what training-data generation reads (`config.varlocs_gpkg`) | by hand, with the rasters |
+| `data/outputs/varlocs.txt` | trained varlocs | `mark_trained.sh`, `update-mark-trained` |
+| `data/inputs/<inputs_version>/varlocs/valid_varlocs.gpkg` | `all_varlocs.gpkg` filtered to `varlocs.txt` | `valid-varlocs` |
+
+`valid-varlocs` works on `data/inputs/current`'s version, and `inputs-release` / `varlocs-release` upload it unchanged.
 
 ## Makefile targets
 
@@ -54,7 +108,7 @@ Local runs:
 
 | target | what it does |
 | --- | --- |
-| `smoke VARLOC= [WIND_RANGE="<lo> <hi>"] [TREATMENT_AREA=] [OUT_PATH=] [PT=1]` | `burn_emulator -m run -d` with `configs/varlocs/templates/run_smoke.yaml`; `WIND_RANGE` defaults to `configs/wind_directions.csv`, `TREATMENT_AREA` to `data/training_data/<varloc>/sample_pa.geojson` |
+| `smoke VARLOC= [WIND_RANGE="<lo> <hi>"] [TREATMENT_AREA=] [OUT_PATH=] [PT=1]` | `burn_emulator -m run -d` with `configs/varlocs/templates/run_smoke.yaml`; prints timings and the [indirect benefit](burn-emulator-runner/README.md#metageojson). `WIND_RANGE` defaults to `configs/wind_directions.csv`, `TREATMENT_AREA` to `data/training_data/<varloc>/sample_pa.geojson` |
 | `inference VARLOC= OUTPUTS_ROOT=` | `scripts/ignite_inference.sh`: evaluates every scenario under `OUTPUTS_ROOT` and saves each ignition's burn prediction |
 | `inference-all OUTPUTS_ROOT=` | `inference` for every varloc in `varlocs.txt`, root `OUTPUTS_ROOT/<varloc>` |
 | `shell` | syncs `burn-emulator-model/.venv-<arch>` (with the `data` extra) and opens a shell in it |
@@ -63,58 +117,6 @@ Runner loop (deploy checkout, metal mode api; see [burn-emulator-runner](burn-em
 
 | target | what it does |
 | --- | --- |
-| `env-vars` | writes `~/.config/burn-emulator/env` (mode 600), no arguments. `BURN_EMULATOR_INPUTS_ROOT` and `BURN_EMULATOR_BUNDLES_ROOT` are always this checkout's `burn-emulator-model/data/{inputs,bundles}`, where the runner loop reads inputs and bundles. `GOOGLE_APPLICATION_CREDENTIALS` defaults to `~/.config/burn-emulator/runner-key.json`. `BURN_EMULATOR_MAX_MODELS` (models the runner loop keeps loaded) defaults to 8. `BURN_EMULATOR_{ENV,ARTIFACT_STORE,INPUTS_URI,MODELS_URI,OUTPUT_URI}` keep their current values (file or shell), and missing ones are asked for. If the key file is missing, it asks before creating one with `gcloud iam service-accounts keys create` for `burn-runner-sa-<env>@planscape-23d66.iam.gserviceaccount.com`. It is the source of truth: every make target reads it, and so do the scripts and slurm jobs, through `burn-emulator-model/scripts/load_env.sh`, even when run directly. The file wins over the shell; a make command-line value wins over the file. `inputs-release` and `model-release` keep their local copies under the two roots |
+| `env-vars` | writes `~/.config/burn-emulator/env` (mode 600), no arguments. `BURN_EMULATOR_INPUTS_ROOT` and `BURN_EMULATOR_BUNDLES_ROOT` are always this checkout's `burn-emulator-model/data/{inputs,bundles}`. `GOOGLE_APPLICATION_CREDENTIALS` defaults to `~/.config/burn-emulator/runner-key.json`. `BURN_EMULATOR_MAX_MODELS` defaults to 8. `BURN_EMULATOR_{ENV,ARTIFACT_STORE,INPUTS_URI,MODELS_URI,OUTPUT_URI}` keep their current values (file or shell), and missing ones are asked for. Every make target, script and slurm job reads it through `burn-emulator-model/scripts/load_env.sh`. The file wins over the shell; a make command-line value wins over the file |
 | `runner-venv` | syncs `burn-emulator-runner/.venv-<arch>` from its lockfile; the venv `slurm/loop.slurm` runs |
-| `runner-loop [NODES=] [SBATCH_ARGS=]` | sbatches `burn-emulator-runner/slurm/loop.slurm` on a GPU node (`--gres=gpu:1 --exclusive --mem=0`): takes queued DL and PT claims, as the api decided each one's backend, until cancelled |
-
-## Varloc files
-
-Under `burn-emulator-model/`:
-
-| file | contents | written by |
-| --- | --- | --- |
-| `data/inputs/<inputs_version>/varlocs/all_varlocs.gpkg` | every varloc polygon, EPSG:5070; also what training-data generation reads (`config.varlocs_gpkg`) | by hand, with the rasters |
-| `data/outputs/varlocs.txt` | trained varlocs | `mark_trained.sh`, `update-mark-trained` |
-| `data/inputs/<inputs_version>/varlocs/valid_varlocs.gpkg` | `all_varlocs.gpkg` filtered to `varlocs.txt` | `valid-varlocs` |
-
-`valid-varlocs` works on `data/inputs/current`'s version, and `inputs-release` / `varlocs-release` upload it unchanged.
-
-## Model registry (GCS)
-
-```
-gs://<models>/<varloc>/current                  # text file: the active model_version
-gs://<models>/<varloc>/<model_version>/         # model.pt, stats.yaml, config.yaml, bundle_meta.json
-```
-
-`<model_version>` = `<model.pt mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char model_repo_sha>[-dirty]`, set by `publish_model.sh` from the bundle; DL and PT runs on a varloc with a bundle are cached under it.
-
-## Request flow
-
-```
-caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, backend]}--> burn-emulator-api
-  1. validate the request
-  2. inputs_version = gs://<inputs>/current                                   (60s cache)
-     varloc         = requested varloc if it intersects treatment_area in
-                      <inputs_version>/varlocs/all_varlocs.gpkg (else 400),
-                      or the largest overlap there (none -> 400)
-     bundle         = gs://<models>/<varloc>/current if varloc is in valid_varlocs.gpkg (60s cache)
-     DL if requested, there is a bundle and a GPU job is set (or metal mode), else PT; PT also uses the bundle when there is one
-     hash           = sha256(treatment_area[|ignition_density]) + 0 (DL) | 1 (PT)
-     output_dir     = gs://<out>/<inputs_version>/<varloc>/<model_version | pt[-<model_version>]>/<hash>
-  3. output exists?                                                      -> 200 cached
-     claim running?                                                      -> 202 pending + Location
-     else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
-                                                                         -> 202 pending + Location
-     metal mode: once meta.geojson is written, the claim is rewritten queued with the runner env as its body;
-     a long-lived runner on the cluster (BURN_EMULATOR_LOOP=1) takes it and runs it
-  4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
-     run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,
-     write gs://<out>/_reports/... {status, claim_generation, error}
-  5. _reports/ OBJECT_FINALIZE -> Pub/Sub push -> POST /internal/pubsub/run-reports
-     completed -> release the claim; failed -> delete partial output, mark the claim failed
-  6. caller polls GET <Location> until cached or failed
-```
-
-## Calling service
-
-The api rejects malformed GeoJSON, an unsupported `crs`, an unknown `varloc`, and an area outside the requested varloc or every varloc. The ignition cap (2**16 ignitions: `ignition_density` per km² over the buffered treatment area) is checked by the runner, after a job has started.
+| `runner-loop [NODES=] [SBATCH_ARGS=]` | sbatches `burn-emulator-runner/slurm/loop.slurm` on a GPU node (`--gres=gpu:1 --exclusive --mem=0`): takes queued DL and PT claims until cancelled |

@@ -2,20 +2,6 @@
 
 Go service. Validates or picks the varloc, then picks the backend and model version for a request, checks the GCS output cache and claim, and on a miss triggers a [`burn-emulator-runner`](../burn-emulator-runner) job and returns `202 pending` with a `Location` to poll. Runner reports arrive through a GCS Pub/Sub notification on `POST /internal/pubsub/run-reports`. Callers are authenticated by Cloud Run IAM (`roles/run.invoker`). Request flow: [root README](../README.md#request-flow).
 
-## Config
-
-`BURN_EMULATOR_RUNNER_GPU_JOB`, `BURN_EMULATOR_METAL` and `BURN_EMULATOR_CPU_OFFLOAD` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_METAL` set, the server reads the three bucket variables, plus `BURN_EMULATOR_RUNNER_CPU_JOB` with `BURN_EMULATOR_CPU_OFFLOAD` set.
-
-| Variable | Purpose |
-| --- | --- |
-| `BURN_EMULATOR_MODELS_URI` | `gs://` model registry bucket; reads `<varloc>/current`, sends the runner `<uri>/<varloc>/<model_version>` as `bundle_uri`. A bare bucket: the runner mounts it at `/models` |
-| `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs bucket; reads `current` and `<inputs_version>/varlocs/*.gpkg`. A bare bucket: the runner mounts it at `/inputs` |
-| `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
-| `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
-| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job; with `BURN_EMULATOR_METAL`, read only with `BURN_EMULATOR_CPU_OFFLOAD` |
-| `BURN_EMULATOR_METAL` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body, and the [runner's claim loop](#metal-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
-| `BURN_EMULATOR_CPU_OFFLOAD` | boolean, read only with `BURN_EMULATOR_METAL`; the [Dockerfile](Dockerfile) sets it to `1`. `PT` runs trigger `BURN_EMULATOR_RUNNER_CPU_JOB` as in Cloud Run mode instead of being queued; `DL` runs are still queued |
-
 ## `POST /v1/jobs`
 
 ```json
@@ -38,9 +24,9 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 | `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
 | `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
 | `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value, or `run_smoke.yaml`'s (20) for PT without a bundle. Capped at 2**16 ignitions per run, checked by the runner |
-| `backend` | optional; `DL` (default) or `PT`. `DL` becomes `PT` when the varloc has no bundle (see Varloc selection); the response `backend` is what runs |
+| `backend` | optional; `DL` (default) or `PT`. `DL` becomes `PT` when the varloc has no bundle (see [Varloc and backend selection](#varloc-and-backend-selection)); the response `backend` is what runs |
 
-`hash` = sha256 hex of `treatment_area[|ignition_density]` + `0` (DL) or `1` (PT). `treatment_area` is re-encoded first (sorted keys, no whitespace). The runner gets it reprojected to EPSG:5070 and unioned, as a one-Feature FeatureCollection with a `crs` member.
+`hash` = sha256 hex of `treatment_area[|ignition_density]` + `0` (DL) or `1` (PT). `treatment_area` is re-encoded first (sorted keys, no whitespace).
 
 ```json
 {
@@ -59,11 +45,11 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 }
 ```
 
-`model_version` is the bundle used, omitted for PT without one (`pt` in the job id; `pt-<model_version>` with one). `attempts` is omitted when 0; `error` is set when `status` is `failed`.
+`model_version` is the bundle used, omitted for PT without one (`pt` in the job id; `pt-<model_version>` with one). `attempts` is omitted when 0; `error` is set when `status` is `failed`. `output_path` and `output_meta` are specified in [burn-emulator-runner Output](../burn-emulator-runner/README.md#output).
 
 | `status` | HTTP | meaning |
 | --- | --- | --- |
-| `cached` | 200 | `output_path` exists; `output_meta` is the treatment area with the run and its bundle as properties |
+| `cached` | 200 | `output_path` exists; `output_meta` is the [run meta](../burn-emulator-runner/README.md#metageojson) |
 | `pending` | 202 | run triggered, or an identical run in flight; `Location: /v1/jobs/<job_id>` |
 
 An identical body dedupes onto the same run; a `failed` run is retried.
@@ -82,17 +68,11 @@ Status of the run named by `job_id`. Same body as POST.
 | - | 404 | unknown id: output, claim and archived claim are all absent |
 | - | 500 | GCS lookup failed |
 
-## `POST /internal/pubsub/run-reports`
-
-Pub/Sub push endpoint for GCS `OBJECT_FINALIZE` on `gs://<out>/_reports/`. Re-reads the report's `status` and `claim_generation` from GCS: `completed` releases the claim, `failed` deletes partial output and marks the claim `failed`. 2xx acks, 5xx redelivers.
-
-Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`, before the response; bounded by 30 s and 500 claims per run.
-
 ## `GET /healthz` -> `200 ok`
 
-## Varloc selection
+## Varloc and backend selection
 
-`dispatch.selectVarLoc`, before the cache check:
+`dispatch.selectVarLoc`, before the cache check.
 
 Varloc, from `all_varlocs.gpkg`:
 
@@ -114,18 +94,19 @@ Backend. The bundle is `<models>/<varloc>/current` when the varloc is in `valid_
 
 Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite` and parsed with GEOS (`twpayne/go-geos`); the treatment area is reprojected into EPSG:5070 with PROJ (`twpayne/go-proj`). Overlap is the exact intersection area in EPSG:5070; ties go to the first varloc name. Accepted `crs`: CRS84, or any EPSG code known to PROJ as `EPSG:<code>`, `urn:ogc:def:crs:EPSG:[<version>]:<code>` or `http://www.opengis.net/def/crs/EPSG/<version>/<code>`; none reads as EPSG:4326 (longitude, latitude). Invalid polygons are repaired with GEOS `MakeValid` (structure method); rings must be closed.
 
-## Claims
+## Config
 
-A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. An active claim (`staging`, `queued`, `running`) is stale from its `expires_at` on. The api sets `expires_at` on each write: `running` 40 min after the trigger fires (`dispatch.runStaleAfter`), `queued` 80 min after it was queued (`dispatch.queueStaleAfter`), `staging` 100 s after it was taken (`dispatch.stagingStaleAfter`). A runner loop sets it on take to `BURN_EMULATOR_RUN_TIMEOUT` + 10 min, on a requeue to the claim's queue window again, and marks expired claims `failed` with `GetJob`'s error. A claim without `expires_at` expires at `updated_at` + the api's age for its status. A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+`BURN_EMULATOR_RUNNER_GPU_JOB`, `BURN_EMULATOR_METAL` and `BURN_EMULATOR_CPU_OFFLOAD` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_METAL` set, the server reads the three bucket variables, plus `BURN_EMULATOR_RUNNER_CPU_JOB` with `BURN_EMULATOR_CPU_OFFLOAD` set.
 
-| `status` | written by | |
-| --- | --- | --- |
-| `staging` | api on create and reclaim (metal mode), until `meta.geojson` is written | active; no body |
-| `running` | api on create and reclaim (Cloud Run mode), runner loop on take | active; loop: `runner` |
-| `queued` | api (metal mode), after meta.geojson; runner loop when stopped mid-run | active; body = runner env JSON |
-| `failed` | api on a failed report; runner loop on an expired claim | reclaimed by the next identical POST |
-
-The api writes whole claims (create, reclaim, `queued`, `failed`). The runner loop only patches metadata, with generation and metageneration preconditions.
+| Variable | Purpose |
+| --- | --- |
+| `BURN_EMULATOR_MODELS_URI` | `gs://` model registry bucket; reads `<varloc>/current`, sends the runner `<uri>/<varloc>/<model_version>` as `bundle_uri`. A bare bucket: the runner mounts it at `/models` |
+| `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs bucket; reads `current` and `<inputs_version>/varlocs/*.gpkg`. A bare bucket: the runner mounts it at `/inputs` |
+| `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
+| `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
+| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job; with `BURN_EMULATOR_METAL`, read only with `BURN_EMULATOR_CPU_OFFLOAD` |
+| `BURN_EMULATOR_METAL` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body, and the [runner's claim loop](#metal-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
+| `BURN_EMULATOR_CPU_OFFLOAD` | boolean, read only with `BURN_EMULATOR_METAL`; the [Dockerfile](Dockerfile) sets it to `1`. `PT` runs trigger `BURN_EMULATOR_RUNNER_CPU_JOB` as in Cloud Run mode instead of being queued; `DL` runs are still queued |
 
 ## Output bucket layout
 
@@ -143,27 +124,37 @@ gs://<out>/
 
 | Prefix | Written by | Metadata | Lifetime |
 | --- | --- | --- | --- |
-| `<job_id>/output.tif` | runner | none | permanent; its existence is the cache hit |
-| `<job_id>/meta.geojson` | api before the trigger (treatment area, EPSG:5070); runner overwrites it before `output.tif` (EPSG:5070 Feature, run + bundle as properties) | none | permanent; deleted with the output on failure, rewritten on retry |
+| `<job_id>/output.tif` | runner ([spec](../burn-emulator-runner/README.md#outputtif)) | none | permanent; its existence is the cache hit |
+| `<job_id>/meta.geojson` | api before the trigger (treatment area); runner overwrites it before `output.tif` ([spec](../burn-emulator-runner/README.md#metageojson)) | none | permanent; deleted with the output on failure, rewritten on retry |
 | `_claims/` | api; metadata also by the runner loop | `status` (see [Claims](#claims)), `job_name`, `attempts`, `updated_at`, `expires_at` (active), `error`, metal: `runner` | deleted on success; failed or stale claims move to `_failed/` after a day |
 | `_reports/` | runner | `status` (`completed` \| `failed`), `claim_generation`, `error` | deleted once handled |
 | `_failed/` | api daily prune | the claim's, `status=failed`, `archived_at`, stale ones `last_status` | permanent; latest failure per job id |
 | `_prune/last` | api | none | rewritten once a day |
 
-Only `_reports/` triggers the notification (the notification's object prefix filter).
+Only `_reports/` triggers the notification.
 
-## Timeouts
+## Claims
 
-| Rule | Values | Set in |
+A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. An active claim (`staging`, `queued`, `running`) is stale from its `expires_at` on. The api sets `expires_at` on each write: `running` 40 min after the trigger fires (`dispatch.runStaleAfter`), `queued` 80 min after it was queued (`dispatch.queueStaleAfter`), `staging` 100 s after it was taken (`dispatch.stagingStaleAfter`). A runner loop sets it on take to `BURN_EMULATOR_RUN_TIMEOUT` + 10 min, on a requeue to the claim's queue window again, and marks expired claims `failed` with `GetJob`'s error. A claim without `expires_at` expires at `updated_at` + the api's age for its status. A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+
+| `status` | written by | |
 | --- | --- | --- |
-| runner timeout < claim stale age | 30 min < 40 min; metal: 30 min < 40 min | runner job task timeout, `dispatch.runStaleAfter`; metal: `BURN_EMULATOR_RUN_TIMEOUT`, + 10 min (`loop.REPORT_GRACE_SECONDS`) |
-| runner retries = 0 | 0 | runner job max retries |
-| report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
-| handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
+| `staging` | api on create and reclaim (metal mode), until `meta.geojson` is written | active; no body |
+| `running` | api on create and reclaim (Cloud Run mode), runner loop on take | active; loop: `runner` |
+| `queued` | api (metal mode), after meta.geojson; runner loop when stopped mid-run | active; body = runner env JSON |
+| `failed` | api on a failed report; runner loop on an expired claim | reclaimed by the next identical POST |
+
+The api writes whole claims (create, reclaim, `queued`, `failed`). The runner loop only patches metadata, with generation and metageneration preconditions.
+
+## `POST /internal/pubsub/run-reports`
+
+Pub/Sub push endpoint for GCS `OBJECT_FINALIZE` on `gs://<out>/_reports/`. Re-reads the report's `status` and `claim_generation` from GCS: `completed` releases the claim, `failed` deletes partial output and marks the claim `failed`. 2xx acks, 5xx redelivers.
+
+Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`, before the response; bounded by 30 s and 500 claims per run.
 
 ## Metal dispatch
 
-With `BURN_EMULATOR_METAL` set, the api triggers nothing (except `PT` runs with `BURN_EMULATOR_CPU_OFFLOAD`, which trigger the CPU runner job): each claim is taken `staging`, then rewritten `queued`, with the runner env as its body, once `meta.geojson` is written. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
+With `BURN_EMULATOR_METAL` set, the api triggers nothing (except `PT` runs with `BURN_EMULATOR_CPU_OFFLOAD`, which trigger the CPU runner job): each claim is taken `staging`, then rewritten `queued`, with the runner env as its body, once `meta.geojson` is written. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
 
 ```
 api: claim staging (no body), meta.geojson, then claim queued (generation G0, body = runner env)
@@ -173,6 +164,15 @@ runner loop: expired claims -> failed; queued -> running (runner = <host>/<slurm
 ```
 
 Each loop transition is a metadata patch with `ifGenerationMatch=G0` and `ifMetagenerationMatch=<read>`; a loop whose patch fails moves on to the next claim. A claim the api has reclaimed in the meantime (new generation) is left alone.
+
+## Timeouts
+
+| Rule | Values | Set in |
+| --- | --- | --- |
+| runner timeout < claim stale age | 30 min < 40 min; metal: 30 min < 40 min | runner job task timeout, `dispatch.runStaleAfter`; metal: `BURN_EMULATOR_RUN_TIMEOUT`, + 10 min (`loop.REPORT_GRACE_SECONDS`) |
+| runner retries = 0 | 0 | runner job max retries |
+| report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
+| handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
 
 ## Build
 

@@ -4,6 +4,94 @@ Cloud Run Job. Runs `burn_emulator.run.run()` once per execution for a request p
 
 With `BURN_EMULATOR_LOOP=1` (the [Dockerfile](Dockerfile) sets `0`), the same image runs as a long-lived Slurm job instead: see [Slurm loop](#slurm-loop). `main()` picks the mode.
 
+## Flow
+
+```
+1. download the treatment area from <output_meta>
+2. with a bundle (DL, or PT on a trained varloc): load <bundle_dir>/config.yaml
+   (the bundle dir is the experiment_dir; PT uses only its dataset config)
+   PT without one: configs/varlocs/templates/run_smoke.yaml from the image, wind_range from configs/wind_directions.csv
+3. inject treatment_area, fuels_paths, topo_path, fbfm_map_path, ignition_density, out_path
+4. run(**config) -> a local tif under /tmp and the indirect benefit
+5. overwrite <output_meta>, then upload the tif to <output_path> (the cache hit)
+6. write the empty <report_path> object with metadata {status: completed|failed, claim_generation, error}
+7. exit 0, or 1 on any error
+```
+
+SIGTERM before `run()` returns is a failure and still writes a report; after that, and while reporting a failure, it is ignored. `/tmp` is in-memory on Cloud Run and counts against the job memory. The runner job's max retries must stay 0.
+
+## Output
+
+```
+<output_dir>/
+├── meta.geojson             # treatment area + run meta, see meta.geojson below
+└── output.tif               # crown change fractions, see output.tif below
+```
+
+### output.tif
+
+3-band float32 GeoTIFF, EPSG:5070, on the inputs' grid. Each pixel is the fraction of kept fires (fires whose burn reaches the treatment area) in each class:
+
+| band | class |
+| --- | --- |
+| 1 | no crown change |
+| 2 | non-crown -> crown (treatment worsens) |
+| 3 | crown -> non-crown (treatment improves) |
+
+### meta.geojson
+
+The api writes it before the run: a `FeatureCollection` with a `crs` member (`EPSG:5070`) and one `Feature`, the unioned treatment area, with empty properties. The runner reads the geometry and overwrites the object before uploading `output.tif`, with the same geometry and these properties:
+
+| property | type | value |
+| --- | --- | --- |
+| `hash` | string | the api's cache key |
+| `backend` | `"DL"` \| `"PT"` | backend that ran |
+| `varloc` | string | varloc that ran |
+| `inputs_version` | string | inputs version that ran |
+| `ignition_density` | number | ignitions per km² used |
+| `output_path` | string | `gs://` of `output.tif` |
+| `project_area_acres` | number | treatment area |
+| `indirect_acres_improved` | number | outside the treatment area, sum of (band 3 - band 2) x pixel acres; negative when treatment increases crowning there |
+| `indirect_benefit_pct` | number \| null | `100 * indirect_acres_improved / project_area_acres`; null for a zero-area treatment area |
+
+With a bundle, also:
+
+| property | type | value |
+| --- | --- | --- |
+| `model_version` | string | bundle that ran |
+| `bundle_uri` | string | `gs://` of that bundle |
+| `model_repo_sha`, `model_repo_dirty`, `model_class_path`, `model_code_sha256` | | from `bundle_meta.json`, when present |
+
+A pixel is inside the treatment area when its center is. Acreage values are unrounded.
+
+```json
+{
+  "type": "FeatureCollection",
+  "crs": {"type": "name", "properties": {"name": "EPSG:5070"}},
+  "features": [{
+    "type": "Feature",
+    "properties": {
+      "hash": "1a2b3c4d…0",
+      "backend": "DL",
+      "varloc": "WC711",
+      "inputs_version": "20260824",
+      "ignition_density": 20,
+      "output_path": "gs://<bucket>/20260824/WC711/20260829T143000Z-a1b2c3d/1a2b3c4d…0/output.tif",
+      "project_area_acres": 1234.5678,
+      "indirect_acres_improved": 185.1852,
+      "indirect_benefit_pct": 15.0,
+      "model_version": "20260829T143000Z-a1b2c3d",
+      "bundle_uri": "gs://<models>/WC711/20260829T143000Z-a1b2c3d",
+      "model_repo_sha": "a1b2c3d…",
+      "model_repo_dirty": false,
+      "model_class_path": "…",
+      "model_code_sha256": "…"
+    },
+    "geometry": {"type": "Polygon", "coordinates": […]}
+  }]
+}
+```
+
 ## Config
 
 Job template:
@@ -22,8 +110,8 @@ Per execution, set by the api:
 | `BURN_EMULATOR_BACKEND` | `DL` or `PT` |
 | `BURN_EMULATOR_MODEL_VERSION` | the varloc's bundle; always for DL, for PT when the varloc has one |
 | `BURN_EMULATOR_BUNDLE_DIR` | with it: `/models/<varloc>/<model_version>` (GCS-FUSE) |
-| `BURN_EMULATOR_BUNDLE_URI` | with it: `gs://` of that bundle, recorded in `meta.geojson` |
-| `BURN_EMULATOR_INPUTS_VERSION` | recorded in `meta.geojson`; fills `run_smoke.yaml` for PT without a bundle |
+| `BURN_EMULATOR_BUNDLE_URI` | with it: `gs://` of that bundle, recorded in [`meta.geojson`](#metageojson) |
+| `BURN_EMULATOR_INPUTS_VERSION` | recorded in [`meta.geojson`](#metageojson); fills `run_smoke.yaml` for PT without a bundle |
 | `BURN_EMULATOR_OUTPUT_META` | `<output_dir>/meta.geojson`: the treatment area in, the run meta out |
 | `BURN_EMULATOR_HASH` | cache key |
 | `BURN_EMULATOR_OUTPUT_PATH` | `<output_dir>/output.tif`, the cache hit |
@@ -48,36 +136,17 @@ Per execution, set by the api:
 
 DL only: a `model_code_sha256` that differs from this image's copy of `model_class_path`, or a missing `bundle_meta.json`, is logged as a warning; the run continues.
 
-## Flow
-
-```
-1. download the treatment area from <output_meta>
-2. with a bundle (DL, or PT on a trained varloc): load <bundle_dir>/config.yaml
-   (the bundle dir is the experiment_dir; PT uses only its dataset config)
-   PT without one: configs/varlocs/templates/run_smoke.yaml from the image, wind_range from configs/wind_directions.csv
-3. inject treatment_area, fuels_paths, topo_path, fbfm_map_path, ignition_density, out_path
-4. run(**config) -> a local tif under /tmp
-5. overwrite <output_meta>, then upload the tif to <output_path> (the cache hit)
-6. write the empty <report_path> object with metadata {status: completed|failed, claim_generation, error}
-7. exit 0, or 1 on any error
-```
-
-SIGTERM before `run()` returns is a failure and still writes a report; after that, and while reporting a failure, it is ignored. `/tmp` is in-memory on Cloud Run and counts against the job memory. The runner job's max retries must stay 0.
-
-## Output
-
-```
-<output_dir>/
-├── meta.geojson             # api: the unioned treatment area in EPSG:5070; runner overwrites with one EPSG:5070 Feature,
-│                            # geometry = unioned treatment area, properties = hash, backend, varloc,
-│                            # inputs_version, ignition_density, output_path
-│                            # + with a bundle: model_version, bundle_uri, every bundle_meta.json field
-└── output.tif               # bands: no change, to crown, from crown
-```
-
 ## Slurm loop
 
 `BURN_EMULATOR_LOOP=1` is for an api with `BURN_EMULATOR_METAL` set, where claims are written `queued` with the runner env as their body (`dispatch.runnerEnv`). One process holds its GPU node for the life of the job and runs claims one at a time, DL or PT as each claim's `BURN_EMULATOR_BACKEND` says, until it gets SIGTERM. Inputs and bundles are read on prem, never downloaded. The api leaves the fuels, topo, fbfm map and bundle dir paths out of a metal claim, and the loop sets them under `BURN_EMULATOR_INPUTS_ROOT` (`<inputs_version>/...`) and `BURN_EMULATOR_BUNDLES_ROOT` (`<varloc>/<model_version>`). `make env-vars` points both at the checkout's `burn-emulator-model/data/`, where `make inputs-release` and `make model-release` keep their copies.
+
+Started on the cluster by [`slurm/loop.slurm`](slurm/loop.slurm), from the repo root of a deploy checkout:
+
+```bash
+make env-vars                         # once; ~/.config/burn-emulator/env
+make runner-venv                      # once per checkout / upgrade
+make runner-loop                      # --gres=gpu:1 --exclusive --mem=0: DL on the GPU, PT on the node's cpus
+```
 
 ```
 startup: warm the GPU; turn on burn_emulator's caches and read data/inputs/current's rasters whole into memory
@@ -90,27 +159,19 @@ loop:    list _claims/; staging, queued or running claims past expires_at -> fai
          nothing queued: sleep BURN_EMULATOR_POLL_SECONDS
 ```
 
-Runs take their windows from the in-memory rasters (`burn_emulator.rasters`), and up to `BURN_EMULATOR_MAX_MODELS` bundles' models stay loaded on the GPU, least recently used evicted first (`burn_emulator.run.enable_caching`). Other inputs versions are read whole on first use. A run past `BURN_EMULATOR_RUN_TIMEOUT` is cancelled between batches and reported failed. On SIGTERM or SIGINT, the current run is cancelled, its claim is put back to `queued` with its original queue window for another loop, and the process exits. Several loops can share a bucket: the conditional patch lets only one of them take a given claim.
+Runs take their windows from the in-memory rasters (`burn_emulator.rasters`), and up to `BURN_EMULATOR_MAX_MODELS` bundles' models stay loaded on the GPU, least recently used evicted first (`burn_emulator.run.enable_caching`). Other inputs versions are read whole on first use. A run past `BURN_EMULATOR_RUN_TIMEOUT` is cancelled between batches and reported failed. On SIGTERM or SIGINT, the current run is cancelled, its claim is put back to `queued` with its original queue window for another loop, and the process exits. Several loops can share a bucket; only one takes a given claim.
 
 | Variable | Purpose |
 | --- | --- |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` output bucket; claims under `_claims/` |
 | `BURN_EMULATOR_INPUTS_ROOT` | `<inputs_version>/{baseline,legalmax,topo,fbfm}`; default `burn-emulator-model/data/inputs` |
 | `BURN_EMULATOR_BUNDLES_ROOT` | `<varloc>/<model_version>/`; default `burn-emulator-model/data/bundles` |
-| `BURN_EMULATOR_MAX_MODELS` | models kept loaded on the GPU; default 8 (`make env-vars` writes it) |
+| `BURN_EMULATOR_MAX_MODELS` | models kept loaded on the GPU; default 8 |
 | `BURN_EMULATOR_POLL_SECONDS` | default 10 |
 | `BURN_EMULATOR_RUN_TIMEOUT` | seconds, default 1800; a taken claim expires this + 10 min after it is taken |
-| `GOOGLE_APPLICATION_CREDENTIALS` | runner SA key |
+| `GOOGLE_APPLICATION_CREDENTIALS` | GCS credentials file |
 
-Started on the cluster by [`slurm/loop.slurm`](slurm/loop.slurm), from the repo root of a deploy checkout:
-
-```bash
-make env-vars                         # once; ~/.config/burn-emulator/env
-make runner-venv                      # once per checkout / upgrade
-make runner-loop                      # --gres=gpu:1 --exclusive --mem=0: DL on the GPU, PT on the node's cpus
-```
-
-The script runs the venv with the Dockerfile's runtime env plus `BURN_EMULATOR_LOOP=1`. `BURN_EMULATOR_OUTPUT_URI` and `GOOGLE_APPLICATION_CREDENTIALS` come from `~/.config/burn-emulator/env` (`make env-vars`; `BURN_EMULATOR_ENV_FILE` points elsewhere), through `burn-emulator-model/scripts/load_env.sh`. So do `BURN_EMULATOR_INPUTS_ROOT` and `BURN_EMULATOR_BUNDLES_ROOT`. Logs go to `burn-emulator-runner/data/logs/loop/`. The job runs until `scancel` or its time limit (`SBATCH_ARGS=--time=...`); either one requeues the claim in progress. Cloud Run never loops: the image keeps `BURN_EMULATOR_LOOP=0`.
+The script runs the venv with the Dockerfile's runtime env plus `BURN_EMULATOR_LOOP=1`. `BURN_EMULATOR_OUTPUT_URI`, `BURN_EMULATOR_INPUTS_ROOT`, `BURN_EMULATOR_BUNDLES_ROOT`, `BURN_EMULATOR_MAX_MODELS` and `GOOGLE_APPLICATION_CREDENTIALS` come from `~/.config/burn-emulator/env` (`make env-vars`; `BURN_EMULATOR_ENV_FILE` points elsewhere), through `burn-emulator-model/scripts/load_env.sh`. Logs go to `burn-emulator-runner/data/logs/loop/`. The job runs until `scancel` or its time limit (`SBATCH_ARGS=--time=...`); either one requeues the claim in progress.
 
 ## Build
 

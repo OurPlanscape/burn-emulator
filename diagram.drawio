@@ -506,7 +506,7 @@
         <mxCell id="es2" edge="1" parent="1" source="s0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="n8g" value="queued claim + env body">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="ed0" edge="1" parent="1" source="n8g" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="d1" value="list _claims/, metadata patches (google-cloud-storage, runner SA key)">
+        <mxCell id="ed0" edge="1" parent="1" source="n8g" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;" target="d1" value="list _claims/, metadata patches (google-cloud-storage)">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="ed1" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" target="d2" value="">
