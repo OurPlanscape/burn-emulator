@@ -158,19 +158,24 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		Metal:           c.cfg.Metal,
 	}
 
-	claimStatus, claimBody := statusRunning, ""
+	var queueBody string
 	if c.cfg.Metal {
 		env, err := json.Marshal(runnerEnv(infer))
 		if err != nil {
 			return JobResult{}, fmt.Errorf("encoding runner env: %w", err)
 		}
-		claimStatus, claimBody = statusQueued, string(env)
+		queueBody = string(env)
 	}
 
 	detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimTriggerTimeout)
 	defer cancel()
 
-	claimed, rec, err := c.claimRun(detachedCtx, runObject, req.JobName, claimStatus, claimBody)
+	// metal: queued for the runner's claim loop only once meta.geojson is written
+	claimStatus := statusRunning
+	if c.cfg.Metal {
+		claimStatus = statusStaging
+	}
+	claimed, rec, err := c.claimRun(detachedCtx, runObject, req.JobName, claimStatus, "")
 	if err != nil {
 		return JobResult{}, fmt.Errorf("claiming run: %w", err)
 	}
@@ -187,6 +192,10 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 	}
 
 	if c.cfg.Metal {
+		if err := c.queueRun(detachedCtx, runObject, rec, queueBody); err != nil {
+			c.releaseRun(ctx, runObject, rec.Generation)
+			return JobResult{}, err
+		}
 		result.JobName = req.JobName
 		result.Attempts = rec.Attempts
 		result.Status = "pending"
@@ -251,6 +260,9 @@ func (c *Client) GetJob(ctx context.Context, id JobID) (JobResult, error) {
 	case rec.stale() && rec.Status == statusQueued:
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("no runner took the claim within %.0f min", queueStaleAfter.Minutes())
+	case rec.stale() && rec.Status == statusStaging:
+		result.Status = "failed"
+		result.Error = "the api stopped before queueing the claim"
 	case rec.stale():
 		result.Status = "failed"
 		result.Error = "run did not report back before its claim went stale"

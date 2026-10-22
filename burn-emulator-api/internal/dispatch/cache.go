@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	runStaleAfter    = 30 * time.Minute  // running: exceeds the runner timeouts
-	queueStaleAfter  = 2 * runStaleAfter // queued (metal): waiting for a runner loop
-	maxClaimAttempts = 3
-	releaseTimeout   = 10 * time.Second
+	runStaleAfter     = 30 * time.Minute  // running
+	queueStaleAfter   = 2 * runStaleAfter // queued (metal): waiting for a runner loop
+	stagingStaleAfter = DetachedBudget    // staging (metal): not queued by CreateJob
+	maxClaimAttempts  = 3
+	releaseTimeout    = 10 * time.Second
 )
 
 const (
@@ -31,6 +32,7 @@ const (
 )
 
 const (
+	statusStaging = "staging" // metal: held by CreateJob until meta.geojson is written
 	statusQueued  = "queued"
 	statusRunning = "running"
 	statusFailed  = "failed"
@@ -38,12 +40,12 @@ const (
 
 // a claim in one of these expires without a report, see claimRecord.stale
 func isActive(status string) bool {
-	return status == statusQueued || status == statusRunning
+	return status == statusStaging || status == statusQueued || status == statusRunning
 }
 
 // stored as claim object metadata; the runner's claim loop adds runner, dropped on the next API write
 type claimRecord struct {
-	Status     string // statusQueued | statusRunning | statusFailed
+	Status     string // statusStaging | statusQueued | statusRunning | statusFailed
 	JobName    string
 	Attempts   int
 	UpdatedAt  time.Time
@@ -64,7 +66,7 @@ func CacheKey(req JobRequest) string {
 	return key + "0"
 }
 
-// claims a run with a generation precondition on the claim object; status is statusRunning, or statusQueued with the runner env as body
+// claims a run with a generation precondition on the claim object; metal mode then hands it over with queueRun
 func (c *Client) claimRun(ctx context.Context, key, jobName, status, body string) (bool, claimRecord, error) {
 	bucket, err := c.outputBucketName()
 	if err != nil {
@@ -194,6 +196,20 @@ func (c *Client) failRun(ctx context.Context, key string, gen int64, reason stri
 	return nil
 }
 
+// hands a claim taken as staging to the runner's claim loop, if it is still generation rec.Generation
+func (c *Client) queueRun(ctx context.Context, key string, rec claimRecord, body string) error {
+	bucket, err := c.outputBucketName()
+	if err != nil {
+		return err
+	}
+	rec.Status = statusQueued
+	rec.UpdatedAt = time.Now()
+	if _, err := c.putClaim(ctx, bucket, claimObjectName(key), rec, body, rec.Generation); err != nil {
+		return fmt.Errorf("queueing run %s: %w", key, err)
+	}
+	return nil
+}
+
 func claimObjectName(key string) string {
 	return claimPrefix + key
 }
@@ -226,9 +242,11 @@ func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRec
 	return written.Generation, nil
 }
 
-// updated_at is when the claim was queued, or when its run started
+// updated_at is when the claim was taken or queued, or when its run started
 func (r claimRecord) stale() bool {
 	switch r.Status {
+	case statusStaging:
+		return time.Since(r.UpdatedAt) >= stagingStaleAfter
 	case statusRunning:
 		return time.Since(r.UpdatedAt) >= runStaleAfter
 	case statusQueued:

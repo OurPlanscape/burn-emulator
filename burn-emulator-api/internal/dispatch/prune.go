@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	pruneMarker    = "_prune/last" // its update time is the last prune; rewritten with a generation precondition so one instance prunes
+	pruneMarker    = "_prune/last" // its update time is the last prune; rewritten with a generation precondition
 	failedPrefix   = "_failed/"
 	pruneEvery     = 24 * time.Hour
 	claimRetention = 24 * time.Hour // failed and stale claims older than this move to _failed/

@@ -115,15 +115,16 @@ Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS gene
 
 ## Claims
 
-A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report expires 30 min after its run starts (`dispatch.runStaleAfter`; `updated_at` is set when the trigger fires or a runner loop takes it), or, in metal mode, 60 min after it was queued (`dispatch.queueStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report expires 30 min after its run starts (`dispatch.runStaleAfter`; `updated_at` is set when the trigger fires or a runner loop takes it), or, in metal mode, 60 min after it was queued (`dispatch.queueStaleAfter`), and 100 s after it was taken if the api never queued it (`dispatch.stagingStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
 
 | `status` | written by | |
 | --- | --- | --- |
-| `running` | api (Cloud Run mode), runner loop on take | active; loop: `runner` |
-| `queued` | api (metal mode); runner loop when stopped mid-run | active; body = runner env JSON |
+| `staging` | api on create and reclaim (metal mode), until `meta.geojson` is written | active; no body; stale after 100 s (`dispatch.stagingStaleAfter`) |
+| `running` | api on create and reclaim (Cloud Run mode), runner loop on take | active; loop: `runner` |
+| `queued` | api (metal mode), after meta.geojson; runner loop when stopped mid-run | active; body = runner env JSON |
 | `failed` | api on a failed report | reclaimed by the next identical POST |
 
-The api writes whole claims (create, reclaim, `failed`) and so owns the generation. The runner loop only patches metadata, with generation and metageneration preconditions.
+The api writes whole claims (create, reclaim, `queued`, `failed`). The runner loop only patches metadata, with generation and metageneration preconditions.
 
 ## Output bucket layout
 
@@ -161,16 +162,16 @@ Only `_reports/` triggers the notification (the notification's object prefix fil
 
 ## Metal dispatch
 
-With `BURN_EMULATOR_METAL` set, the api triggers nothing: each claim is written `queued`, with the runner env as its body. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
+With `BURN_EMULATOR_METAL` set, the api triggers nothing: each claim is taken `staging`, then rewritten `queued`, with the runner env as its body, once `meta.geojson` is written. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
 
 ```
-api: claim queued (generation G0, body = runner env) + meta.geojson
+api: claim staging (no body), meta.geojson, then claim queued (generation G0, body = runner env)
 runner loop: queued -> running (runner = <host>/<slurm job>), adds the inputs and bundle paths (left out of a metal claim) from its on-prem roots,
     meta.geojson, output.tif, _reports/<job_id> (claim_generation = G0)  ->  HandleReport as in Cloud Run mode
     stopped mid-run: running -> queued
 ```
 
-Each loop transition is a metadata patch with `ifGenerationMatch=G0` and `ifMetagenerationMatch=<read>`, so only one loop takes a given claim. A claim the api has reclaimed in the meantime (new generation) is left alone.
+Each loop transition is a metadata patch with `ifGenerationMatch=G0` and `ifMetagenerationMatch=<read>`; a loop whose patch fails moves on to the next claim. A claim the api has reclaimed in the meantime (new generation) is left alone.
 
 ## Build
 

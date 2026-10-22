@@ -48,7 +48,7 @@ Releases (need `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI`):
 | `inputs-release [FORCE=1]` | `scripts/publish_inputs.sh`: uploads `data/inputs/current`'s version as is, then repoints the bucket's `current` |
 | `varlocs-release` | `valid-varlocs`, then `scripts/publish_varlocs.sh` uploads `data/inputs/current`'s `varlocs/{valid,all}_varlocs.gpkg` over that published version (no repoint) |
 
-Bundle and inputs dirs mirror their buckets, so a release only copies what is local `current`. Inputs are made by hand; only `current` is written locally. The runner loop reads the same dirs.
+Bundle and inputs dirs mirror their buckets; a release copies what is local `current`. Inputs are made by hand; only `current` is written locally. The runner loop reads the same dirs.
 
 Local runs:
 
@@ -77,7 +77,7 @@ Under `burn-emulator-model/`:
 | `data/outputs/varlocs.txt` | trained varlocs | `mark_trained.sh`, `update-mark-trained` |
 | `data/inputs/<inputs_version>/varlocs/valid_varlocs.gpkg` | `all_varlocs.gpkg` filtered to `varlocs.txt` | `valid-varlocs` |
 
-`valid-varlocs` works on `data/inputs/current`'s version, and `inputs-release` / `varlocs-release` upload it unchanged, so local and bucket match.
+`valid-varlocs` works on `data/inputs/current`'s version, and `inputs-release` / `varlocs-release` upload it unchanged.
 
 ## Model registry (GCS)
 
@@ -105,7 +105,7 @@ caller --POST /v1/jobs {treatment_area [, varloc, job_name, ignition_density, ba
      claim running?                                                      -> 202 pending + Location
      else claim it, write <output_dir>/meta.geojson, trigger the GPU (DL) or CPU (PT) job
                                                                          -> 202 pending + Location
-     metal mode: the claim is written queued with the runner env as its body;
+     metal mode: once meta.geojson is written, the claim is rewritten queued with the runner env as its body;
      a long-lived runner on the cluster (BURN_EMULATOR_LOOP=1) takes it and runs it
   4. runner: loads <varloc>/<model_version> from the models mount when there is one, else PT uses run_smoke.yaml;
      run(), overwrite <output_dir>/meta.geojson with the run meta, upload <output_dir>/output.tif,

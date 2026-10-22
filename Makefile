@@ -45,8 +45,7 @@ help: ## show this help; [direct] runs here, [slurm] submits to the cluster, [di
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(firstword $(MAKEFILE_LIST))
 
 # ENV_FILE is rewritten whole. The roots always come from this checkout; the rest keep the file's (or
-# shell's) values, and missing ones are asked for. One still unset is written commented out, so it never
-# blanks a shell value.
+# shell's) values, and missing ones are asked for. One still unset is written commented out.
 PROMPT_VARS := BURN_EMULATOR_ENV BURN_EMULATOR_ARTIFACT_STORE BURN_EMULATOR_INPUTS_URI BURN_EMULATOR_MODELS_URI BURN_EMULATOR_OUTPUT_URI
 GCP_PROJECT ?= planscape-23d66
 env-vars: ## [direct] write ENV_FILE (~/.config/burn-emulator/env), asking for missing values; offers to create a missing runner key
