@@ -104,6 +104,11 @@ func (c *Client) newJobResult(id JobID) JobResult {
 	}
 }
 
+// metal queues the run for the on-prem loop, except PT with CPU offload
+func (c *Client) queued(backend string) bool {
+	return c.cfg.Metal && !(c.cfg.CPUOffload && backend == BackendPT)
+}
+
 func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, error) {
 	area, err := treatmentArea(req.TreatmentArea)
 	if err != nil {
@@ -118,6 +123,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return JobResult{}, err
 	}
 	req.Backend = backend
+	metal := c.queued(backend)
 
 	id := JobID{
 		InputsVersion: inputsVersion,
@@ -155,11 +161,11 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		Hash:            id.Hash,
 		OutputPath:      result.OutputPath,
 		ReportPath:      reportPath,
-		Metal:           c.cfg.Metal,
+		Metal:           metal,
 	}
 
 	var queueBody string
-	if c.cfg.Metal {
+	if metal {
 		env, err := json.Marshal(runnerEnv(infer))
 		if err != nil {
 			return JobResult{}, fmt.Errorf("encoding runner env: %w", err)
@@ -172,7 +178,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 
 	// metal: queued for the runner's claim loop only once meta.geojson is written
 	claimStatus := statusRunning
-	if c.cfg.Metal {
+	if metal {
 		claimStatus = statusStaging
 	}
 	claimed, rec, err := c.claimRun(detachedCtx, runObject, req.JobName, claimStatus, "")
@@ -191,7 +197,7 @@ func (c *Client) CreateJob(ctx context.Context, req JobRequest) (JobResult, erro
 		return JobResult{}, err
 	}
 
-	if c.cfg.Metal {
+	if metal {
 		if err := c.queueRun(detachedCtx, runObject, rec, queueBody); err != nil {
 			c.releaseRun(ctx, runObject, rec.Generation)
 			return JobResult{}, err

@@ -15,6 +15,7 @@ type Config struct {
 	RunnerGPUJob string // fully-qualified GPU burn-emulator-runner job name (DL): projects/*/locations/*/jobs/*; empty: DL falls back to PT
 	RunnerCPUJob string // fully-qualified CPU-only burn-emulator-runner job name (PT)
 	Metal        bool   // claims are queued for the runner's claim loop on prem, which runs them
+	CPUOffload   bool   // metal: PT runs trigger RunnerCPUJob instead of being queued
 }
 
 type Client struct {
@@ -44,7 +45,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 	var runner *runnerClient
-	if !cfg.Metal {
+	if !cfg.Metal || cfg.CPUOffload {
 		runner, err = newRunnerClient(ctx, cfg.RunnerGPUJob, cfg.RunnerCPUJob)
 		if err != nil {
 			return nil, err

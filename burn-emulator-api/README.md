@@ -4,7 +4,7 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 
 ## Config
 
-`BURN_EMULATOR_RUNNER_GPU_JOB` and `BURN_EMULATOR_METAL` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_METAL` set, the server reads the three bucket variables.
+`BURN_EMULATOR_RUNNER_GPU_JOB`, `BURN_EMULATOR_METAL` and `BURN_EMULATOR_CPU_OFFLOAD` are optional and the rest are required; the server exits on startup when a required one is missing. With `BURN_EMULATOR_METAL` set, the server reads the three bucket variables, plus `BURN_EMULATOR_RUNNER_CPU_JOB` with `BURN_EMULATOR_CPU_OFFLOAD` set.
 
 | Variable | Purpose |
 | --- | --- |
@@ -12,8 +12,9 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs bucket; reads `current` and `<inputs_version>/varlocs/*.gpkg`. A bare bucket: the runner mounts it at `/inputs` |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
 | `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
-| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job |
+| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job; with `BURN_EMULATOR_METAL`, read only with `BURN_EMULATOR_CPU_OFFLOAD` |
 | `BURN_EMULATOR_METAL` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body, and the [runner's claim loop](#metal-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
+| `BURN_EMULATOR_CPU_OFFLOAD` | boolean, read only with `BURN_EMULATOR_METAL`; the [Dockerfile](Dockerfile) sets it to `1`. `PT` runs trigger `BURN_EMULATOR_RUNNER_CPU_JOB` as in Cloud Run mode instead of being queued; `DL` runs are still queued |
 
 ## `POST /v1/jobs`
 
@@ -115,7 +116,7 @@ Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS gene
 
 ## Claims
 
-A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. An active claim (`staging`, `queued`, `running`) is stale from its `expires_at` on. The api sets `expires_at` on each write: `running` 30 min after the trigger fires (`dispatch.runStaleAfter`), `queued` 60 min after it was queued (`dispatch.queueStaleAfter`), `staging` 100 s after it was taken (`dispatch.stagingStaleAfter`). A runner loop sets it on take to `BURN_EMULATOR_RUN_TIMEOUT` + 10 min, on a requeue to the claim's queue window again, and marks expired claims `failed` with `GetJob`'s error. A claim without `expires_at` expires at `updated_at` + the api's age for its status. A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. An active claim (`staging`, `queued`, `running`) is stale from its `expires_at` on. The api sets `expires_at` on each write: `running` 40 min after the trigger fires (`dispatch.runStaleAfter`), `queued` 80 min after it was queued (`dispatch.queueStaleAfter`), `staging` 100 s after it was taken (`dispatch.stagingStaleAfter`). A runner loop sets it on take to `BURN_EMULATOR_RUN_TIMEOUT` + 10 min, on a requeue to the claim's queue window again, and marks expired claims `failed` with `GetJob`'s error. A claim without `expires_at` expires at `updated_at` + the api's age for its status. A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
 
 | `status` | written by | |
 | --- | --- | --- |
@@ -155,14 +156,14 @@ Only `_reports/` triggers the notification (the notification's object prefix fil
 
 | Rule | Values | Set in |
 | --- | --- | --- |
-| runner timeout < claim stale age | 20 min < 30 min; metal: 30 min < 40 min | runner job task timeout, `dispatch.runStaleAfter`; metal: `BURN_EMULATOR_RUN_TIMEOUT`, + 10 min (`loop.REPORT_GRACE_SECONDS`) |
+| runner timeout < claim stale age | 30 min < 40 min; metal: 30 min < 40 min | runner job task timeout, `dispatch.runStaleAfter`; metal: `BURN_EMULATOR_RUN_TIMEOUT`, + 10 min (`loop.REPORT_GRACE_SECONDS`) |
 | runner retries = 0 | 0 | runner job max retries |
 | report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
 | handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
 
 ## Metal dispatch
 
-With `BURN_EMULATOR_METAL` set, the api triggers nothing: each claim is taken `staging`, then rewritten `queued`, with the runner env as its body, once `meta.geojson` is written. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
+With `BURN_EMULATOR_METAL` set, the api triggers nothing (except `PT` runs with `BURN_EMULATOR_CPU_OFFLOAD`, which trigger the CPU runner job): each claim is taken `staging`, then rewritten `queued`, with the runner env as its body, once `meta.geojson` is written. A runner on the cluster, started with `BURN_EMULATOR_LOOP=1` (see [burn-emulator-runner](../burn-emulator-runner/README.md#slurm-loop)), polls `_claims/` and runs the claims itself. It talks to GCS as the runner SA. Reports return through `_reports/` and Pub/Sub, as in Cloud Run mode.
 
 ```
 api: claim staging (no body), meta.geojson, then claim queued (generation G0, body = runner env)
