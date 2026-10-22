@@ -81,14 +81,16 @@ SIGTERM before `run()` returns is a failure and still writes a report; after tha
 
 ```
 startup: warm the GPU; turn on burn_emulator's caches and read data/inputs/current's rasters whole into memory
-loop:    list _claims/, oldest queued claim first (DL or PT, as its BURN_EMULATOR_BACKEND says)
-         queued -> running (metadata patch, generation + metageneration matched; runner = <host>/<slurm job>)
+loop:    list _claims/; staging, queued or running claims past expires_at -> failed (error as GetJob reports it)
+         oldest queued claim first (DL or PT, as its BURN_EMULATOR_BACKEND says)
+         queued -> running (metadata patch, generation + metageneration matched; runner = <host>/<slurm job>,
+                            expires_at = now + BURN_EMULATOR_RUN_TIMEOUT + 10 min)
          read the env body; add the inputs and bundle paths from the two roots
          steps 1-6 of the flow above, claim_generation = the claim's generation
          nothing queued: sleep BURN_EMULATOR_POLL_SECONDS
 ```
 
-Runs take their windows from the in-memory rasters (`burn_emulator.rasters`), and up to `BURN_EMULATOR_MAX_MODELS` bundles' models stay loaded on the GPU, least recently used evicted first (`burn_emulator.run.enable_caching`). Other inputs versions are read whole on first use. A run past `BURN_EMULATOR_RUN_TIMEOUT` is cancelled between batches and reported failed. On SIGTERM or SIGINT, the current run is cancelled, its claim is put back to `queued` for another loop, and the process exits. Several loops can share a bucket: the conditional patch lets only one of them take a given claim.
+Runs take their windows from the in-memory rasters (`burn_emulator.rasters`), and up to `BURN_EMULATOR_MAX_MODELS` bundles' models stay loaded on the GPU, least recently used evicted first (`burn_emulator.run.enable_caching`). Other inputs versions are read whole on first use. A run past `BURN_EMULATOR_RUN_TIMEOUT` is cancelled between batches and reported failed. On SIGTERM or SIGINT, the current run is cancelled, its claim is put back to `queued` with its original queue window for another loop, and the process exits. Several loops can share a bucket: the conditional patch lets only one of them take a given claim.
 
 | Variable | Purpose |
 | --- | --- |
@@ -97,7 +99,7 @@ Runs take their windows from the in-memory rasters (`burn_emulator.rasters`), an
 | `BURN_EMULATOR_BUNDLES_ROOT` | `<varloc>/<model_version>/`; default `burn-emulator-model/data/bundles` |
 | `BURN_EMULATOR_MAX_MODELS` | models kept loaded on the GPU; default 8 (`make env-vars` writes it) |
 | `BURN_EMULATOR_POLL_SECONDS` | default 10 |
-| `BURN_EMULATOR_RUN_TIMEOUT` | seconds, default 1200; keep below the api's 30 min run expiry |
+| `BURN_EMULATOR_RUN_TIMEOUT` | seconds, default 1800; a taken claim expires this + 10 min after it is taken |
 | `GOOGLE_APPLICATION_CREDENTIALS` | runner SA key |
 
 Started on the cluster by [`slurm/loop.slurm`](slurm/loop.slurm), from the repo root of a deploy checkout:

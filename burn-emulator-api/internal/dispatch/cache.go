@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	runStaleAfter     = 30 * time.Minute  // running
+	runStaleAfter     = 30 * time.Minute  // running + 10 min grace
 	queueStaleAfter   = 2 * runStaleAfter // queued (metal): waiting for a runner loop
 	stagingStaleAfter = DetachedBudget    // staging (metal): not queued by CreateJob
 	maxClaimAttempts  = 3
@@ -43,12 +43,14 @@ func isActive(status string) bool {
 	return status == statusStaging || status == statusQueued || status == statusRunning
 }
 
-// stored as claim object metadata; the runner's claim loop adds runner, dropped on the next API write
+// stored as claim object metadata; the runner's claim loop patches status, updated_at, expires_at and error,
+// and adds runner, dropped on the next API write
 type claimRecord struct {
 	Status     string // statusStaging | statusQueued | statusRunning | statusFailed
 	JobName    string
 	Attempts   int
 	UpdatedAt  time.Time
+	ExpiresAt  time.Time // active claims: stale from then on
 	Generation int64
 	Error      string
 }
@@ -225,6 +227,9 @@ func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRec
 			"updated_at": strconv.FormatInt(rec.UpdatedAt.Unix(), 10),
 		},
 	}
+	if isActive(rec.Status) {
+		obj.Metadata["expires_at"] = strconv.FormatInt(rec.UpdatedAt.Add(staleAfter(rec.Status)).Unix(), 10)
+	}
 	if rec.Error != "" {
 		obj.Metadata["error"] = rec.Error
 	}
@@ -242,27 +247,37 @@ func (c *Client) putClaim(ctx context.Context, bucket, name string, rec claimRec
 	return written.Generation, nil
 }
 
-// updated_at is when the claim was taken or queued, or when its run started
-func (r claimRecord) stale() bool {
-	switch r.Status {
+// the api's expires_at - updated_at for an active status
+func staleAfter(status string) time.Duration {
+	switch status {
 	case statusStaging:
-		return time.Since(r.UpdatedAt) >= stagingStaleAfter
+		return stagingStaleAfter
 	case statusRunning:
-		return time.Since(r.UpdatedAt) >= runStaleAfter
+		return runStaleAfter
 	case statusQueued:
-		return time.Since(r.UpdatedAt) >= queueStaleAfter
+		return queueStaleAfter
 	}
-	return false
+	return 0
+}
+
+func (r claimRecord) stale() bool {
+	return isActive(r.Status) && !time.Now().Before(r.ExpiresAt)
 }
 
 func parseClaim(obj *storage.Object) claimRecord {
 	attempts, _ := strconv.Atoi(obj.Metadata["attempts"])
 	updatedUnix, _ := strconv.ParseInt(obj.Metadata["updated_at"], 10, 64)
+	updatedAt := time.Unix(updatedUnix, 0)
+	expiresAt := updatedAt.Add(staleAfter(obj.Metadata["status"])) // claims written without expires_at
+	if expiresUnix, err := strconv.ParseInt(obj.Metadata["expires_at"], 10, 64); err == nil {
+		expiresAt = time.Unix(expiresUnix, 0)
+	}
 	return claimRecord{
 		Status:     obj.Metadata["status"],
 		JobName:    obj.Metadata["job_name"],
 		Attempts:   attempts,
-		UpdatedAt:  time.Unix(updatedUnix, 0),
+		UpdatedAt:  updatedAt,
+		ExpiresAt:  expiresAt,
 		Generation: obj.Generation,
 		Error:      obj.Metadata["error"],
 	}

@@ -85,7 +85,7 @@ Status of the run named by `job_id`. Same body as POST.
 
 Pub/Sub push endpoint for GCS `OBJECT_FINALIZE` on `gs://<out>/_reports/`. Re-reads the report's `status` and `claim_generation` from GCS: `completed` releases the claim, `failed` deletes partial output and marks the claim `failed`. 2xx acks, 5xx redelivers.
 
-Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`; bounded by 30 s and 500 claims per run.
+Afterwards, at most once a day across all instances (`_prune/last` rewritten with a generation precondition), claims last updated over a day ago (`failed`, or active and still waiting for a report) are copied to `_failed/<job_id>` and deleted (generation-matched). `dispatch.maybePrune`, in its own goroutine after the report is handled; bounded by 30 s and 500 claims per run.
 
 ## `GET /healthz` -> `200 ok`
 
@@ -115,14 +115,14 @@ Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS gene
 
 ## Claims
 
-A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. A claim without a report expires 30 min after its run starts (`dispatch.runStaleAfter`; `updated_at` is set when the trigger fires or a runner loop takes it), or, in metal mode, 60 min after it was queued (`dispatch.queueStaleAfter`), and 100 s after it was taken if the api never queued it (`dispatch.stagingStaleAfter`). A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
+A claim is a GCS object written with a generation precondition; identical concurrent requests share one run. Its generation goes to the runner and back on the report; a report for an older generation leaves a newer claim alone. An active claim (`staging`, `queued`, `running`) is stale from its `expires_at` on. The api sets `expires_at` on each write: `running` 30 min after the trigger fires (`dispatch.runStaleAfter`), `queued` 60 min after it was queued (`dispatch.queueStaleAfter`), `staging` 100 s after it was taken (`dispatch.stagingStaleAfter`). A runner loop sets it on take to `BURN_EMULATOR_RUN_TIMEOUT` + 10 min, on a requeue to the claim's queue window again, and marks expired claims `failed` with `GetJob`'s error. A claim without `expires_at` expires at `updated_at` + the api's age for its status. A 4xx trigger failure releases the claim; a timeout, network error or 5xx keeps it (POST returns 500, GET shows `pending` until it goes stale).
 
 | `status` | written by | |
 | --- | --- | --- |
-| `staging` | api on create and reclaim (metal mode), until `meta.geojson` is written | active; no body; stale after 100 s (`dispatch.stagingStaleAfter`) |
+| `staging` | api on create and reclaim (metal mode), until `meta.geojson` is written | active; no body |
 | `running` | api on create and reclaim (Cloud Run mode), runner loop on take | active; loop: `runner` |
 | `queued` | api (metal mode), after meta.geojson; runner loop when stopped mid-run | active; body = runner env JSON |
-| `failed` | api on a failed report | reclaimed by the next identical POST |
+| `failed` | api on a failed report; runner loop on an expired claim | reclaimed by the next identical POST |
 
 The api writes whole claims (create, reclaim, `queued`, `failed`). The runner loop only patches metadata, with generation and metageneration preconditions.
 
@@ -144,7 +144,7 @@ gs://<out>/
 | --- | --- | --- | --- |
 | `<job_id>/output.tif` | runner | none | permanent; its existence is the cache hit |
 | `<job_id>/meta.geojson` | api before the trigger (treatment area, EPSG:5070); runner overwrites it before `output.tif` (EPSG:5070 Feature, run + bundle as properties) | none | permanent; deleted with the output on failure, rewritten on retry |
-| `_claims/` | api; metadata also by the runner loop | `status` (see [Claims](#claims)), `job_name`, `attempts`, `updated_at`, `error`, metal: `runner` | deleted on success; failed or stale claims move to `_failed/` after a day |
+| `_claims/` | api; metadata also by the runner loop | `status` (see [Claims](#claims)), `job_name`, `attempts`, `updated_at`, `expires_at` (active), `error`, metal: `runner` | deleted on success; failed or stale claims move to `_failed/` after a day |
 | `_reports/` | runner | `status` (`completed` \| `failed`), `claim_generation`, `error` | deleted once handled |
 | `_failed/` | api daily prune | the claim's, `status=failed`, `archived_at`, stale ones `last_status` | permanent; latest failure per job id |
 | `_prune/last` | api | none | rewritten once a day |
@@ -155,7 +155,7 @@ Only `_reports/` triggers the notification (the notification's object prefix fil
 
 | Rule | Values | Set in |
 | --- | --- | --- |
-| runner timeout < claim stale age | 20 min < 30 min | runner job task timeout (metal: `BURN_EMULATOR_RUN_TIMEOUT`), `dispatch.runStaleAfter` |
+| runner timeout < claim stale age | 20 min < 30 min; metal: 30 min < 40 min | runner job task timeout, `dispatch.runStaleAfter`; metal: `BURN_EMULATOR_RUN_TIMEOUT`, + 10 min (`loop.REPORT_GRACE_SECONDS`) |
 | runner retries = 0 | 0 | runner job max retries |
 | report worst case < Pub/Sub ack deadline | 90 s + 2 x 10 s < 120 s | `handlers.reportTimeout`, `dispatch.releaseTimeout`, push subscription ack deadline |
 | handler worst case < Cloud Run request timeout | 4 min < 300 s | `http.Server.WriteTimeout`, api service request timeout |
@@ -166,7 +166,7 @@ With `BURN_EMULATOR_METAL` set, the api triggers nothing: each claim is taken `s
 
 ```
 api: claim staging (no body), meta.geojson, then claim queued (generation G0, body = runner env)
-runner loop: queued -> running (runner = <host>/<slurm job>), adds the inputs and bundle paths (left out of a metal claim) from its on-prem roots,
+runner loop: expired claims -> failed; queued -> running (runner = <host>/<slurm job>, expires_at = now + run timeout + 10 min), adds the inputs and bundle paths (left out of a metal claim) from its on-prem roots,
     meta.geojson, output.tif, _reports/<job_id> (claim_generation = G0)  ->  HandleReport as in Cloud Run mode
     stopped mid-run: running -> queued
 ```

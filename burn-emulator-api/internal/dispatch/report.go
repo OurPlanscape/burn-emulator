@@ -67,6 +67,6 @@ func (c *Client) HandleReport(ctx context.Context, bucket, object string, genera
 		slog.Warn("failed to delete report", "object", object, "error", err)
 	}
 
-	c.maybePrune(ctx)
+	go c.maybePrune(context.WithoutCancel(ctx))
 	return nil
 }

@@ -29,8 +29,17 @@ from burn_emulator_runner.utils import warm_gpu
 log = logging.getLogger("burn_emulator_runner")
 
 CLAIM_PREFIX = "_claims/"  # api dispatch.claimPrefix
+STATUS_STAGING = "staging"  # api dispatch.statusStaging
 STATUS_QUEUED = "queued"  # api dispatch.statusQueued
 STATUS_RUNNING = "running"  # api dispatch.statusRunning
+STATUS_FAILED = "failed"  # api dispatch.statusFailed
+
+EXPIRED_ERRORS = {
+    STATUS_STAGING: "the api stopped before queueing the claim",
+    STATUS_QUEUED: "no runner took the claim within {minutes:.0f} min",
+    STATUS_RUNNING: "run did not report back before its claim went stale",
+}
+REPORT_GRACE_SECONDS = 600
 
 # make env-vars sets both roots; the default is this install's burn-emulator-model/data
 MODEL_DATA = Path(MODEL_CONFIGS).parent / "data"
@@ -55,8 +64,7 @@ class ClaimLoop:
         )
         self.max_models = int(os.environ.get("BURN_EMULATOR_MAX_MODELS", "8"))
         self.poll_seconds = float(os.environ.get("BURN_EMULATOR_POLL_SECONDS", "10"))
-        # below dispatch.runStaleAfter (30 min), like the Cloud Run task timeout
-        self.run_timeout = float(os.environ.get("BURN_EMULATOR_RUN_TIMEOUT", "1200"))
+        self.run_timeout = float(os.environ.get("BURN_EMULATOR_RUN_TIMEOUT", "1800"))
         job_id = os.environ.get("SLURM_JOB_ID")
         self.runner_id = socket.gethostname() + (f"/{job_id}" if job_id else "")
 
@@ -85,14 +93,14 @@ class ClaimLoop:
         )
         while not self.stop.is_set():
             try:
-                claim = self._take_next()
+                taken = self._take_next()
             except Exception:
                 log.exception("listing claims failed")
-                claim = None
-            if claim is None:
+                taken = None
+            if taken is None:
                 self.stop.wait(self.poll_seconds)
                 continue
-            self._handle(claim)
+            self._handle(*taken)
         log.info("stopped")
 
     # data/inputs/current's rasters, as runs read them; other versions are cached on first use
@@ -116,25 +124,47 @@ class ClaimLoop:
             time.monotonic() - start,
         )
 
-    # oldest queued claim, DL or PT (the claim's BURN_EMULATOR_BACKEND), taken queued -> running
-    def _take_next(self) -> Blob | None:
-        queued = [
-            b
-            for b in storage_client().list_blobs(self.bucket, prefix=CLAIM_PREFIX)
-            if (b.metadata or {}).get("status") == STATUS_QUEUED
-        ]
-        queued.sort(key=lambda b: int((b.metadata or {}).get("updated_at") or 0))
+    # active claims past expires_at -> failed; then the oldest queued claim, DL or PT (the claim's
+    # BURN_EMULATOR_BACKEND), taken queued -> running, with its queue window in seconds
+    def _take_next(self) -> tuple[Blob, int | None] | None:
+        now = int(time.time())
+        queued = []
+        for b in storage_client().list_blobs(self.bucket, prefix=CLAIM_PREFIX):
+            status = (b.metadata or {}).get("status")
+            if status not in EXPIRED_ERRORS:
+                continue
+            expires_at = _meta_int(b, "expires_at")
+            if expires_at is not None and expires_at <= now:
+                self._expire(b, status)
+            elif status == STATUS_QUEUED:
+                queued.append(b)
+        queued.sort(key=lambda b: _meta_int(b, "updated_at") or 0)
         for blob in queued:
             if self.stop.is_set():
                 return None
+            window = _window(blob)
+            now = int(time.time())
             if self._update(
                 blob,
                 status=STATUS_RUNNING,
-                updated_at=str(int(time.time())),
+                updated_at=str(now),
+                expires_at=str(now + int(self.run_timeout) + REPORT_GRACE_SECONDS),
                 runner=self.runner_id,
             ):
-                return blob
+                return blob, window
         return None
+
+    # active -> failed, with GetJob's error for its status
+    def _expire(self, blob: Blob, status: str) -> None:
+        error = EXPIRED_ERRORS[status].format(minutes=(_window(blob) or 0) / 60)
+        if self._update(
+            blob,
+            status=STATUS_FAILED,
+            error=error,
+            updated_at=str(int(time.time())),
+            expires_at=None,
+        ):
+            log.info("claim %s expired while %s", blob.name.removeprefix(CLAIM_PREFIX), status)
 
     # metadata patch under the claim's generation and metageneration; False if either moved
     def _update(self, blob: Blob, **metadata: str | None) -> bool:
@@ -146,7 +176,8 @@ class ClaimLoop:
             return False
         return True
 
-    def _handle(self, claim: Blob) -> None:
+    # queue_window: the claim's expires_at - updated_at when it was taken, reused on a requeue
+    def _handle(self, claim: Blob, queue_window: int | None) -> None:
         key = claim.name.removeprefix(CLAIM_PREFIX)
         claim_generation = str(claim.generation)
         report_path = ""
@@ -174,12 +205,17 @@ class ClaimLoop:
             log.info("run done %s output_path=%s", key, out.output_path)
             write_report(report_path, claim_generation, REPORT_COMPLETED)
         except RunCancelled as e:
+            now = int(time.time())
             if timed_out.is_set():
                 log.error("run timed out %s: %s", key, e)
                 error = f"run exceeded {self.run_timeout:g}s: {e}"
                 write_report(report_path, claim_generation, REPORT_FAILED, error)
             elif self._update(
-                claim, status=STATUS_QUEUED, updated_at=str(int(time.time())), runner=None
+                claim,
+                status=STATUS_QUEUED,
+                updated_at=str(now),
+                expires_at=str(now + queue_window) if queue_window else None,
+                runner=None,
             ):
                 log.info("claim %s requeued: %s", key, e)
             else:
@@ -206,6 +242,21 @@ class ClaimLoop:
                 self.bundles_root / env["BURN_EMULATOR_VARLOC"] / model_version
             )
         return paths
+
+
+def _meta_int(blob: Blob, key: str) -> int | None:
+    try:
+        return int((blob.metadata or {})[key])
+    except (KeyError, ValueError):
+        return None
+
+
+# expires_at - updated_at in seconds; None without both
+def _window(blob: Blob) -> int | None:
+    expires_at, updated_at = _meta_int(blob, "expires_at"), _meta_int(blob, "updated_at")
+    if expires_at is None or updated_at is None:
+        return None
+    return expires_at - updated_at
 
 
 def serve() -> None:
