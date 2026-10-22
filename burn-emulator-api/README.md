@@ -33,7 +33,7 @@ Go service. Validates or picks the varloc, then picks the backend and model vers
 
 | field | |
 | --- | --- |
-| `treatment_area` | required; a GeoJSON object (not a string): `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), rejected without one |
+| `treatment_area` | required; a GeoJSON object (not a string): `Polygon` / `MultiPolygon` / `GeometryCollection` GeoJSON, bare or in a `Feature` / `FeatureCollection`; other geometry types are rejected, null geometries skipped, and all parts unioned. CRS from the top-level `crs` member (e.g. `"crs": {"type": "name", "properties": {"name": "EPSG:5070"}}`), EPSG:4326 without one; reprojected to EPSG:5070 |
 | `varloc` | optional; 1-32 alphanumeric chars, uppercased. Must be in `all_varlocs.gpkg` and intersect `treatment_area`; omitted: the largest overlap in `all_varlocs.gpkg` |
 | `job_name` | optional; 1-63 chars `[a-z0-9-]`, starting and ending alphanumeric; stored on the claim, not hashed |
 | `ignition_density` | optional; ignitions per km², > 0; default: the bundle's `config.yaml` value, or `run_smoke.yaml`'s (20) for PT without a bundle. Capped at 2**16 ignitions per run, checked by the runner |
@@ -111,7 +111,7 @@ Backend. The bundle is `<models>/<varloc>/current` when the varloc is in `valid_
 | `PT` | yes | - | PT | `pt-<model_version>` |
 | `PT` | no | - | PT, runner's `run_smoke.yaml` defaults | `pt` |
 
-Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite` and parsed with GEOS (`twpayne/go-geos`); the treatment area is reprojected into EPSG:5070 with PROJ (`twpayne/go-proj`). Overlap is the exact intersection area in EPSG:5070; ties go to the first varloc name. Accepted `crs`: CRS84 or any EPSG code known to PROJ. Invalid polygons are repaired with GEOS `MakeValid` (structure method); rings must be closed.
+Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS generation changes (checked every 60s). They are read with `modernc.org/sqlite` and parsed with GEOS (`twpayne/go-geos`); the treatment area is reprojected into EPSG:5070 with PROJ (`twpayne/go-proj`). Overlap is the exact intersection area in EPSG:5070; ties go to the first varloc name. Accepted `crs`: CRS84, or any EPSG code known to PROJ as `EPSG:<code>`, `urn:ogc:def:crs:EPSG:[<version>]:<code>` or `http://www.opengis.net/def/crs/EPSG/<version>/<code>`; none reads as EPSG:4326 (longitude, latitude). Invalid polygons are repaired with GEOS `MakeValid` (structure method); rings must be closed.
 
 ## Claims
 

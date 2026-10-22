@@ -21,7 +21,7 @@ const (
 var (
 	geosCtx          = geos.NewContext()
 	errEmptyGeometry = errors.New("empty geometry")
-	epsgCode         = regexp.MustCompile(`EPSG:+(\d+)$`) // EPSG:4326, urn:ogc:def:crs:EPSG::4326, ...
+	epsgCode         = regexp.MustCompile(`EPSG(?::[\d.]*:|/[\d.]+/|:)(\d+)$`) // EPSG:4326, urn:ogc:def:crs:EPSG:[<ver>]:4326, http://www.opengis.net/def/crs/EPSG/<ver>/4326
 )
 
 type geoJSON struct {
@@ -37,24 +37,23 @@ type geoJSON struct {
 	} `json:"crs"`
 }
 
-// polygons reprojected to workingCRS; crs is required
+// polygons reprojected to workingCRS; no crs member reads as EPSG:4326
 func treatmentArea(s string) (*geos.Geom, error) {
 	var g geoJSON
 	if err := json.Unmarshal([]byte(s), &g); err != nil {
 		return nil, err
 	}
-	if g.CRS == nil {
-		return nil, errors.New("missing crs")
-	}
 
-	var src string
-	name := g.CRS.Properties.Name
-	if m := epsgCode.FindStringSubmatch(name); m != nil {
-		src = "EPSG:" + m[1]
-	} else if strings.HasSuffix(name, "CRS84") {
-		src = "OGC:CRS84"
-	} else {
-		return nil, fmt.Errorf("unsupported crs %q", name)
+	src := "EPSG:4326"
+	if g.CRS != nil {
+		name := g.CRS.Properties.Name
+		if m := epsgCode.FindStringSubmatch(name); m != nil {
+			src = "EPSG:" + m[1]
+		} else if strings.HasSuffix(name, "CRS84") {
+			src = "OGC:CRS84"
+		} else {
+			return nil, fmt.Errorf("unsupported crs %q", name)
+		}
 	}
 
 	var polys [][][][]float64
