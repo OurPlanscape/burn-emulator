@@ -169,14 +169,10 @@ class CircleConv3x3(CircleLayerBase):
             w_transform_matrix: Tensor = self.get_w_transform_matrix()
             self.register_buffer("w_transform_matrix", w_transform_matrix)
 
-            if not self.training:
-                self.weight = self.weight.view(-1, self.kernel_size * self.kernel_size)
-                self.weight = self.weight.matmul(self.w_transform_matrix)
-
     def forward(self, x: Tensor) -> Tensor:
         w_size: torch.Size = self.weight.shape
         w: Tensor = self.weight
-        if self.kernel_size != 1 and self.training:
+        if self.kernel_size != 1:
             w = w.view(-1, self.kernel_size * self.kernel_size)
             w = w.matmul(self.w_transform_matrix)
         w = w.view(w_size[0], w_size[1], self.kernel_size, self.kernel_size)
