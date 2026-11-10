@@ -96,7 +96,7 @@ Releases (need `BURN_EMULATOR_MODELS_URI` / `BURN_EMULATOR_INPUTS_URI`):
 | `valid-varlocs` | filters `data/inputs/current`'s `varlocs/all_varlocs.gpkg` to `data/outputs/varlocs.txt` -> `varlocs/valid_varlocs.gpkg` |
 | `model-bundle VARLOC=` | `burn_emulator -m bundle` -> `data/bundles/<VARLOC>/<model_version>/`, then points `data/bundles/<VARLOC>/current` at it: the models bucket's layout |
 | `model-bundle-all` | `update-mark-trained`, `valid-varlocs`, then `model-bundle` for every varloc in `varlocs.txt` |
-| `model-release VARLOC= [FORCE=1]` | `scripts/publish_model.sh`: uploads `data/bundles/<VARLOC>/current`'s bundle, then repoints the bucket's `<VARLOC>/current` to the same version |
+| `model-release VARLOC= [FORCE=1] [POINTER_ONLY=1]` | `scripts/publish_model.sh`: uploads `data/bundles/<VARLOC>/current`'s bundle, then repoints the bucket's `<VARLOC>/current` to the same version; `POINTER_ONLY=1` skips the upload (metal DL reads bundles on prem) |
 | `model-release-all` | the same for every varloc in `varlocs.txt`; repoints only after every upload |
 | `inputs-current [INPUTS_VERSION=]` | `scripts/set_inputs_current.sh`: checks the hand-made `data/inputs/<inputs_version>/` (`baseline/`, `legalmax/`, `topo/`, `varlocs/all_varlocs.gpkg`, `fbfm/fbfm_behavior_adjectives.csv`), then points `data/inputs/current` at it. `INPUTS_VERSION` defaults to `current.yaml` |
 | `inputs-release [FORCE=1]` | `scripts/publish_inputs.sh`: uploads `data/inputs/current`'s version as is, then repoints the bucket's `current` |

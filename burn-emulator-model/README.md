@@ -101,7 +101,7 @@ scripts/publish_model.sh <varloc> [<varloc> ...]                                
 
 `<model_version>` = `<checkpoint mtime, UTC YYYYMMDDTHHMMSSZ>-<7-char git sha>[-dirty]`.
 
-`publish_model.sh` reads each `<VARLOC>/current` under `BURN_EMULATOR_BUNDLES_ROOT` (default `data/bundles`), checks the bundle, uploads it to `<BURN_EMULATOR_MODELS_URI>/<VARLOC>/<model_version>/` and repoints the bucket's `<VARLOC>/current`. `FORCE=1` overwrites a published version.
+`publish_model.sh` reads each `<VARLOC>/current` under `BURN_EMULATOR_BUNDLES_ROOT` (default `data/bundles`), checks the bundle, uploads it to `<BURN_EMULATOR_MODELS_URI>/<VARLOC>/<model_version>/` and repoints the bucket's `<VARLOC>/current`. `FORCE=1` overwrites a published version. `POINTER_ONLY=1` checks the local bundle but only repoints `<VARLOC>/current`: enough for metal DL, which reads bundles on prem, but Cloud Run PT runs on that varloc need the bundle in the bucket.
 
 The runner's claim loop runs bundles from `data/bundles`.
 

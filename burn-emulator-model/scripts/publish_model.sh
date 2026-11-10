@@ -65,7 +65,11 @@ for i in "${!varlocs[@]}"; do
     echo "to             ${dest}/"
     echo
 
-    if [[ "${FORCE:-0}" != "1" ]] && gcloud storage ls "${dest}/" >/dev/null 2>&1; then
+    # metal reads bundles on prem; only the pointer goes up
+    if [[ "${POINTER_ONLY:-0}" == "1" ]]; then
+        echo "pointer only: skipping bundle upload"
+        echo
+    elif [[ "${FORCE:-0}" != "1" ]] && gcloud storage ls "${dest}/" >/dev/null 2>&1; then
         for f in "${bundle_dir%/}"/*; do
             name="$(basename "$f")"
             [[ "$name" == model.pt ]] && continue

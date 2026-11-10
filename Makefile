@@ -144,12 +144,12 @@ model-bundle-all: update-mark-trained ## [direct] sync varlocs.txt to finished c
 	    $(MAKE) model-bundle VARLOC="$$varloc"
 	done
 
-model-release: ## [direct] upload data/bundles/<VARLOC>/current's bundle, then repoint the bucket's <VARLOC>/current (VARLOC=)
+model-release: ## [direct] upload data/bundles/<VARLOC>/current's bundle, then repoint the bucket's <VARLOC>/current (VARLOC= [POINTER_ONLY=1])
 	if [ -z "$(VARLOC)" ]; then echo "error: pass VARLOC=<varloc>" >&2; exit 2; fi
 	if [ -z "$(BURN_EMULATOR_MODELS_URI)" ]; then echo "error: BURN_EMULATOR_MODELS_URI is not set - run make env-vars" >&2; exit 2; fi
 	BURN_EMULATOR_BUNDLES_ROOT="$(BUNDLES_ROOT)" $(MODEL_DIR)/scripts/publish_model.sh "$(VARLOC)"
 
-model-release-all: ## [direct] model-release for every trained varloc (VARLOCS_TXT); repoints after every upload
+model-release-all: ## [direct] model-release for every trained varloc (VARLOCS_TXT); repoints after every upload ([POINTER_ONLY=1])
 	set -e
 	if [ -z "$(BURN_EMULATOR_MODELS_URI)" ]; then echo "error: BURN_EMULATOR_MODELS_URI is not set - run make env-vars" >&2; exit 2; fi
 	mapfile -t varlocs < <(grep -vE '^[[:space:]]*$$' "$(VARLOCS_TXT)")
