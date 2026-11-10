@@ -51,12 +51,16 @@ The api writes it before the run: a `FeatureCollection` with a `crs` member (`EP
 | `ignition_density` | number | ignitions per km² used |
 | `output_path` | string | `gs://` of `output.tif` |
 | `project_area_acres` | number | treatment area |
-| `net_indirect_crown_acres_avoided` | number | outside the treatment area, sum of (band 3 - band 2) x pixel acres; negative when treatment increases crowning there |
-| `net_indirect_benefit_pct` | number \| null | `100 * net_indirect_crown_acres_avoided / project_area_acres`; null for a zero-area treatment area |
+| `positive_indirect_acres_reduced` | number | outside the treatment area, acres of pixels where band 3 - band 2 > 0 (more kept fires went crown -> non-crown than non-crown -> crown); no significance test; grows with ignition density |
+| `positive_indirect_benefit_pct` | number \| null | `100 * positive_indirect_acres_reduced / project_area_acres`; null for a zero-area treatment area |
+| `net_indirect_acres_reduced` | number | outside the treatment area, `positive_indirect_acres_reduced` minus acres of pixels where band 3 - band 2 < 0; negative when more pixels lean to more crowning; grows with ignition density |
+| `net_indirect_benefit_pct` | number \| null | `100 * net_indirect_acres_reduced / project_area_acres`; null for a zero-area treatment area |
 | `significant_indirect_acres_reduced` | number | outside the treatment area, acres of pixels with a significant reduction in crown probability: one-sided exact McNemar test per pixel on kept-fire counts (from crown vs to crown), Benjamini-Hochberg FDR 5% over outside pixels with at least 5 discordant fires (the fewest that can reach p < 0.05; independent filtering) |
 | `significant_indirect_benefit_pct` | number \| null | `100 * significant_indirect_acres_reduced / project_area_acres`; null for a zero-area treatment area |
-| `net_direct_crown_acres_avoided` | number | as `net_indirect_crown_acres_avoided`, inside the treatment area |
-| `net_direct_benefit_pct` | number \| null | `100 * net_direct_crown_acres_avoided / project_area_acres`; null for a zero-area treatment area |
+| `positive_direct_acres_reduced` | number | as `positive_indirect_acres_reduced`, inside the treatment area |
+| `positive_direct_benefit_pct` | number \| null | `100 * positive_direct_acres_reduced / project_area_acres`; null for a zero-area treatment area |
+| `net_direct_acres_reduced` | number | as `net_indirect_acres_reduced`, inside the treatment area |
+| `net_direct_benefit_pct` | number \| null | `100 * net_direct_acres_reduced / project_area_acres`; null for a zero-area treatment area |
 | `significant_direct_acres_reduced` | number | as `significant_indirect_acres_reduced`, inside the treatment area (its own BH family) |
 | `significant_direct_benefit_pct` | number \| null | `100 * significant_direct_acres_reduced / project_area_acres`; null for a zero-area treatment area |
 
@@ -84,11 +88,15 @@ A pixel is inside the treatment area when its center is. Acreage values are unro
       "ignition_density": 20,
       "output_path": "gs://<bucket>/20260824/WC711/20260829T143000Z-a1b2c3d/1a2b3c4d…0/output.tif",
       "project_area_acres": 1234.5678,
-      "net_indirect_crown_acres_avoided": 185.1852,
+      "positive_indirect_acres_reduced": 1480.2469,
+      "positive_indirect_benefit_pct": 119.9,
+      "net_indirect_acres_reduced": 185.1852,
       "net_indirect_benefit_pct": 15.0,
       "significant_indirect_acres_reduced": 412.3456,
       "significant_indirect_benefit_pct": 33.4,
-      "net_direct_crown_acres_avoided": 987.6543,
+      "positive_direct_acres_reduced": 1160.4938,
+      "positive_direct_benefit_pct": 94.0,
+      "net_direct_acres_reduced": 987.6543,
       "net_direct_benefit_pct": 80.0,
       "significant_direct_acres_reduced": 864.1975,
       "significant_direct_benefit_pct": 70.0,

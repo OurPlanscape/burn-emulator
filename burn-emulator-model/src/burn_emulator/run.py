@@ -25,11 +25,15 @@ FDR_Q = 0.05
 MIN_DISCORDANT = int(np.ceil(-np.log2(FDR_Q)))
 BENEFIT_KEYS = (
     "project_area_acres",
-    "net_indirect_crown_acres_avoided",
+    "positive_indirect_acres_reduced",
+    "positive_indirect_benefit_pct",
+    "net_indirect_acres_reduced",
     "net_indirect_benefit_pct",
     "significant_indirect_acres_reduced",
     "significant_indirect_benefit_pct",
-    "net_direct_crown_acres_avoided",
+    "positive_direct_acres_reduced",
+    "positive_direct_benefit_pct",
+    "net_direct_acres_reduced",
     "net_direct_benefit_pct",
     "significant_direct_acres_reduced",
     "significant_direct_benefit_pct",
@@ -139,10 +143,13 @@ def _benefit(
     project = region.area / M2_PER_ACRE
     out = {"project_area_acres": project}
     for scope, mask in (("indirect", ~inside), ("direct", inside)):
-        acres = float(net[mask].sum()) * pixel_acres
+        positive = int((net[mask] > 0).sum()) * pixel_acres
+        acres = positive - int((net[mask] < 0).sum()) * pixel_acres
         significant = _significant_pixels(agg[1][mask], agg[2][mask], n_kept) * pixel_acres
         out |= {
-            f"net_{scope}_crown_acres_avoided": acres,
+            f"positive_{scope}_acres_reduced": positive,
+            f"positive_{scope}_benefit_pct": 100 * positive / project if project > 0 else None,
+            f"net_{scope}_acres_reduced": acres,
             f"net_{scope}_benefit_pct": 100 * acres / project if project > 0 else None,
             f"significant_{scope}_acres_reduced": significant,
             f"significant_{scope}_benefit_pct": (
