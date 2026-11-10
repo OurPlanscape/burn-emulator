@@ -9,7 +9,9 @@ from typing import Any
 import numpy as np
 import rasterio
 import torch
+import torch.nn.functional as F
 from rasterio.features import geometry_mask
+from scipy.stats import binom, false_discovery_control
 
 from burn_emulator import rasters
 from burn_emulator.config import dynamic_import
@@ -18,7 +20,20 @@ from burn_emulator.datasets.utils import compute_crop_region
 from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
 
 M2_PER_ACRE = 4046.8564224
-BENEFIT_KEYS = ("project_area_acres", "indirect_acres_improved", "indirect_benefit_pct")
+FDR_Q = 0.05
+# fewest discordant fires whose best case (all from crown, p = 0.5**n) reaches FDR_Q
+MIN_DISCORDANT = int(np.ceil(-np.log2(FDR_Q)))
+BENEFIT_KEYS = (
+    "project_area_acres",
+    "net_indirect_crown_acres_avoided",
+    "net_indirect_benefit_pct",
+    "significant_indirect_acres_reduced",
+    "significant_indirect_benefit_pct",
+    "net_direct_crown_acres_avoided",
+    "net_direct_benefit_pct",
+    "significant_direct_acres_reduced",
+    "significant_direct_benefit_pct",
+)
 
 
 class RunCancelled(Exception):
@@ -74,36 +89,67 @@ def _fire_touches(
     return bool((fire & region_mask[y0:y1, x0:x1]).any())
 
 
-def _center_component(mask: torch.Tensor) -> torch.Tensor:
+def _center_component(mask: torch.Tensor, r: int = 2) -> torch.Tensor:
     _, h, w = mask.shape
     cy, cx = h // 2, w // 2
+
+    # grows through mask dilated by r, bridging unburned gaps up to 2r pixels wide
+    reach = mask
+    if r > 0:
+        reach = F.max_pool2d(
+            mask.float().unsqueeze(1), 2 * r + 1, stride=1, padding=r
+        ).squeeze(1) > 0
+
     seed = torch.zeros_like(mask)
     # seeded from the 3x3 center
     seed[:, max(cy - 1, 0) : cy + 2, max(cx - 1, 0) : cx + 2] = True
-    seed = seed & mask
+    seed = seed & reach
     if seed.sum() == 0:
-        return seed
-    
+        return seed & mask
+
     kernel = torch.ones(1, 1, 3, 3, device=mask.device)
     for _ in range(max(h, w)*3):
-        grown = (torch.conv2d(seed.float().unsqueeze(1), kernel, padding=1).squeeze(1) > 0) & mask
+        grown = (torch.conv2d(seed.float().unsqueeze(1), kernel, padding=1).squeeze(1) > 0) & reach
         if grown.sum() == seed.sum():
             break
         seed = grown
-    return seed
+    return seed & mask
 
 
-# probability-weighted crown -> non-crown minus non-crown -> crown, outside the region only
-def _indirect_benefit(agg: np.ndarray, inside: np.ndarray, transform: Any, region: Any) -> dict:
+# one-sided exact McNemar per pixel, BH FDR over the given pixels that could pass at all
+# (independent filtering on the discordant count)
+def _significant_pixels(to_crown: np.ndarray, from_crown: np.ndarray, n_kept: int) -> int:
+    to_crown = np.rint(to_crown * n_kept).astype(np.int64)
+    from_crown = np.rint(from_crown * n_kept).astype(np.int64)
+    discordant = to_crown + from_crown
+    tested = discordant >= MIN_DISCORDANT
+    if not tested.any():
+        return 0
+    p = binom.sf(from_crown[tested] - 1, discordant[tested], 0.5)
+    return int((false_discovery_control(p) <= FDR_Q).sum())
+
+
+# probability-weighted crown -> non-crown minus non-crown -> crown; direct inside the region,
+# indirect outside, each its own BH family
+def _benefit(
+    agg: np.ndarray, inside: np.ndarray, transform: Any, region: Any, n_kept: int
+) -> dict:
     net = agg[2] - agg[1]
     pixel_acres = abs(transform.a * transform.e) / M2_PER_ACRE
-    indirect = float(net[~inside].sum()) * pixel_acres
     project = region.area / M2_PER_ACRE
-    return {
-        "project_area_acres": project,
-        "indirect_acres_improved": indirect,
-        "indirect_benefit_pct": 100 * indirect / project if project > 0 else None,
-    }
+    out = {"project_area_acres": project}
+    for scope, mask in (("indirect", ~inside), ("direct", inside)):
+        acres = float(net[mask].sum()) * pixel_acres
+        significant = _significant_pixels(agg[1][mask], agg[2][mask], n_kept) * pixel_acres
+        out |= {
+            f"net_{scope}_crown_acres_avoided": acres,
+            f"net_{scope}_benefit_pct": 100 * acres / project if project > 0 else None,
+            f"significant_{scope}_acres_reduced": significant,
+            f"significant_{scope}_benefit_pct": (
+                100 * significant / project if project > 0 else None
+            ),
+        }
+    return out
 
 
 def _sig3(v: float | None) -> str:
@@ -112,7 +158,7 @@ def _sig3(v: float | None) -> str:
     return np.format_float_positional(v, precision=3, unique=False, fractional=False, trim="-")
 
 
-def timing_report(tag: str, header: str, timings: dict, total: float, rows: dict) -> None:
+def run_report(tag: str, header: str, timings: dict, total: float, rows: dict) -> None:
     timing_rows = "\n".join(f"  {label:<18}: {sec:7.2f}s" for label, sec in timings.items())
     extra_rows = "".join(f"\n  {label:<18}: {value}" for label, value in rows.items())
     print(
@@ -231,7 +277,9 @@ def _run_pt(
         dst.write(agg)
 
     with timed(timings, "benefit"):
-        benefit = _indirect_benefit(agg, state["keep_mask"], profile["transform"], region)
+        benefit = _benefit(
+            agg, state["keep_mask"], profile["transform"], region, n_kept
+        )
 
     n_sims = 2 * len(futures)
     return {
@@ -346,7 +394,9 @@ def _run_emulator(
             dst.write(agg)
 
     with timed(timings, "benefit"):
-        benefit = _indirect_benefit(agg, keep_mask.cpu().numpy(), profile["transform"], region)
+        benefit = _benefit(
+            agg, keep_mask.cpu().numpy(), profile["transform"], region, n_kept
+        )
     return {**benefit, "n_kept": n_kept, "rows": {}}
 
 
@@ -411,12 +461,12 @@ def run(
     if debug:
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
-        timing_report(
+        run_report(
             "run",
             f"{label}  ({n_ignitions} ignitions, {stats['n_kept']} kept)",
             timings,
             total,
-            {**stats["rows"], **{k: _sig3(v) for k, v in benefit.items()}, **peak_memory_rows()},
+            {**stats["rows"], **peak_memory_rows(), **{k: _sig3(v) for k, v in benefit.items()}},
         )
         result["timings"] = {**timings, "total": total}
 

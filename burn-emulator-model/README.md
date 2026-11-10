@@ -43,10 +43,10 @@ burn_emulator -m run -vl <varloc> \
 5. per fire: keep the center-connected burn, classify crown change, drop fires outside the treatment area
 6. average kept fires onto the full raster (fp32)
 7. write a 3-band float32 GeoTIFF (no change | to crown | from crown)
-8. compute the indirect benefit outside the treatment area
+8. compute the indirect (outside) and direct (inside) benefit of the treatment area
 ```
 
-Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `run()` returns `out_path` plus `project_area_acres`, `indirect_acres_improved` and `indirect_benefit_pct` (defined in [meta.geojson](../burn-emulator-runner/README.md#metageojson)), unrounded. `-d` prints them to 3 significant figures with the timings. `make smoke` runs it on a sample treatment area.
+Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `run()` returns `out_path` plus `project_area_acres`, `net_indirect_crown_acres_avoided`, `net_indirect_benefit_pct`, `significant_indirect_acres_reduced`, `significant_indirect_benefit_pct` and the `direct` equivalents (inside the treatment area) (defined in [meta.geojson](../burn-emulator-runner/README.md#metageojson)), unrounded. `-d` prints them to 3 significant figures with the timings. `make smoke` runs it on a sample treatment area.
 
 `run.enable_caching(max_models)` makes later runs in the same process read each raster whole once and slice windows from memory (`burn_emulator.rasters.open_raster`), and keep up to `max_models` `(ckpt_path, model)` pairs loaded on `RUN_DEVICE`, least recently used evicted first. The runner's claim loop turns it on.
 

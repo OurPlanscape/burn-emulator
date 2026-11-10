@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from burn_emulator.config import dynamic_import
 from burn_emulator.constants import DEFAULT_DEVICE, DEFAULT_DTYPE, INF_PROFILE, RUN_DEVICE, Path
 from burn_emulator.datasets.utils import compute_crop_region
-from burn_emulator.run import _center_component, peak_memory_rows, timing_report
+from burn_emulator.run import _center_component, peak_memory_rows, run_report
 from burn_emulator.utils import peak_gpu_gb, resolve_model_checkpoint, timed
 
 
@@ -255,7 +255,7 @@ def evaluate(
         if debug:
             total = time.perf_counter() - t_start
             timings["other"] = max(total - sum(timings.values()), 0.0)
-            timing_report(
+            run_report(
                 "eval",
                 f"pyretechnics  {run_eval_name}  ({pt_stats['n_sims']} ignitions)",
                 timings,
@@ -283,7 +283,7 @@ def evaluate(
         total = time.perf_counter() - t_start
         timings["other"] = max(total - sum(timings.values()), 0.0)
         print(f"[eval] used checkpoint: {ckpt_path}", flush=True)
-        timing_report(
+        run_report(
             "eval",
             f"device={RUN_DEVICE}  {run_eval_name}  ({n_batches} batches)",
             timings,

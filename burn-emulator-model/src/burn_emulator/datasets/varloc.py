@@ -31,7 +31,7 @@ from burn_emulator.types import IgnitionMethod
 from burn_emulator.utils import circle_mask
 
 MAX_IGNITION_RESAMPLE = 42
-MAX_TARGET_IGNITIONS = 2**16
+MAX_TARGET_IGNITIONS = 2**18
 CACHE_LOG_EVERY = 100  # burn windows between cache_burns progress lines
 
 
