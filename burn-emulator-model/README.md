@@ -46,7 +46,7 @@ burn_emulator -m run -vl <varloc> \
 8. compute the indirect (outside) and direct (inside) benefit of the treatment area
 ```
 
-Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `run()` returns `out_path` plus `project_area_acres`, `positive_indirect_acres_reduced`, `positive_indirect_benefit_pct`, `net_indirect_acres_reduced`, `net_indirect_benefit_pct`, `significant_indirect_acres_reduced`, `significant_indirect_benefit_pct` and the `direct` equivalents (inside the treatment area) (defined in [meta.geojson](../burn-emulator-runner/README.md#metageojson)), unrounded. `-d` prints them to 3 significant figures with the timings. `make smoke` runs it on a sample treatment area.
+Writes `-o`, else `<experiment_dir>/<model_name>.tif`. Capped at 2**16 ignitions. `run()` returns `out_path` plus `project_area_acres`, `indirect_benefit_acres`, `indirect_benefit_pct`, `direct_benefit_acres` and `direct_benefit_pct` (defined in [meta.geojson](../burn-emulator-runner/README.md#metageojson)), unrounded. `-d` prints them to 3 significant figures with the timings. `make smoke` runs it on a sample treatment area.
 
 `run.enable_caching(max_models)` makes later runs in the same process read each raster whole once and slice windows from memory (`burn_emulator.rasters.open_raster`), and keep up to `max_models` `(ckpt_path, model)` pairs loaded on `RUN_DEVICE`, least recently used evicted first. The runner's claim loop turns it on.
 

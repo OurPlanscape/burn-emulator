@@ -11,7 +11,6 @@ import rasterio
 import torch
 import torch.nn.functional as F
 from rasterio.features import geometry_mask
-from scipy.stats import binom, false_discovery_control
 
 from burn_emulator import rasters
 from burn_emulator.config import dynamic_import
@@ -20,25 +19,13 @@ from burn_emulator.datasets.utils import compute_crop_region
 from burn_emulator.utils import batched_agg, peak_gpu_gb, resolve_model_checkpoint, timed
 
 M2_PER_ACRE = 4046.8564224
-FDR_Q = 0.05
-# fewest discordant fires whose best case (all from crown, p = 0.5**n) reaches FDR_Q
-MIN_DISCORDANT = int(np.ceil(-np.log2(FDR_Q)))
 BENEFIT_KEYS = (
     "project_area_acres",
-    "positive_indirect_acres_reduced",
-    "positive_indirect_benefit_pct",
-    "net_indirect_acres_reduced",
-    "net_indirect_benefit_pct",
-    "significant_indirect_acres_reduced",
-    "significant_indirect_benefit_pct",
-    "positive_direct_acres_reduced",
-    "positive_direct_benefit_pct",
-    "net_direct_acres_reduced",
-    "net_direct_benefit_pct",
-    "significant_direct_acres_reduced",
-    "significant_direct_benefit_pct",
+    "indirect_benefit_acres",
+    "indirect_benefit_pct",
+    "direct_benefit_acres",
+    "direct_benefit_pct",
 )
-
 
 class RunCancelled(Exception):
     pass
@@ -120,41 +107,17 @@ def _center_component(mask: torch.Tensor, r: int = 2) -> torch.Tensor:
     return seed & mask
 
 
-# one-sided exact McNemar per pixel, BH FDR over the given pixels that could pass at all
-# (independent filtering on the discordant count)
-def _significant_pixels(to_crown: np.ndarray, from_crown: np.ndarray, n_kept: int) -> int:
-    to_crown = np.rint(to_crown * n_kept).astype(np.int64)
-    from_crown = np.rint(from_crown * n_kept).astype(np.int64)
-    discordant = to_crown + from_crown
-    tested = discordant >= MIN_DISCORDANT
-    if not tested.any():
-        return 0
-    p = binom.sf(from_crown[tested] - 1, discordant[tested], 0.5)
-    return int((false_discovery_control(p) <= FDR_Q).sum())
-
-
-# probability-weighted crown -> non-crown minus non-crown -> crown; direct inside the region,
-# indirect outside, each its own BH family
-def _benefit(
-    agg: np.ndarray, inside: np.ndarray, transform: Any, region: Any, n_kept: int
-) -> dict:
-    net = agg[2] - agg[1]
+# acres of pixels where any kept fire went crown -> non-crown (agg[2] > 0); direct inside the
+# region, indirect outside
+def _benefit(agg: np.ndarray, inside: np.ndarray, transform: Any, region: Any) -> dict:
     pixel_acres = abs(transform.a * transform.e) / M2_PER_ACRE
     project = region.area / M2_PER_ACRE
     out = {"project_area_acres": project}
     for scope, mask in (("indirect", ~inside), ("direct", inside)):
-        positive = int((net[mask] > 0).sum()) * pixel_acres
-        acres = positive - int((net[mask] < 0).sum()) * pixel_acres
-        significant = _significant_pixels(agg[1][mask], agg[2][mask], n_kept) * pixel_acres
+        acres = int((agg[2][mask] > 0).sum()) * pixel_acres
         out |= {
-            f"positive_{scope}_acres_reduced": positive,
-            f"positive_{scope}_benefit_pct": 100 * positive / project if project > 0 else None,
-            f"net_{scope}_acres_reduced": acres,
-            f"net_{scope}_benefit_pct": 100 * acres / project if project > 0 else None,
-            f"significant_{scope}_acres_reduced": significant,
-            f"significant_{scope}_benefit_pct": (
-                100 * significant / project if project > 0 else None
-            ),
+            f"{scope}_benefit_acres": acres,
+            f"{scope}_benefit_pct": 100 * acres / project if project > 0 else None,
         }
     return out
 
@@ -284,9 +247,7 @@ def _run_pt(
         dst.write(agg)
 
     with timed(timings, "benefit"):
-        benefit = _benefit(
-            agg, state["keep_mask"], profile["transform"], region, n_kept
-        )
+        benefit = _benefit(agg, state["keep_mask"], profile["transform"], region)
 
     n_sims = 2 * len(futures)
     return {
@@ -401,9 +362,7 @@ def _run_emulator(
             dst.write(agg)
 
     with timed(timings, "benefit"):
-        benefit = _benefit(
-            agg, keep_mask.cpu().numpy(), profile["transform"], region, n_kept
-        )
+        benefit = _benefit(agg, keep_mask.cpu().numpy(), profile["transform"], region)
     return {**benefit, "n_kept": n_kept, "rows": {}}
 
 
