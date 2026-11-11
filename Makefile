@@ -44,18 +44,31 @@ require_inputs_current = if [ ! -f "$(INPUTS_ROOT)/current" ]; then echo "error:
 help: ## show this help; [direct] runs here, [slurm] submits to the cluster, [direct|slurm] picks via SLURM=1
 	awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(firstword $(MAKEFILE_LIST))
 
-# ENV_FILE is rewritten whole. The roots always come from this checkout; the rest keep the file's (or
-# shell's) values, and missing ones are asked for. One still unset is written commented out.
-PROMPT_VARS := BURN_EMULATOR_ENV BURN_EMULATOR_ARTIFACT_STORE BURN_EMULATOR_INPUTS_URI BURN_EMULATOR_MODELS_URI BURN_EMULATOR_OUTPUT_URI
-GCP_PROJECT ?= planscape-23d66
+# ENV_FILE is rewritten whole. The roots always come from this checkout; the bucket URIs always come
+# from BURN_EMULATOR_ENV (<BUCKET_PREFIX>-{inputs,models,output}-<env>) unless given on the make
+# command line; the rest keep the file's (or shell's) values, and missing ones are asked for. One
+# still unset is written commented out.
+PROMPT_VARS := BURN_EMULATOR_ENV BURN_EMULATOR_ARTIFACT_STORE
+URI_VARS    := BURN_EMULATOR_INPUTS_URI BURN_EMULATOR_MODELS_URI BURN_EMULATOR_OUTPUT_URI
+GCP_PROJECT   ?= planscape-23d66
+BUCKET_PREFIX ?= gs://planscape-burn-emulator
+# $(1): URI var, $(2): bucket kind; a make command-line value wins, else derived from the env
+derive_uri = $(1)="$(if $(filter command line,$(origin $(1))),$($(1)),$(BUCKET_PREFIX)-$(2)-$$BURN_EMULATOR_ENV)"
 env-vars: ## [direct] write ENV_FILE (~/.config/burn-emulator/env), asking for missing values; offers to create a missing runner key
 	set -e
 	tty=1
 	{ : </dev/tty; } 2>/dev/null || tty=
-	$(foreach v,$(PROMPT_VARS),$(v)="$($(v))";)
+	$(foreach v,$(PROMPT_VARS) $(URI_VARS),$(v)="$($(v))";)
 	for v in $(PROMPT_VARS); do
 	    [ -z "$${!v}" ] && [ -n "$$tty" ] && read -r -p "$$v: " "$$v" </dev/tty
 	done
+	if [ -n "$$BURN_EMULATOR_ENV" ]; then
+	    $(call derive_uri,BURN_EMULATOR_INPUTS_URI,inputs)
+	    $(call derive_uri,BURN_EMULATOR_MODELS_URI,models)
+	    $(call derive_uri,BURN_EMULATOR_OUTPUT_URI,output)
+	else
+	    echo "warning: BURN_EMULATOR_ENV is not set; bucket URIs left as they were" >&2
+	fi
 	GOOGLE_APPLICATION_CREDENTIALS="$(or $(GOOGLE_APPLICATION_CREDENTIALS),$(HOME)/.config/burn-emulator/runner-key.json)"
 	BURN_EMULATOR_INPUTS_ROOT="$(CURDIR)/$(MODEL_DIR)/data/inputs"
 	BURN_EMULATOR_BUNDLES_ROOT="$(CURDIR)/$(MODEL_DIR)/data/bundles"
