@@ -1,4 +1,5 @@
 import json
+import os
 import resource
 import threading
 import time
@@ -405,6 +406,9 @@ def run(
     with timed(timings, "dataset caching"):
         ds = dynamic_import(dataset)
         loader = dynamic_import(dataloader, {"dataset": ds})
+
+    if RUN_DEVICE == "cpu":
+        torch.set_num_threads(max(1, len(os.sched_getaffinity(0)) - loader.num_workers))
 
     n_ignitions = len(ds)
 

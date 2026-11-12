@@ -22,7 +22,7 @@ var validHash = regexp.MustCompile(`^[0-9a-f]{64}[01]$`) // sha256 hex + backend
 
 // model BACKENDS in constants.py
 const (
-	BackendDL = "DL" // deep learning emulator, GPU runner job
+	BackendDL = "DL" // deep learning emulator, GPU runner job, else the CPU one
 	BackendPT = "PT" // pyretechnics, CPU-only runner job
 )
 

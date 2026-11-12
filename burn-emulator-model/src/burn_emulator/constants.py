@@ -3,6 +3,7 @@ import os
 import torch
 
 torch.set_float32_matmul_precision("high")
+# speed only, no effect on CPU: autotunes conv algorithms per input shape; makes GPU runs not bit-reproducible
 torch.backends.cudnn.benchmark = True
 
 USE_CLOUD_PATHS = bool(os.environ.get("USE_CLOUD_PATHS"))

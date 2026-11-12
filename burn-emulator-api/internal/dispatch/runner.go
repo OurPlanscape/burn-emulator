@@ -26,7 +26,7 @@ func newRunnerClient(ctx context.Context, gpuJob, cpuJob string) (*runnerClient,
 	if err != nil {
 		return nil, fmt.Errorf("creating run client: %w", err)
 	}
-	jobs := map[string]string{BackendPT: cpuJob}
+	jobs := map[string]string{BackendPT: cpuJob, BackendDL: cpuJob}
 	if gpuJob != "" {
 		jobs[BackendDL] = gpuJob
 	}

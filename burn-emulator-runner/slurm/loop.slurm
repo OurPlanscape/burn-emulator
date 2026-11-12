@@ -36,7 +36,7 @@ if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     exit 2
 fi
 
-# the Dockerfile's runtime env, looping
+# the Dockerfile's runtime env on GPU (cuda, bfloat16), looping
 export PYTHONUNBUFFERED=1 USE_CLOUD_PATHS=1 RUN_DEVICE=cuda RUN_DTYPE=bfloat16 BURN_EMULATOR_LOOP=1
 # exec: slurm's SIGTERM reaches the loop directly
 exec burn-emulator-runner

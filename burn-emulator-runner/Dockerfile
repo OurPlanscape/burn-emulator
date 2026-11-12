@@ -1,11 +1,13 @@
 FROM python:3.12-slim-bookworm
 
 # BURN_EMULATOR_LOOP=1 (slurm): watch and run queued claims instead of one execution's request
+# change RUN_DTYPE bfloat16 for faster inference when switched back to GPU
+# RUN_DEVICE the Cloud Run CPU job sets cpu
 ENV PYTHONUNBUFFERED=1 \
     BURN_EMULATOR_LOOP=0 \
     USE_CLOUD_PATHS=1 \
     RUN_DEVICE=cuda \
-    RUN_DTYPE=bfloat16
+    RUN_DTYPE=float32
 
 RUN mkdir -p /models
 

@@ -50,7 +50,7 @@ func main() {
 		CPUOffload:   cpuOffload,
 	}
 	if !metal {
-		cfg.RunnerGPUJob = os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB") // optional; unset runs DL requests on PT
+		cfg.RunnerGPUJob = os.Getenv("BURN_EMULATOR_RUNNER_GPU_JOB") // optional; unset runs DL on the CPU job
 	}
 	if !metal || cpuOffload {
 		cfg.RunnerCPUJob = env("BURN_EMULATOR_RUNNER_CPU_JOB")

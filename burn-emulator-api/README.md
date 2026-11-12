@@ -87,7 +87,7 @@ Backend. The bundle is `<models>/<varloc>/current` when the varloc is in `valid_
 | `backend` | bundle | `BURN_EMULATOR_RUNNER_GPU_JOB` | runs | job id `model_version` |
 | --- | --- | --- | --- | --- |
 | `DL` | yes | set | DL | `<model_version>` |
-| `DL` | yes | unset | PT (warning) | `pt-<model_version>` |
+| `DL` | yes | unset | DL on `BURN_EMULATOR_RUNNER_CPU_JOB` | `<model_version>` |
 | `DL` | no | - | PT (warning) | `pt` |
 | `PT` | yes | - | PT | `pt-<model_version>` |
 | `PT` | no | - | PT, runner's `run_smoke.yaml` defaults | `pt` |
@@ -103,8 +103,8 @@ Both gpkgs are cached per `inputs_version` and re-downloaded when their GCS gene
 | `BURN_EMULATOR_MODELS_URI` | `gs://` model registry bucket; reads `<varloc>/current`, sends the runner `<uri>/<varloc>/<model_version>` as `bundle_uri`. A bare bucket: the runner mounts it at `/models` |
 | `BURN_EMULATOR_INPUTS_URI` | `gs://` inputs bucket; reads `current` and `<inputs_version>/varlocs/*.gpkg`. A bare bucket: the runner mounts it at `/inputs` |
 | `BURN_EMULATOR_OUTPUT_URI` | `gs://` bucket for outputs, `_claims/` and `_reports/` |
-| `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` requests run on PT |
-| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job; with `BURN_EMULATOR_METAL`, read only with `BURN_EMULATOR_CPU_OFFLOAD` |
+| `BURN_EMULATOR_RUNNER_GPU_JOB` | optional; `DL` runner job, `projects/*/locations/*/jobs/*`. Unset: `DL` runs on `BURN_EMULATOR_RUNNER_CPU_JOB` |
+| `BURN_EMULATOR_RUNNER_CPU_JOB` | `PT` runner job, and `DL` without `BURN_EMULATOR_RUNNER_GPU_JOB`; with `BURN_EMULATOR_METAL`, read only with `BURN_EMULATOR_CPU_OFFLOAD` |
 | `BURN_EMULATOR_METAL` | boolean; the [Dockerfile](Dockerfile) sets it to `1`. Claims are written `queued` with the runner env as their body, and the [runner's claim loop](#metal-dispatch) runs them on the cluster. `DL` runs for every varloc with a bundle |
 | `BURN_EMULATOR_CPU_OFFLOAD` | boolean, read only with `BURN_EMULATOR_METAL`; the [Dockerfile](Dockerfile) sets it to `1`. `PT` runs trigger `BURN_EMULATOR_RUNNER_CPU_JOB` as in Cloud Run mode instead of being queued; `DL` runs are still queued |
 
