@@ -147,8 +147,8 @@ def _load_model(
             ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
 
         model.load_state_dict(ckpt)
-        model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
         model.eval()
+        model.to(DEFAULT_DEVICE, dtype=DEFAULT_DTYPE)
         model = torch.compile(model)
     return model, ckpt_path
 

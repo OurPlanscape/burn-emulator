@@ -60,8 +60,11 @@ def _load_model(model: dict, ckpt_path: Path, timings: dict | None) -> torch.nn.
         if next(iter(ckpt.keys())).startswith("_orig_mod"):
             ckpt = {k.replace("_orig_mod.", ""): v for k, v in ckpt.items()}
         module.load_state_dict(ckpt)
-        module.to(RUN_DEVICE, dtype=RUN_DTYPE)
         module.eval()
+        module.to(RUN_DEVICE, dtype=RUN_DTYPE, memory_format=torch.channels_last)
+        if RUN_DEVICE == "cuda":
+            # one graph per batch shape (full batches and the last partial one)
+            module = torch.compile(module, dynamic=False)
     if _models is not None:
         _models[key] = module
         while len(_models) > _max_models:
@@ -305,7 +308,9 @@ def _run_emulator(
 
             with timed(timings, "data_movement"):
                 x = sample["x"]  # (B, 2, C, H, W): layer 0 baseline, layer 1 collated treatment
-                X = torch.cat([x[:, 0], x[:, 1]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
+                X = torch.cat([x[:, 0], x[:, 1]]).to(
+                    RUN_DEVICE, dtype=RUN_DTYPE, memory_format=torch.channels_last
+                )
                 W = torch.cat([sample["wind"], sample["wind"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
                 M = torch.cat([sample["mask"], sample["mask"]]).to(RUN_DEVICE, dtype=RUN_DTYPE)
             

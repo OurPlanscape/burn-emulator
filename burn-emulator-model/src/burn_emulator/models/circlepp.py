@@ -168,14 +168,33 @@ class CircleConv3x3(CircleLayerBase):
         if self.kernel_size != 1:
             w_transform_matrix: Tensor = self.get_w_transform_matrix()
             self.register_buffer("w_transform_matrix", w_transform_matrix)
+        # eval only, not checkpointed
+        self.register_buffer("baked_weight", None, persistent=False)
+
+    def _transformed_weight(self) -> Tensor:
+        if self.kernel_size == 1:
+            return self.weight
+        w = self.weight.reshape(-1, self.kernel_size * self.kernel_size)
+        return w.matmul(self.w_transform_matrix).view_as(self.weight)
+
+    def _bake(self) -> None:
+        if self.training or self.kernel_size == 1:
+            self.baked_weight = None
+            return
+        with torch.no_grad():
+            self.baked_weight = self._transformed_weight()
+
+    def train(self, mode: bool = True) -> "CircleConv3x3":
+        super().train(mode)
+        self._bake()
+        return self
+
+    def _load_from_state_dict(self, *args, **kwargs) -> None:
+        super()._load_from_state_dict(*args, **kwargs)
+        self._bake()
 
     def forward(self, x: Tensor) -> Tensor:
-        w_size: torch.Size = self.weight.shape
-        w: Tensor = self.weight
-        if self.kernel_size != 1:
-            w = w.view(-1, self.kernel_size * self.kernel_size)
-            w = w.matmul(self.w_transform_matrix)
-        w = w.view(w_size[0], w_size[1], self.kernel_size, self.kernel_size)
+        w = self.baked_weight if self.baked_weight is not None else self._transformed_weight()
         return nn.functional.conv2d(
             x, w, self.bias, self.stride, self.padding, self.dilation, groups=self.groups
         )
