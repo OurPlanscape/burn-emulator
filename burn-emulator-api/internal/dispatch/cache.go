@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	runStaleAfter     = 40 * time.Minute  // running + 10 min grace
-	queueStaleAfter   = 2 * runStaleAfter // queued (metal): waiting for a runner loop
-	stagingStaleAfter = DetachedBudget    // staging (metal): not queued by CreateJob
+	runStaleAfter     = runTimeout + 10*time.Minute // running + 10 min grace
+	queueStaleAfter   = 80 * time.Minute            // queued (metal): waiting for a runner loop
+	stagingStaleAfter = DetachedBudget              // staging (metal): not queued by CreateJob
 	maxClaimAttempts  = 3
 	releaseTimeout    = 10 * time.Second
 )

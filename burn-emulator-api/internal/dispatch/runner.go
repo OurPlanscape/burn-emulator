@@ -7,13 +7,15 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"time"
 
 	run "google.golang.org/api/run/v2"
 )
 
 const (
-	inputsMountPath = "/inputs" // runner's inputs bucket mount
-	modelsMountPath = "/models" // runner's models bucket mount
+	inputsMountPath = "/inputs"      // runner's inputs bucket mount
+	modelsMountPath = "/models"      // runner's models bucket mount
+	runTimeout      = 24 * time.Hour // overrides the runner job's configured timeout
 )
 
 type runnerClient struct {
@@ -98,6 +100,7 @@ func (r *runnerClient) Trigger(ctx context.Context, req inferRequest) error {
 	body := &run.GoogleCloudRunV2RunJobRequest{
 		Overrides: &run.GoogleCloudRunV2Overrides{
 			TaskCount: 1,
+			Timeout:   fmt.Sprintf("%ds", int64(runTimeout.Seconds())),
 			ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
 				{Name: "runner", Env: env},
 			},
