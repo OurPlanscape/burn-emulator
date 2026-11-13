@@ -20,7 +20,7 @@ COPY --from=builder /out/burn-emulator-api /app/burn-emulator-api
 
 # claims are queued for the runner's claim loop on prem (BURN_EMULATOR_LOOP=1) instead of triggering runner jobs
 # TODO: add offloading functionality when GPU quotas are available (BURN_EMULATOR_LOOP=0)
-ENV BURN_EMULATOR_METAL=1
+ENV BURN_EMULATOR_METAL=0
 # metal: PT runs trigger the CPU runner job (BURN_EMULATOR_RUNNER_CPU_JOB) instead of being queued
 ENV BURN_EMULATOR_CPU_OFFLOAD=1
 
