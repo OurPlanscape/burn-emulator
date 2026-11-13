@@ -175,6 +175,28 @@ def pt_out_path(out_path: str | Path | None, experiment_dir: Path, model_name: s
     return f"{head}/{name}" if head else name
 
 
+def _treatment_unchanged(ds: Any) -> bool:
+    base, treat = ds.fuels["baseline"], ds.fuels["treatment"]
+    return base.keys() == treat.keys() and all(torch.equal(base[k], treat[k]) for k in base)
+
+
+# identical baseline and treatment fuels: every pixel is no change, no fires simulated
+def _run_unchanged(ds: Any, region: Any, out_path: str | Path, timings: dict | None) -> dict:
+    profile = ds.profile | INF_PROFILE
+    shape = (profile["height"], profile["width"])
+    n_change = 3  # 0 no change | 1 non-crown -> crown | 2 crown -> non-crown
+    profile.update({"count": n_change})
+
+    agg = np.zeros([n_change, *shape], dtype=np.float32)
+    agg[0] = 1
+
+    with timed(timings, "write"), rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(agg)
+
+    benefit = {k: 0.0 for k in BENEFIT_KEYS} | {"project_area_acres": region.area / M2_PER_ACRE}
+    return {**benefit, "n_kept": 0, "rows": {"treatment": "unchanged, no fires simulated"}}
+
+
 def _run_pt(
     ds: Any,
     region: Any,
@@ -423,7 +445,11 @@ def run(
     if debug:
         print(f"[run] {label}: {n_ignitions} ignitions -> {out_path}", flush=True)
 
-    if backend == "PT":
+    if _treatment_unchanged(ds):
+        if debug:
+            print("[run] treatment fuels identical to baseline, skipping fires", flush=True)
+        stats = _run_unchanged(ds, region, out_path, timings)
+    elif backend == "PT":
         stats = _run_pt(ds, region, out_path, pt_workers, timings, debug, cancel)
     else:
         stats = _run_emulator(
